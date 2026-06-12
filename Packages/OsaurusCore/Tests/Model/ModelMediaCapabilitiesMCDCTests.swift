@@ -231,6 +231,21 @@ struct ModelMediaCapabilitiesMCDCTests {
         #expect(ModelMediaCapabilities.from(modelId: "gemma-4-12b-it-mxfp8") == .imageOnly)
     }
 
+    @Test("D6: DiffusionGemma is image-only, not video/audio")
+    func d6_diffusionGemmaImageOnly() {
+        for modelId in [
+            "google/diffusiongemma-26B-A4B-it",
+            "OsaurusAI/diffusiongemma-26B-A4B-it-MXFP4",
+            "diffusion_gemma",
+        ] {
+            let cap = ModelMediaCapabilities.from(modelId: modelId)
+            #expect(cap == .imageOnly, "\(modelId) must advertise image only")
+            #expect(cap.supportsImage)
+            #expect(!cap.supportsVideo)
+            #expect(!cap.supportsAudio)
+        }
+    }
+
     // MARK: - D7: Mistral 3 / 3.5 (image only via Pixtral wrap)
 
     @Test("D7: Mistral 3 / 3.5 → .imageOnly")
@@ -321,6 +336,32 @@ struct ModelMediaCapabilitiesMCDCTests {
         #expect(descriptor.audio.status == .unproven)
         #expect(!descriptor.audio.isUsable)
         #expect(descriptor.rejectionMessage(for: .audio).contains("audio_tower/embed_audio"))
+    }
+
+    @Test("Directory config keeps DiffusionGemma image-only")
+    func directory_diffusionGemmaImageOnly() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        try """
+        {
+          "model_type": "diffusion_gemma",
+          "architectures": ["DiffusionGemmaForBlockDiffusion"],
+          "vision_config": {"model_type": "gemma4_vision"},
+          "image_token_id": 258880,
+          "audio_config": null
+        }
+        """.write(to: tmp.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
+
+        let cap = ModelMediaCapabilities.from(
+            directory: tmp,
+            modelId: "google/diffusiongemma-26B-A4B-it"
+        )
+        #expect(cap == .imageOnly)
+        #expect(cap.supportsImage)
+        #expect(!cap.supportsVideo)
+        #expect(!cap.supportsAudio)
     }
 
     @Test("Descriptor keeps Nemotron Omni audio supported")

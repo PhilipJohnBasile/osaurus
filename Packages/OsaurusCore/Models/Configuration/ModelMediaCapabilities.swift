@@ -207,6 +207,14 @@ public enum ModelMediaCapabilities {
             return .imageOnly
         }
 
+        // DiffusionGemma 26B A4B is a block-diffusion VLM. The source bundle
+        // exposes vision_config + image_token_id, but no audio_config,
+        // audio_token_id, or video_token_id. Do not advertise audio/video from
+        // the generic Gemma family name.
+        if ModelFamilyNames.isDiffusionGemmaFamily(modelId) {
+            return .imageOnly
+        }
+
         // Image-only VLM families. Substring-match the bundle name.
         let imageOnlyPatterns: [String] = [
             "paligemma", "idefics3", "fastvlm", "llava-qwen2", "llava_qwen2",
@@ -341,6 +349,10 @@ public enum ModelMediaCapabilities {
         // vision is only the omni path, already handled above.)
         guard hasVisionConfig else {
             return .textOnly
+        }
+
+        if modelType == "diffusion_gemma" {
+            return .imageOnly
         }
 
         // Cross-check the family-by-model_type for video support.

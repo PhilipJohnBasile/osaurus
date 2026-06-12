@@ -44,6 +44,11 @@ import Testing
         #expect(VLMDetection.isVLM(modelType: "qwen2_5_vl"))
     }
 
+    @Test func isVLMModelType_recognizesDiffusionGemma() {
+        #expect(VLMDetection.isVLM(modelType: "diffusion_gemma"))
+        #expect(!VLMDetection.isVLM(modelType: "diffusion_gemma_text"))
+    }
+
     @Test func isVLMModelType_preservesCaseSensitiveRegistryEntries() {
         #expect(VLMDetection.isVLM(modelType: "NemotronH_Nano_Omni_Reasoning_V3"))
     }

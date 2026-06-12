@@ -71,6 +71,14 @@ enum ModelFamilyNames {
         matches(#"(^|/|[\-_])gemma($|[\-_/\.0-9])"#, in: modelId.lowercased())
     }
 
+    /// DiffusionGemma block-diffusion bundles (`model_type=diffusion_gemma`).
+    /// Keep this separate from ordinary Gemma 4 AR/QAT matching because the
+    /// runtime needs a denoising-canvas engine, not TokenIterator decode.
+    static func isDiffusionGemmaFamily(_ modelId: String) -> Bool {
+        matches(#"(^|/|[\-_])diffusion[\-_]?gemma($|[\-_/\.0-9])"#, in: modelId.lowercased())
+            || modelId.lowercased() == "diffusion_gemma"
+    }
+
     /// LFM2 / LFM2.5 text and MoE bundles. Accept LiquidAI repo ids,
     /// local JANG bundle ids, and bare picker aliases while rejecting adjacent
     /// future-family names like `lfm21` / `lfm2x`.
