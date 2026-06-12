@@ -165,6 +165,17 @@ public enum ServerRuntimeSettingsStore {
         {
             normalized.mtp.mode = .auto
         }
+        // Osaurus product default for block-diffusion models: 16 denoising
+        // steps (~74 tok/s on diffusiongemma-26B-A4B MXFP4, coherent) vs the
+        // bundle's 48 (~37 tok/s). Seeded exactly once; afterwards a blank
+        // field is an explicit "use bundle default" choice.
+        if normalized.generation.diffusionMaxDenoisingSteps == nil,
+            !FileManager.default.fileExists(
+                atPath: diffusionDefaultsMigrationMarkerURL().path)
+        {
+            normalized.generation.diffusionMaxDenoisingSteps = 16
+            writeDiffusionDefaultsMigrationMarker()
+        }
         if shouldRepairLegacyCacheDefaults(normalized.cache) {
             // Keep companion-cache repair independent from the live KV codec.
             // Engine-selected is the default policy now, but ModelRuntime
@@ -239,7 +250,9 @@ public enum ServerRuntimeSettingsStore {
 
         // Generation defaults: only `genTopP` had a legacy override
         // surfaced in the UI. Everything else stays nil so model
-        // defaults still win.
+        // defaults still win — except the block-diffusion step budget,
+        // which gets the Osaurus product default (16; see
+        // normalizeLoadedSettings).
         let defaultTopP = ServerConfiguration.default.genTopP
         settings.generation = VMLXServerGenerationDefaults(
             streamInterval: 1,
@@ -252,6 +265,8 @@ public enum ServerRuntimeSettingsStore {
             minP: nil,
             repetitionPenalty: nil
         )
+        settings.generation.diffusionMaxDenoisingSteps = 16
+        writeDiffusionDefaultsMigrationMarker()
 
         // Concurrency: legacy UserDefaults key for BatchEngine max
         // batch size. Falls back to nil so vmlx's coordinator chooses
@@ -360,6 +375,22 @@ public enum ServerRuntimeSettingsStore {
 
     private nonisolated static func cacheDefaultsMigrationMarkerURL() -> URL {
         directoryURL().appendingPathComponent(cacheDefaultsMigrationMarkerName)
+    }
+
+    /// One-shot seed of the Osaurus diffusion default (16 denoising steps,
+    /// the measured speed/quality knee for diffusiongemma-26B-A4B). The
+    /// marker keeps a user's later "blank = bundle default" choice sticky.
+    static let diffusionDefaultsMigrationMarkerName =
+        "diffusion-defaults-migrated.marker"
+
+    private nonisolated static func diffusionDefaultsMigrationMarkerURL() -> URL {
+        directoryURL().appendingPathComponent(diffusionDefaultsMigrationMarkerName)
+    }
+
+    private nonisolated static func writeDiffusionDefaultsMigrationMarker() {
+        let url = diffusionDefaultsMigrationMarkerURL()
+        OsaurusPaths.ensureExistsSilent(url.deletingLastPathComponent())
+        try? Data().write(to: url, options: [.atomic])
     }
 
     private nonisolated static func legacyConfigurationFileURL() -> URL {
