@@ -207,6 +207,14 @@ public enum ModelMediaCapabilities {
             return .imageOnly
         }
 
+        // DiffusionGemma: block-diffusion Gemma with the Gemma4 unified
+        // vision tower — image-in/text-out only (no audio config, no
+        // video_token_id). Name-matched here for the id-only path; the
+        // directory/json path matches model_type == "diffusion_gemma".
+        if ModelFamilyNames.isDiffusionGemmaFamily(modelId) {
+            return .imageOnly
+        }
+
         // Image-only VLM families. Substring-match the bundle name.
         let imageOnlyPatterns: [String] = [
             "paligemma", "idefics3", "fastvlm", "llava-qwen2", "llava_qwen2",
@@ -341,6 +349,14 @@ public enum ModelMediaCapabilities {
         // vision is only the omni path, already handled above.)
         guard hasVisionConfig else {
             return .textOnly
+        }
+
+        // DiffusionGemma: block-diffusion Gemma with the Gemma4 unified
+        // vision tower. Image-in/text-out only — the checkpoint has no
+        // audio config and no video_token_id. Checked before the gemma4
+        // prefix branch since its model_type is `diffusion_gemma`.
+        if modelType == "diffusion_gemma" {
+            return .imageOnly
         }
 
         // Gemma4: audio capability is checkpoint-fact-driven, not

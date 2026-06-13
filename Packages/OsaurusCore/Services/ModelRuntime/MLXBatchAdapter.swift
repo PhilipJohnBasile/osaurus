@@ -1059,6 +1059,12 @@ struct MLXBatchAdapter {
             enableCompiledBatchDecode: effective.compiledBatchDecode,
             prefillStepSize: runtime.concurrency.prefillStepSize
         )
+        // Block-diffusion speed/quality budget (DiffusionGemma): server
+        // setting, default 16 (seeded by ServerRuntimeSettingsStore).
+        // nil = bundle's generation_config.json value. Ignored by
+        // autoregressive models.
+        mlxParams.diffusionMaxDenoisingSteps =
+            runtime.generation.diffusionMaxDenoisingSteps
         let cacheTopology = await container.cacheTopologySnapshot()
         let effectiveKVMode = ModelRuntime.defaultKVMode(
             for: ServerRuntimeSettingsStore.snapshot().cache,

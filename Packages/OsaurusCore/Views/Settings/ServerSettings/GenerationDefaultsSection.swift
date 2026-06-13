@@ -69,6 +69,20 @@ struct GenerationDefaultsSection: View {
 
             SettingsDivider()
 
+            SettingsSubsection(label: "Diffusion Models") {
+                OptionalIntField(
+                    label: "Denoising Steps per Canvas",
+                    placeholder: "Blank = model default (48)",
+                    help: "Speed/quality budget for block-diffusion models "
+                        + "(DiffusionGemma). 16 ≈ 2× faster than the model "
+                        + "default and stays coherent; below 12 quality "
+                        + "degrades. Ignored by ordinary models.",
+                    value: $draft.generation.diffusionMaxDenoisingSteps
+                )
+            }
+
+            SettingsDivider()
+
             SettingsSubsection(label: "Streaming") {
                 VStack(alignment: .leading, spacing: 8) {
                     ServerSettingsPlannedBanner(

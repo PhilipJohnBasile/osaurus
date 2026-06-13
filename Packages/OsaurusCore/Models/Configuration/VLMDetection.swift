@@ -74,6 +74,7 @@ enum VLMDetection {
         let trimmed = modelType.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalized = trimmed.lowercased()
         guard normalized != "zaya" else { return false }
+        if normalized == "diffusion_gemma" { return true }
         return VLMTypeRegistry.supportedModelTypes.contains(trimmed)
             || VLMTypeRegistry.supportedModelTypes.contains(normalized)
     }
