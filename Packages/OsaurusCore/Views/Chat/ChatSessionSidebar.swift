@@ -337,7 +337,7 @@ struct ChatSessionSidebar: View {
         HStack {
             Text("History", bundle: .module)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(theme.primaryText)
+                .foregroundColor(theme.tertiaryText)
             Spacer()
         }
         .padding(.leading, 22)
