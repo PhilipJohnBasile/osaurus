@@ -130,6 +130,11 @@ struct ChatSessionSidebar: View {
 
     var body: some View {
         SidebarContainer(attachedEdge: .leading, topPadding: 40) {
+            // Feature-discovery guide for new users. Renders nothing (and
+            // takes no layout) once dismissed or for users who already use
+            // everything, so the nav stack sits flush against the top.
+            OnboardingCard()
+
             // Top navigation buttons
             navButtons
                 .padding(.horizontal, 12)
