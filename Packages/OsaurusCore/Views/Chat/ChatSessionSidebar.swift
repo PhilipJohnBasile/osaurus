@@ -32,6 +32,7 @@ struct ChatSessionSidebar: View {
     let onRename: (UUID, String) -> Void
     let onSetArchived: (UUID, Bool) -> Void
     let onExport: (ChatSessionData, ExportFormat) -> Void
+    let onSettings: () -> Void
     /// Optional callback for opening a session in a new window
     var onOpenInNewWindow: ((ChatSessionData) -> Void)? = nil
 
@@ -129,6 +130,12 @@ struct ChatSessionSidebar: View {
 
     var body: some View {
         SidebarContainer(attachedEdge: .leading, topPadding: 40) {
+            // Top navigation buttons
+            navButtons
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
+
             // Header with New Chat button
             sidebarHeader
 
@@ -138,8 +145,8 @@ struct ChatSessionSidebar: View {
                 placeholder: "Search conversations...",
                 isFocused: $isSearchFocused
             )
-            .padding(.horizontal, 12)
-            .padding(.bottom, 6)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
 
             // Source filter chips — always visible while the agent has
             // any session, so the user can never "lose" the rail just
@@ -148,7 +155,8 @@ struct ChatSessionSidebar: View {
             // sources the agent has never used.
             if !sessions.isEmpty {
                 sourceFilterRail
-                    .padding(.horizontal, 12)
+                    .padding(.leading, 20)
+                    .padding(.trailing, 12)
                     .padding(.bottom, 6)
             }
 
@@ -177,6 +185,15 @@ struct ChatSessionSidebar: View {
             sourceFilter = .all
             searchQuery = ""
             hoveredFilter = nil
+        }
+    }
+
+    // MARK: - Nav Buttons
+
+    private var navButtons: some View {
+        VStack(spacing: 8) {
+            SidebarNavButton(icon: "square.and.pencil", label: "New Chat", action: onNewChat)
+            SidebarNavButton(icon: "gearshape", label: "Settings", action: onSettings)
         }
     }
 
@@ -321,20 +338,12 @@ struct ChatSessionSidebar: View {
             Text("History", bundle: .module)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(theme.primaryText)
-
             Spacer()
-
-            Button(action: onNewChat) {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(theme.secondaryText)
-            }
-            .buttonStyle(.plain)
-            .localizedHelp("New Chat")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 20)
-        .padding(.bottom, 8)
+        .padding(.leading, 22)
+        .padding(.trailing, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
     }
 
     // MARK: - Empty State
@@ -405,7 +414,7 @@ struct ChatSessionSidebar: View {
                 }
             }
             .padding(.vertical, 8)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 12)
         }
         .scrollIndicators(.hidden)
     }
@@ -896,6 +905,44 @@ private struct ActionsPopoverButton: View {
     }
 }
 
+// MARK: - Sidebar Nav Button
+
+/// Full-width icon + label button used in the top nav strip of the sidebar.
+private struct SidebarNavButton: View {
+    let icon: String
+    let label: String
+    let action: () -> Void
+
+    @Environment(\.theme) private var theme
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 16)
+                Text(LocalizedStringKey(label), bundle: .module)
+                    .font(.system(size: 12, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .foregroundColor(isHovered ? theme.accentColor : theme.primaryText)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: SidebarStyle.rowCornerRadius, style: .continuous)
+                    .fill(isHovered
+                        ? theme.accentColor.opacity(theme.isDark ? 0.14 : 0.10)
+                        : .clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: SidebarStyle.rowCornerRadius, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+}
+
 // MARK: - Don't Ask Again Toggle
 
 /// Checkbox row rendered as the delete-confirmation accessory. Writes
@@ -929,7 +976,8 @@ private struct DontAskAgainToggle: View {
                 onDelete: { _ in },
                 onRename: { _, _ in },
                 onSetArchived: { _, _ in },
-                onExport: { _, _ in }
+                onExport: { _, _ in },
+                onSettings: {}
             )
             .frame(height: 400)
         }

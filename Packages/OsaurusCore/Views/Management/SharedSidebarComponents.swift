@@ -12,7 +12,7 @@ import SwiftUI
 /// Centralized styling constants for sidebar components (similar to ToastStyle).
 enum SidebarStyle {
     // MARK: Layout
-    static let width: CGFloat = 240
+    static let width: CGFloat = 330
     static let cornerRadius: CGFloat = 14
     static let rowCornerRadius: CGFloat = 8
     static let searchFieldCornerRadius: CGFloat = 8

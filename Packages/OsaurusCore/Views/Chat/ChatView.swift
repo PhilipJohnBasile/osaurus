@@ -4145,7 +4145,7 @@ struct ChatView: View {
     @ViewBuilder
     private var chatModeContent: some View {
         GeometryReader { proxy in
-            let sidebarWidth: CGFloat = windowState.showSidebar ? 240 : 0
+            let sidebarWidth: CGFloat = windowState.showSidebar ? SidebarStyle.width : 0
             let chatWidth = proxy.size.width - sidebarWidth
             let effectiveContentWidth = min(chatWidth, 1100)
 
@@ -4195,6 +4195,9 @@ struct ChatView: View {
                                     format: format,
                                     scope: .chat(windowState.windowId)
                                 )
+                            },
+                            onSettings: {
+                                AppDelegate.shared?.showManagementWindow()
                             },
                             onOpenInNewWindow: { sessionData in
                                 // Open session in a new window via ChatWindowManager
