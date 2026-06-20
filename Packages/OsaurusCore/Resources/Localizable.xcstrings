@@ -830,6 +830,12 @@
             "state" : "translated",
             "value" : "%@ / %@ / %@"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ / %@ / %@"
+          }
         }
       },
       "shouldTranslate" : false
@@ -1213,6 +1219,12 @@
             "state" : "translated",
             "value" : "%@: %lld"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %lld"
+          }
         }
       },
       "shouldTranslate" : false
@@ -1245,6 +1257,12 @@
           }
         },
         "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@.%@"
+          }
+        },
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@.%@"
@@ -1396,6 +1414,12 @@
             "state" : "translated",
             "value" : "%lld / %lld"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld / %lld"
+          }
         }
       },
       "shouldTranslate" : false
@@ -1411,6 +1435,12 @@
           }
         },
         "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld %@"
+          }
+        },
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld %@"
@@ -3127,6 +3157,12 @@
       "shouldTranslate" : false,
       "localizations" : {
         "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0"
+          }
+        },
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "0"
@@ -5734,6 +5770,12 @@
             "state" : "translated",
             "value" : "已允许"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erlaubt"
+          }
         }
       }
     },
@@ -6184,7 +6226,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Anthropic"
+            "value" : "Anthropic（提供商）"
           }
         }
       }
@@ -10567,6 +10609,12 @@
             "state" : "translated",
             "value" : "捕获策略"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfassungsrichtlinie"
+          }
         }
       }
     },
@@ -14650,6 +14698,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "复制探测结果"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prüfergebnis kopieren"
           }
         }
       }
@@ -21706,6 +21760,12 @@
             "state" : "translated",
             "value" : "证据"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nachweis"
+          }
         }
       }
     },
@@ -25025,7 +25085,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Google Gemini"
+            "value" : "Google Gemini（提供商）"
           }
         }
       }
@@ -25220,6 +25280,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Grok（SuperGrok / X Premium+）"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok (SuperGrok / X Premium+)"
           }
         }
       }
@@ -28985,6 +29051,12 @@
             "state" : "translated",
             "value" : "KV"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KV"
+          }
         }
       }
     },
@@ -29065,6 +29137,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上次探测"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzte Prüfung"
           }
         }
       }
@@ -30060,6 +30138,12 @@
       "shouldTranslate" : false,
       "localizations" : {
         "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LM Studio（本地模型应用）"
+          }
+        },
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "LM Studio"
@@ -44327,6 +44411,12 @@
             "state" : "translated",
             "value" : "探测失败"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prüfung fehlgeschlagen"
+          }
         }
       }
     },
@@ -44337,6 +44427,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "探测通过"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prüfung bestanden"
           }
         }
       }
@@ -45805,6 +45901,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "原因"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grund"
           }
         }
       }
@@ -51330,6 +51432,12 @@
             "state" : "translated",
             "value" : "屏幕捕获"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bildschirmaufnahme"
+          }
         }
       }
     },
@@ -55562,6 +55670,12 @@
             "state" : "translated",
             "value" : "阶段"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stufe"
+          }
         }
       }
     },
@@ -59062,6 +59176,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此包声明了 DFlash/推测解码元数据，但本地生成尚无目标/草稿接受契约或基准证明。请在原生运行时支持落地后再使用。"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Bundle weist DFlash-/Speculative-Decoding-Metadaten aus, aber die lokale Generierung hat noch keinen Ziel-/Entwurfs-Akzeptanzvertrag oder Benchmark-Nachweis. Verwende es erst, wenn native Laufzeitunterstützung verfügbar ist."
           }
         }
       }
