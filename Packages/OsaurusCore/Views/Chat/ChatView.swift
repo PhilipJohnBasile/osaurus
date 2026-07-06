@@ -5443,7 +5443,12 @@ struct ChatView: View {
                                 remoteConnectionPending: windowState.remoteAgentConnectionPhase
                                     == .connecting,
                                 isRemoteAgentRun: windowState.selectedDiscoveredAgentProviderId
-                                    != nil
+                                    != nil,
+                                inputHistoryProvider: { [weak observedSession] in
+                                    guard let observedSession else { return [] }
+                                    return ChatInputHistory.entries(from: observedSession.turns)
+                                },
+                                inputHistoryKey: observedSession.sessionId
                             )
                             .frame(maxWidth: 1100)
                             .frame(maxWidth: .infinity)

@@ -101,6 +101,13 @@ struct FloatingInputCard: View {
     /// sandbox, working folder, screen-context, and the thinking / model-option
     /// chips — because none of them are sent to (or honored by) the remote peer.
     var isRemoteAgentRun: Bool = false
+    /// Terminal-style input history (Up/Down arrows recall previously sent
+    /// messages). Returns the current conversation's sent inputs, newest
+    /// first; nil disables the feature.
+    var inputHistoryProvider: (() -> [String])?
+    /// Identity of the conversation backing the history. Navigation state
+    /// resets when it changes so a recalled index can't leak across chats.
+    var inputHistoryKey: UUID?
 
     init(
         text: Binding<String>,
@@ -138,7 +145,9 @@ struct FloatingInputCard: View {
         isModelPinned: Bool = false,
         pinnedModelLabel: String? = nil,
         remoteConnectionPending: Bool = false,
-        isRemoteAgentRun: Bool = false
+        isRemoteAgentRun: Bool = false,
+        inputHistoryProvider: (() -> [String])? = nil,
+        inputHistoryKey: UUID? = nil
     ) {
         self._text = text
         self._selectedModel = selectedModel
@@ -176,6 +185,8 @@ struct FloatingInputCard: View {
         self.pinnedModelLabel = pinnedModelLabel
         self.remoteConnectionPending = remoteConnectionPending
         self.isRemoteAgentRun = isRemoteAgentRun
+        self.inputHistoryProvider = inputHistoryProvider
+        self.inputHistoryKey = inputHistoryKey
     }
 
     // Observe managers for reactive updates
@@ -197,6 +208,11 @@ struct FloatingInputCard: View {
 
     private var slashRegistry = SlashCommandRegistry.shared
     @State private var slashSelectedIndex: Int = 0
+
+    // MARK: - Input History State
+
+    /// Terminal-style history navigation position + stashed draft.
+    @State private var inputHistoryState = ChatInputHistoryState()
 
     /// Non-nil when the cursor is inside a slash command token (e.g. "/tr" or "hello /tr").
     /// The slash must be at the start of text or immediately after whitespace.
@@ -1410,7 +1426,73 @@ extension FloatingInputCard {
         textViewFocusController.lockFocus(for: 0.3)
         localText = ""
         text = ""
+        // Sending resets history navigation; the sent text becomes the
+        // newest history entry once its turn lands.
+        inputHistoryState = ChatInputHistoryState()
         onSend(message)
+    }
+
+    // MARK: - Input History (terminal-style Up/Down recall)
+
+    private func handleHistoryArrowUp() -> Bool {
+        guard let provider = inputHistoryProvider, caretIsOnFirstLine else { return false }
+        guard
+            let result = ChatInputHistory.recall(
+                state: inputHistoryState,
+                entries: provider(),
+                currentDraft: localText
+            )
+        else { return false }
+        inputHistoryState = result.state
+        applyHistoryText(result.text)
+        return true
+    }
+
+    private func handleHistoryArrowDown() -> Bool {
+        guard inputHistoryState.index != nil, caretIsOnLastLine else { return false }
+        guard
+            let result = ChatInputHistory.advance(
+                state: inputHistoryState,
+                entries: inputHistoryProvider?() ?? []
+            )
+        else { return false }
+        inputHistoryState = result.state
+        applyHistoryText(result.text)
+        return true
+    }
+
+    /// Replace the composer text with a recalled entry and put the caret at
+    /// the end, matching terminal behavior.
+    private func applyHistoryText(_ newText: String) {
+        localText = newText
+        text = newText
+        DispatchQueue.main.async {
+            guard let tv = textViewFocusController.textView else { return }
+            let end = (tv.string as NSString).length
+            tv.setSelectedRange(NSRange(location: end, length: 0))
+            tv.scrollRangeToVisible(NSRange(location: end, length: 0))
+        }
+    }
+
+    /// True when the caret is a plain insertion point on the first line of
+    /// the composer. History recall only triggers there, so Up still moves
+    /// the caret inside a multi-line draft.
+    private var caretIsOnFirstLine: Bool {
+        guard let tv = textViewFocusController.textView else { return false }
+        let range = tv.selectedRange()
+        guard range.length == 0 else { return false }
+        let ns = tv.string as NSString
+        return !ns.substring(to: min(range.location, ns.length)).contains("\n")
+    }
+
+    /// True when the caret is a plain insertion point on the last line of
+    /// the composer. Walking history forward only triggers there.
+    private var caretIsOnLastLine: Bool {
+        guard let tv = textViewFocusController.textView else { return false }
+        let range = tv.selectedRange()
+        guard range.length == 0 else { return false }
+        let ns = tv.string as NSString
+        return !ns.substring(from: min(range.location, ns.length)).contains("\n")
     }
 
     // MARK: - Slash Commands
@@ -4070,13 +4152,13 @@ extension FloatingInputCard {
                 ? {
                     slashSelectedIndex = max(0, slashSelectedIndex - 1)
                     return true
-                } : nil,
+                } : { handleHistoryArrowUp() },
             onArrowDown: showSlashPopup
                 ? {
                     let maxIndex = slashFilteredCommands.count - 1
                     slashSelectedIndex = min(maxIndex, slashSelectedIndex + 1)
                     return true
-                } : nil,
+                } : { handleHistoryArrowDown() },
             onEscape: showSlashPopup
                 ? {
                     // Dismiss popup by clearing the slash prefix
@@ -4093,6 +4175,12 @@ extension FloatingInputCard {
             }
         )
         .frame(maxHeight: maxHeight)
+        // A different conversation now backs the composer — drop any
+        // in-flight history navigation so its index can't recall entries
+        // from the previous chat.
+        .onChange(of: inputHistoryKey) { _, _ in
+            inputHistoryState = ChatInputHistoryState()
+        }
         .overlay(alignment: .topLeading) {
             // Placeholder - uses theme body size
             if showPlaceholder {
