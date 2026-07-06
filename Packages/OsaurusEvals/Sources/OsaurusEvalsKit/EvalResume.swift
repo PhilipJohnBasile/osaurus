@@ -47,25 +47,85 @@ public enum EvalResume {
     /// (the watchdog's partial report lands there). Returns the raw rows —
     /// callers filter through `completedRows`.
     public static func loadPriorRows(outPath: String) -> [EvalCaseReport] {
+        (try? loadPriorRows(outPath: outPath, expectedHeader: nil))?.rows ?? []
+    }
+
+    /// Load prior rows and optionally validate the sidecar header against the
+    /// current run's expected metadata. Throws on mismatch when
+    /// `expectedHeader` is provided.
+    public static func loadPriorRows(
+        outPath: String,
+        expectedHeader: EvalPartialRunHeader?
+    ) throws -> (header: EvalPartialRunHeader?, rows: [EvalCaseReport]) {
         let sidecar = partialSidecarURL(forOut: outPath)
         let decoder = JSONDecoder()
         if let data = try? Data(contentsOf: sidecar),
             let text = String(data: data, encoding: .utf8)
         {
-            let rows = text.split(whereSeparator: \.isNewline).compactMap { line -> EvalCaseReport? in
+            let lines = text.split(whereSeparator: \.isNewline)
+            var start = 0
+            var header: EvalPartialRunHeader?
+            if let first = lines.first?.trimmingCharacters(in: .whitespaces),
+                !first.isEmpty,
+                let firstData = first.data(using: .utf8),
+                let parsedHeader = try? decoder.decode(EvalPartialRunHeader.self, from: firstData),
+                parsedHeader.kind == EvalPartialRunHeader.kindValue
+            {
+                header = parsedHeader
+                start = 1
+                if let expectedHeader {
+                    try validateHeader(expected: expectedHeader, found: parsedHeader)
+                }
+            }
+            let rows = lines.dropFirst(start).compactMap { line -> EvalCaseReport? in
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 guard !trimmed.isEmpty, let rowData = trimmed.data(using: .utf8) else { return nil }
                 return try? decoder.decode(EvalCaseReport.self, from: rowData)
             }
-            if !rows.isEmpty { return rows }
+            if !rows.isEmpty { return (header, rows) }
         }
         if let data = try? Data(contentsOf: URL(fileURLWithPath: outPath)),
             let report = try? decoder.decode(EvalReport.self, from: data)
         {
-            return report.cases
+            return (nil, report.cases)
         }
-        return []
+        return (nil, [])
     }
+
+    public static func validateHeader(
+        expected: EvalPartialRunHeader,
+        found: EvalPartialRunHeader
+    ) throws {
+        if expected.runModel != found.runModel {
+            throw EvalPartialRunHeaderError.resumeMismatch(
+                field: "runModel",
+                expected: expected.runModel,
+                found: found.runModel
+            )
+        }
+        if expected.catalogHash != found.catalogHash {
+            throw EvalPartialRunHeaderError.resumeMismatch(
+                field: "catalogHash",
+                expected: expected.catalogHash,
+                found: found.catalogHash
+            )
+        }
+        if expected.judge != found.judge {
+            throw EvalPartialRunHeaderError.resumeMismatch(
+                field: "judge",
+                expected: expected.judge,
+                found: found.judge
+            )
+        }
+        if expected.filter != found.filter {
+            throw EvalPartialRunHeaderError.resumeMismatch(
+                field: "filter",
+                expected: expected.filter,
+                found: found.filter
+            )
+        }
+    }
+
 }
 
 /// Append-only JSONL writer for completed case rows. Opened lazily on the
@@ -83,6 +143,21 @@ public final class EvalPartialRowSink {
         self.encoder = JSONEncoder()
         // Compact single-line rows keep the file append-safe and greppable.
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    }
+
+    /// Stamp resume metadata as the first line of the sidecar.
+    public func writeHeader(_ header: EvalPartialRunHeader) {
+        guard let data = try? encoder.encode(header) else { return }
+        let fm = FileManager.default
+        try? fm.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        var blob = data
+        blob.append(0x0A)
+        fm.createFile(atPath: url.path, contents: blob)
+        handle = try? FileHandle(forWritingTo: url)
+        try? handle?.seekToEnd()
     }
 
     public func append(_ row: EvalCaseReport) {

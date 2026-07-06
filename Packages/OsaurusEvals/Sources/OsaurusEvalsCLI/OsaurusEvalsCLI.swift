@@ -222,22 +222,49 @@ struct OsaurusEvalsCLI {
             // Resume: carry completed rows from the interrupted run's
             // sidecar/report; only errored + watchdog-blocked rows re-run.
             var resumeRows: [EvalCaseReport] = []
+            let runModelLabel = ModelOverride.describe(opts.model)
+            let judgeResolution = EvalJudgeModel.resolve(runModelId: runModelLabel)
+            let expectedResumeHeader = outPath.map { _ in
+                EvalPartialRunHeader(
+                    runModel: runModelLabel,
+                    catalogHash: RunEnvironment.catalogHash(
+                        forCaseIDs: suite.selectedCaseIDs(filter: opts.filter)
+                    ),
+                    judge: judgeResolution.isSelfJudge ? "self-judge" : judgeResolution.modelId,
+                    filter: opts.filter
+                )
+            }
             if opts.resume, let outPath {
-                let prior = EvalResume.loadPriorRows(outPath: outPath)
-                resumeRows = EvalResume.completedRows(prior)
-                if !resumeRows.isEmpty {
+                do {
+                    let loaded = try EvalResume.loadPriorRows(
+                        outPath: outPath,
+                        expectedHeader: expectedResumeHeader
+                    )
+                    resumeRows = EvalResume.completedRows(loaded.rows)
+                    if !resumeRows.isEmpty {
+                        FileHandle.standardError.write(
+                            Data(
+                                ("[evals] resume: carrying \(resumeRows.count) completed row(s) "
+                                    + "from \(outPath); re-running the rest\n").utf8
+                            )
+                        )
+                    }
+                } catch {
                     FileHandle.standardError.write(
                         Data(
-                            ("[evals] resume: carrying \(resumeRows.count) completed row(s) "
-                                + "from \(outPath); re-running the rest\n").utf8
+                            ("[evals] resume refused: \(error.localizedDescription)\n").utf8
                         )
                     )
+                    exit(2)
                 }
             }
 
             // Incremental sidecar: every completed row lands on disk as it
             // finishes, so a crash mid-suite is resumable with --resume.
             let partialSink = EvalPartialRowSink(outPath: outPath)
+            if resumeRows.isEmpty, let partialSink, let expectedResumeHeader {
+                partialSink.writeHeader(expectedResumeHeader)
+            }
 
             // Full-transcript forensics for failed/errored LLM rows
             // (--transcripts): one JSON per failing case in a sidecar dir

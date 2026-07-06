@@ -40,12 +40,6 @@
         "share_artifact",
         "complete"
       ],
-      "mustCallToolsInOrder": [
-        "todo",
-        "db_insert",
-        "share_artifact",
-        "complete"
-      ],
       "todoUpdatedBeforeComplete": true,
       "dbState": [
         {

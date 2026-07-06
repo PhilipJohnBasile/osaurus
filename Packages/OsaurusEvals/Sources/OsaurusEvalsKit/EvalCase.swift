@@ -183,6 +183,12 @@ public struct EvalCase: Sendable, Codable, Identifiable {
         /// `_updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),`
         /// `_deleted_at INTEGER);`
         public let seedSql: [String]?
+        /// Shell commands to run in the temp workspace after seed files land
+        /// and before the agent loop starts (e.g. `git init && git add .`).
+        public let seedWorkspaceCommands: [String]?
+        /// Pinned memory facts to insert for the eval agent before the loop.
+        /// Requires `fixtures.agentCapabilities.searchMemoryEnabled`.
+        public let seedMemory: [SeedMemoryFact]?
 
         public init(
             requirePlugins: [String]? = nil,
@@ -195,7 +201,9 @@ public struct EvalCase: Sendable, Codable, Identifiable {
             sandbox: SandboxFixture? = nil,
             seedAgents: [SeedAgent]? = nil,
             seedProviders: [SeedProvider]? = nil,
-            seedSql: [String]? = nil
+            seedSql: [String]? = nil,
+            seedWorkspaceCommands: [String]? = nil,
+            seedMemory: [SeedMemoryFact]? = nil
         ) {
             self.requirePlugins = requirePlugins
             self.seedMethods = seedMethods
@@ -208,6 +216,21 @@ public struct EvalCase: Sendable, Codable, Identifiable {
             self.seedAgents = seedAgents
             self.seedProviders = seedProviders
             self.seedSql = seedSql
+            self.seedWorkspaceCommands = seedWorkspaceCommands
+            self.seedMemory = seedMemory
+        }
+    }
+
+    /// One pinned fact to seed into the eval agent's memory store.
+    public struct SeedMemoryFact: Sendable, Codable {
+        public let content: String
+        public let salience: Double?
+        public let tags: [String]?
+
+        public init(content: String, salience: Double? = nil, tags: [String]? = nil) {
+            self.content = content
+            self.salience = salience
+            self.tags = tags
         }
     }
 

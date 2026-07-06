@@ -1,0 +1,41 @@
+{
+  "id": "tool_result_grounding.multi_result_synthesis",
+  "domain": "tool_result_grounding",
+  "label": "tool result grounding \u2022 multi result synthesis",
+  "query": "Use the tool result to answer.",
+  "fixtures": {},
+  "expect": {
+    "toolResultGrounding": {
+      "events": [
+        {
+          "kind": "toolCall",
+          "callId": "c1",
+          "tool": "file_read",
+          "arguments": "{\"path\":\"data.txt\"}"
+        },
+        {
+          "kind": "toolResult",
+          "callId": "c1",
+          "tool": "file_read",
+          "content": "part A: alpha; part B: beta\n"
+        },
+        {
+          "kind": "assistant",
+          "content": "Combined parts are alpha and beta."
+        }
+      ],
+      "assertions": [
+        {
+          "callId": "c1",
+          "answerMustContain": [
+            "alpha",
+            "beta"
+          ],
+          "resultMustContain": [
+            "alpha"
+          ]
+        }
+      ]
+    }
+  }
+}

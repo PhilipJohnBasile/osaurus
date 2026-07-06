@@ -130,17 +130,22 @@ public struct CapabilityClaimsJudgeAudit: Sendable, Codable {
     public let raw: String?
     /// Attempts consumed (1 = first try worked; >1 = retried a thrown call).
     public let attempts: Int
+    /// Set when every parse attempt failed (including the JSON-only repair
+    /// retry). nil on successful parses and thrown-call failures.
+    public let parseFailureReason: String?
 
     public init(
         verdicts: [CapabilityClaimsJudgement],
         judgeModelId: String,
         raw: String?,
-        attempts: Int
+        attempts: Int,
+        parseFailureReason: String? = nil
     ) {
         self.verdicts = verdicts
         self.judgeModelId = judgeModelId
         self.raw = raw
         self.attempts = attempts
+        self.parseFailureReason = parseFailureReason
     }
 }
 
@@ -602,10 +607,14 @@ public enum CapabilityClaimsEvaluator {
         let maxJudgeAttempts = 3
         var lastError: Error?
         var attemptsUsed = 0
+        var messages = request.messages
+        var parseRepairUsed = false
         for attempt in 1 ... maxJudgeAttempts {
             attemptsUsed = attempt
+            var attemptRequest = request
+            attemptRequest.messages = messages
             do {
-                let response = try await engine.completeChat(request: request)
+                let response = try await engine.completeChat(request: attemptRequest)
                 let raw = response.choices.first?.message.content ?? ""
                 if let parsed = parseVerdicts(raw, expected: conditions.count) {
                     return CapabilityClaimsJudgeAudit(
@@ -614,6 +623,21 @@ public enum CapabilityClaimsEvaluator {
                         raw: raw,
                         attempts: attempt
                     )
+                }
+                if !parseRepairUsed {
+                    parseRepairUsed = true
+                    messages.append(ChatMessage(role: "assistant", content: raw))
+                    messages.append(
+                        ChatMessage(
+                            role: "user",
+                            content:
+                                "Your reply was not valid JSON. Respond with ONLY a JSON object of this "
+                                + "exact shape, no prose or fences: "
+                                + "{\"verdicts\":[{\"pass\":true,\"reason\":\"<short>\"}, ...]} "
+                                + "— exactly \(conditions.count) verdict(s), in order."
+                        )
+                    )
+                    continue
                 }
                 return CapabilityClaimsJudgeAudit(
                     verdicts: conditions.map {
@@ -624,7 +648,8 @@ public enum CapabilityClaimsEvaluator {
                     },
                     judgeModelId: resolvedModel,
                     raw: raw,
-                    attempts: attempt
+                    attempts: attempt,
+                    parseFailureReason: "judge output not parseable after JSON repair retry"
                 )
             } catch {
                 lastError = error

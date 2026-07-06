@@ -18,8 +18,12 @@
       "mustNotCallTools": [
         "applescript"
       ],
-      "finalTextContains": [
-        "volume"
+      "toolUsageAudit": [
+        {
+          "tool": "mac_query",
+          "minCalls": 1,
+          "maxErrors": 0
+        }
       ]
     }
   }

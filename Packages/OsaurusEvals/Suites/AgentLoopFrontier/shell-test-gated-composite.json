@@ -1,0 +1,35 @@
+{
+  "id": "frontier.shell_test_gated_composite",
+  "domain": "agent_loop",
+  "label": "frontier hard \u2022 shell test gated composite",
+  "query": "Follow steps in plan.txt to produce answer.txt then run test.sh.",
+  "fixtures": {
+    "workspaceFiles": [
+      {
+        "path": "plan.txt",
+        "contents": "Write answer.txt containing exactly: VERIFIED-42\n"
+      },
+      {
+        "path": "test.sh",
+        "contents": "#!/bin/zsh\ngrep -q VERIFIED-42 answer.txt && echo ok\n"
+      }
+    ]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 20,
+      "commands": [
+        {
+          "command": "zsh test.sh",
+          "expectExitCode": 0
+        }
+      ],
+      "files": [
+        {
+          "path": "answer.txt",
+          "contains": "VERIFIED-42"
+        }
+      ]
+    }
+  }
+}

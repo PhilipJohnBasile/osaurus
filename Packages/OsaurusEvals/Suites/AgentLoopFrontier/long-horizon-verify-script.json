@@ -1,0 +1,36 @@
+{
+  "id": "frontier.long_horizon_verify_script",
+  "domain": "agent_loop",
+  "label": "frontier hard \u2022 long horizon verify script",
+  "query": "Run the full pipeline in runbook.md exactly, then execute verify.sh and confirm it prints ok.",
+  "fixtures": {
+    "workspaceFiles": [
+      {
+        "path": "runbook.md",
+        "contents": "1) run: zsh build.sh\n2) run: zsh verify.sh\n"
+      },
+      {
+        "path": "build.sh",
+        "contents": "#!/bin/zsh\necho built > artifact.txt\n"
+      },
+      {
+        "path": "verify.sh",
+        "contents": "#!/bin/zsh\ntest -f artifact.txt && echo ok\n"
+      }
+    ]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 20,
+      "mustCallTools": [
+        "shell_run"
+      ],
+      "commands": [
+        {
+          "command": "zsh verify.sh",
+          "expectExitCode": 0
+        }
+      ]
+    }
+  }
+}

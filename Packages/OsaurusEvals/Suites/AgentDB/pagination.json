@@ -2,14 +2,14 @@
   "id": "agentdb.pagination",
   "domain": "agent_loop",
   "label": "agentdb • page a result set with limit/offset",
-  "query": "Your agent database already has a table named numbers with a single INTEGER column n holding the values 1 through 25. Without loading the whole table at once, use db_query's limit and offset to page through it in ascending order and tell me the value of n in the 23rd row.",
-  "notes": "WS4 proof: exercises the new db_query limit/offset paging. seedSql stages the 25 rows before the run. argsMustContain pins that the model actually used offset rather than slurping the table; the answer (n=23) is only reachable by addressing the 23rd row.",
+  "query": "Your agent database already has a table named numbers with columns n (INTEGER) and token (TEXT) holding 25 rows in ascending n order. Without loading the whole table at once, use db_query's limit and offset to page through it in ascending order and tell me the token value in the 23rd row.",
+  "notes": "WS4 proof: exercises db_query limit/offset paging with a non-guessable answer token (not equal to the row number). seedSql stages the rows before the run. toolUsageAudit pins offset usage; dbState pins table integrity.",
   "fixtures": {
     "agentCapabilities": {
       "dbEnabled": true
     },
     "seedSql": [
-      "CREATE TABLE numbers (n INTEGER); INSERT INTO numbers (n) VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23),(24),(25);"
+      "CREATE TABLE numbers (n INTEGER, token TEXT); INSERT INTO numbers (n, token) VALUES (1,'tok-001'),(2,'tok-002'),(3,'tok-003'),(4,'tok-004'),(5,'tok-005'),(6,'tok-006'),(7,'tok-007'),(8,'tok-008'),(9,'tok-009'),(10,'tok-010'),(11,'tok-011'),(12,'tok-012'),(13,'tok-013'),(14,'tok-014'),(15,'tok-015'),(16,'tok-016'),(17,'tok-017'),(18,'tok-018'),(19,'tok-019'),(20,'tok-020'),(21,'tok-021'),(22,'tok-022'),(23,'PLUM-fox-8741'),(24,'tok-024'),(25,'tok-025');"
     ]
   },
   "expect": {
@@ -31,7 +31,7 @@
         }
       ],
       "finalTextContains": [
-        "23"
+        "PLUM-fox-8741"
       ]
     }
   }

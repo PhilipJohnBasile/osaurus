@@ -18,6 +18,7 @@ of contributors can open PRs in parallel without merge conflicts.
 # Export a strong judge key (or JUDGE_MODEL) so LLM-judged suites aren't
 # self-judged — otherwise those grades are weaker (and flagged as a caveat).
 export XAI_API_KEY=...            # optional but recommended
+export EVALS_REPEAT=3             # publication-grade repeat count (optimization loop default)
 MODEL=mlx-community/Qwen3-4B-4bit make evals-contribute
 ```
 

@@ -1,0 +1,29 @@
+{
+  "id": "frontier.cross_domain_schedule_artifact",
+  "domain": "agent_loop",
+  "label": "frontier hard \u2022 cross domain schedule artifact",
+  "query": "Summarize notes.txt into summary.txt, share it, then schedule a next run in 1 hour to recheck (selfScheduling allowed).",
+  "fixtures": {
+    "workspaceFiles": [
+      {
+        "path": "notes.txt",
+        "contents": "status: green\n"
+      }
+    ],
+    "agentCapabilities": {
+      "selfSchedulingEnabled": true
+    }
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 20,
+      "mustCallTools": [
+        "file_read",
+        "share_artifact"
+      ],
+      "artifactShared": {
+        "filenameContains": "summary"
+      }
+    }
+  }
+}

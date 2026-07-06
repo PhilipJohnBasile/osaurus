@@ -1593,17 +1593,26 @@ public enum EvalRunner {
         var verdicts: [CapabilityClaimsJudgement] = []
         var judgeAudit: EvalJudgeAudit?
         var judgeElapsed: Double?
+        let hasDeterministicChecks =
+            exp.mustCallTools != nil || exp.mustNotCallTools != nil || exp.loadSkillFirst != nil
+        var rubricSkippedForSelfJudge = false
+        var rubricSkipNote: String?
         if transcript.error == nil, !exp.rubric.isEmpty {
-            await ensureJudgeProviderRoutable(judgeModel)
-            let judgeStarted = Date()
-            let audit = await CapabilityClaimsEvaluator.judgeDetailed(
-                finalText: transcript.finalText,
-                conditions: exp.rubric,
-                model: judgeModel
-            )
-            judgeElapsed = Date().timeIntervalSince(judgeStarted) * 1000
-            verdicts = audit.verdicts
-            judgeAudit = EvalJudgeAudit.from(audit, rubric: exp.rubric, selfJudge: judgeModel == nil)
+            if let judgeModel = EvalJudgeModel.rubricJudgeModelId(runModelId: modelId) {
+                await ensureJudgeProviderRoutable(judgeModel)
+                let judgeStarted = Date()
+                let audit = await CapabilityClaimsEvaluator.judgeDetailed(
+                    finalText: transcript.finalText,
+                    conditions: exp.rubric,
+                    model: judgeModel
+                )
+                judgeElapsed = Date().timeIntervalSince(judgeStarted) * 1000
+                verdicts = audit.verdicts
+                judgeAudit = EvalJudgeAudit.from(audit, rubric: exp.rubric, selfJudge: false)
+            } else {
+                rubricSkippedForSelfJudge = true
+                rubricSkipNote = EvalJudgeModel.rubricSkippedNote(conditionCount: exp.rubric.count)
+            }
         }
         ccPhase("judge-done restore-begin")
 
@@ -1612,8 +1621,8 @@ public enum EvalRunner {
         ccPhase("restore-done")
 
         // Score.
-        var notes: [String] = []
-        var passed = true
+        var score = EvalAssertionRecorder()
+        if let rubricSkipNote { score.record(kind: "rubric", pass: true, detail: rubricSkipNote) }
 
         if let err = transcript.error {
             return persistClaimsTranscript(
@@ -1637,54 +1646,76 @@ public enum EvalRunner {
 
         if let must = exp.mustCallTools {
             let missing = must.filter { !calledSet.contains($0) }
-            if missing.isEmpty {
-                notes.append("mustCallTools ok: [\(must.joined(separator: ","))]")
-            } else {
-                passed = false
-                notes.append("mustCallTools missing: [\(missing.joined(separator: ","))]")
-            }
+            score.check(
+                missing.isEmpty,
+                pass: "mustCallTools ok: [\(must.joined(separator: ","))]",
+                fail: "mustCallTools missing: [\(missing.joined(separator: ","))]",
+                kind: "mustCallTools"
+            )
         }
         if let mustNot = exp.mustNotCallTools {
             let offenders = mustNot.filter { calledSet.contains($0) }
-            if offenders.isEmpty {
-                notes.append("mustNotCallTools ok")
-            } else {
-                passed = false
-                notes.append("mustNotCallTools called: [\(offenders.joined(separator: ","))]")
-            }
+            score.check(
+                offenders.isEmpty,
+                pass: "mustNotCallTools ok",
+                fail: "mustNotCallTools called: [\(offenders.joined(separator: ","))]",
+                kind: "mustNotCallTools"
+            )
         }
         if let matcher = exp.loadSkillFirst {
             let result = scoreSkillFirst(matcher: matcher, transcript: transcript)
-            passed = passed && result.passed
-            notes.append(result.note)
+            score.record(kind: "skillFirst", pass: result.passed, detail: result.note)
         }
 
         // LLM-judge rubric — every condition must pass.
         for (index, verdict) in verdicts.enumerated() {
             let condition = index < exp.rubric.count ? exp.rubric[index] : "(condition \(index))"
-            if verdict.pass {
-                notes.append("judge ok: \(condition)")
-            } else {
-                passed = false
-                notes.append("judge FAIL: \(condition) — \(verdict.reason)")
-            }
+            score.record(
+                kind: "judge",
+                pass: verdict.pass,
+                detail: verdict.pass
+                    ? "judge ok: \(condition)"
+                    : "judge FAIL: \(condition) — \(verdict.reason)"
+            )
         }
-        if !exp.rubric.isEmpty && verdicts.count != exp.rubric.count {
-            passed = false
-            notes.append(
-                "judge produced \(verdicts.count) verdicts for \(exp.rubric.count) conditions"
+        if !exp.rubric.isEmpty && !rubricSkippedForSelfJudge && verdicts.count != exp.rubric.count {
+            score.record(
+                kind: "judge",
+                pass: false,
+                detail: "judge produced \(verdicts.count) verdicts for \(exp.rubric.count) conditions"
             )
         }
 
         if transcript.hitIterationCap {
-            notes.append("warning: hit iteration cap (\(transcript.iterations)) — possible loop")
+            score.record(
+                kind: "warning",
+                pass: true,
+                detail: "warning: hit iteration cap (\(transcript.iterations)) — possible loop"
+            )
         }
-        notes.append(
-            "summary: toolCalls=[\(calledNames.joined(separator: ","))] "
+        score.record(
+            kind: "summary",
+            pass: true,
+            detail:
+                "summary: toolCalls=[\(calledNames.joined(separator: ","))] "
                 + "loaded=[\(transcript.loadedToolNames.joined(separator: ","))] "
                 + "iters=\(transcript.iterations)"
         )
-        notes.append("final: \(transcript.finalText.replacingOccurrences(of: "\n", with: " "))")
+        score.record(
+            kind: "final",
+            pass: true,
+            detail: "final: \(transcript.finalText.replacingOccurrences(of: "\n", with: " "))"
+        )
+
+        let notes = score.assertions.map(\.detail)
+        let passed = score.assertions.allSatisfy(\.pass)
+
+        let claimsOutcome: EvalCaseOutcome
+        if rubricSkippedForSelfJudge && !hasDeterministicChecks {
+            claimsOutcome = .skipped
+        } else {
+            claimsOutcome = passed ? .passed : .failed
+        }
 
         return persistClaimsTranscript(
             transcript,
@@ -1693,12 +1724,13 @@ public enum EvalRunner {
                 label: label,
                 domain: testCase.domain,
                 query: testCase.query,
-                outcome: passed ? .passed : .failed,
+                outcome: claimsOutcome,
                 notes: notes,
                 modelId: modelId,
                 latencyMs: elapsed,
                 judgeLatencyMs: judgeElapsed,
-                judge: judgeAudit
+                judge: judgeAudit,
+                assertions: score.assertions
             ),
             query: testCase.query
         )
@@ -1802,17 +1834,27 @@ public enum EvalRunner {
         var verdicts: [CapabilityClaimsJudgement] = []
         var judgeAudit: EvalJudgeAudit?
         var judgeElapsed: Double?
+        var rubricSkippedForSelfJudge = false
+        var rubricSkipNote: String?
+        let hasDeterministicChecks =
+            exp.mustCallTools != nil || exp.mustNotCallTools != nil
+            || !(exp.argsMustContain ?? []).isEmpty
         if transcript.error == nil, !rubric.isEmpty {
-            await ensureJudgeProviderRoutable(judgeModel)
-            let judgeStarted = Date()
-            let audit = await DefaultAgentConfigurationEvaluator.judgeDetailed(
-                finalText: transcript.finalText,
-                conditions: rubric,
-                model: judgeModel
-            )
-            judgeElapsed = Date().timeIntervalSince(judgeStarted) * 1000
-            verdicts = audit.verdicts
-            judgeAudit = EvalJudgeAudit.from(audit, rubric: rubric, selfJudge: judgeModel == nil)
+            if let judgeModel = EvalJudgeModel.rubricJudgeModelId(runModelId: modelId) {
+                await ensureJudgeProviderRoutable(judgeModel)
+                let judgeStarted = Date()
+                let audit = await DefaultAgentConfigurationEvaluator.judgeDetailed(
+                    finalText: transcript.finalText,
+                    conditions: rubric,
+                    model: judgeModel
+                )
+                judgeElapsed = Date().timeIntervalSince(judgeStarted) * 1000
+                verdicts = audit.verdicts
+                judgeAudit = EvalJudgeAudit.from(audit, rubric: rubric, selfJudge: false)
+            } else {
+                rubricSkippedForSelfJudge = true
+                rubricSkipNote = EvalJudgeModel.rubricSkippedNote(conditionCount: rubric.count)
+            }
         }
 
         if let err = transcript.error {
@@ -1832,33 +1874,23 @@ public enum EvalRunner {
             )
         }
 
-        var notes: [String] = []
-        var passed = true
+        var score = EvalAssertionRecorder()
+        if let rubricSkipNote { score.record(kind: "rubric", pass: true, detail: rubricSkipNote) }
 
         let calledNames = transcript.toolCalls.map(\.name)
         let calledSet = Set(calledNames)
 
         if let must = exp.mustCallTools {
             let missing = must.filter { !calledSet.contains($0) }
-            if missing.isEmpty {
-                notes.append("mustCallTools ok: [\(must.joined(separator: ","))]")
-            } else {
-                passed = false
-                notes.append("mustCallTools missing: [\(missing.joined(separator: ","))]")
-            }
+            score.check(
+                missing.isEmpty,
+                pass: "mustCallTools ok: [\(must.joined(separator: ","))]",
+                fail: "mustCallTools missing: [\(missing.joined(separator: ","))]",
+                kind: "mustCallTools"
+            )
         }
         if let mustNot = exp.mustNotCallTools {
             var offenders = mustNot.filter { calledSet.contains($0) }
-            // Compact-model exemption for `capabilities_load`: on a model that
-            // prefers a compact prompt (≤20B / small-window), the Default agent
-            // DEFERS its per-domain configure write tools from the turn-1 schema
-            // and lazy-loads the one it needs via `capabilities_load tool/<write>`
-            // — the intended prefill-reduction path, not an isolation breach. So
-            // drop `capabilities_load` from the offenders, but ONLY when the run
-            // model is actually compact AND every mid-session load was a configure
-            // WRITE. A load on a large model (writes load directly there), a load
-            // of any non-configure tool, or any `capabilities_discover` stays
-            // flagged.
             if offenders.contains("capabilities_load"),
                 ContextSizeResolver.resolve(modelId: modelId).prefersCompactPrompt,
                 !transcript.loadedToolNames.isEmpty,
@@ -1867,51 +1899,75 @@ public enum EvalRunner {
                 )
             {
                 offenders.removeAll { $0 == "capabilities_load" }
-                notes.append(
-                    "capabilities_load exempted (compact model loaded configure writes: "
+                score.record(
+                    kind: "mustNotCallTools",
+                    pass: true,
+                    detail:
+                        "capabilities_load exempted (compact model loaded configure writes: "
                         + "[\(transcript.loadedToolNames.joined(separator: ","))])"
                 )
             }
-            if offenders.isEmpty {
-                notes.append("mustNotCallTools ok")
-            } else {
-                passed = false
-                notes.append("mustNotCallTools called: [\(offenders.joined(separator: ","))]")
-            }
+            score.check(
+                offenders.isEmpty,
+                pass: "mustNotCallTools ok",
+                fail: "mustNotCallTools called: [\(offenders.joined(separator: ","))]",
+                kind: "mustNotCallTools"
+            )
         }
         if let matchers = exp.argsMustContain {
             for matcher in matchers {
                 let result = scoreArgsMustContain(matcher: matcher, transcript: transcript)
-                passed = passed && result.passed
-                notes.append(result.note)
+                score.record(kind: "argsMustContain", pass: result.passed, detail: result.note)
             }
         }
 
-        // LLM-judge rubric — every condition must pass.
         for (index, verdict) in verdicts.enumerated() {
             let condition = index < rubric.count ? rubric[index] : "(condition \(index))"
-            if verdict.pass {
-                notes.append("judge ok: \(condition)")
-            } else {
-                passed = false
-                notes.append("judge FAIL: \(condition) — \(verdict.reason)")
-            }
+            score.record(
+                kind: "judge",
+                pass: verdict.pass,
+                detail: verdict.pass
+                    ? "judge ok: \(condition)"
+                    : "judge FAIL: \(condition) — \(verdict.reason)"
+            )
         }
-        if !rubric.isEmpty && verdicts.count != rubric.count {
-            passed = false
-            notes.append(
-                "judge produced \(verdicts.count) verdicts for \(rubric.count) conditions"
+        if !rubric.isEmpty && !rubricSkippedForSelfJudge && verdicts.count != rubric.count {
+            score.record(
+                kind: "judge",
+                pass: false,
+                detail: "judge produced \(verdicts.count) verdicts for \(rubric.count) conditions"
             )
         }
 
         if transcript.hitIterationCap {
-            notes.append("warning: hit iteration cap (\(transcript.iterations)) — possible loop")
+            score.record(
+                kind: "warning",
+                pass: true,
+                detail: "warning: hit iteration cap (\(transcript.iterations)) — possible loop"
+            )
         }
-        notes.append(
-            "summary: toolCalls=[\(calledNames.joined(separator: ","))] "
+        score.record(
+            kind: "summary",
+            pass: true,
+            detail:
+                "summary: toolCalls=[\(calledNames.joined(separator: ","))] "
                 + "iters=\(transcript.iterations)"
         )
-        notes.append("final: \(transcript.finalText.replacingOccurrences(of: "\n", with: " "))")
+        score.record(
+            kind: "final",
+            pass: true,
+            detail: "final: \(transcript.finalText.replacingOccurrences(of: "\n", with: " "))"
+        )
+
+        let notes = score.assertions.map(\.detail)
+        let passed = score.assertions.allSatisfy(\.pass)
+
+        let defaultOutcome: EvalCaseOutcome
+        if rubricSkippedForSelfJudge && !hasDeterministicChecks {
+            defaultOutcome = .skipped
+        } else {
+            defaultOutcome = passed ? .passed : .failed
+        }
 
         return persistClaimsTranscript(
             transcript,
@@ -1920,7 +1976,7 @@ public enum EvalRunner {
                 label: label,
                 domain: testCase.domain,
                 query: testCase.query,
-                outcome: passed ? .passed : .failed,
+                outcome: defaultOutcome,
                 notes: notes,
                 modelId: modelId,
                 latencyMs: elapsed,
@@ -1929,7 +1985,8 @@ public enum EvalRunner {
                     decodeTokensPerSecond: transcript.decodeTokensPerSecond,
                     completionTokens: transcript.completionTokens
                 ),
-                judge: judgeAudit
+                judge: judgeAudit,
+                assertions: score.assertions
             ),
             query: testCase.query
         )
@@ -2102,9 +2159,10 @@ public enum EvalRunner {
             return (true, "skill-first vacuous: no gated tool called")
         }
         let skillLoadIndex = transcript.toolCalls.firstIndex { call in
-            call.name == "capabilities_load"
-                && (call.arguments.contains("skill/\(matcher.skill)")
-                    || call.arguments.contains(matcher.skill))
+            guard call.name == "capabilities_load" else { return false }
+            let args = call.arguments.lowercased()
+            let skill = matcher.skill.lowercased()
+            return args.contains("skill/\(skill)") || args.contains(skill)
         }
         guard let loadIndex = skillLoadIndex, loadIndex < gatedIndex else {
             return (

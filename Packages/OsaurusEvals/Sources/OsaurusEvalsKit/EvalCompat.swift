@@ -260,7 +260,9 @@ public enum EvalCompatBuilder {
             if let matrix = try? decoder.decode(EvalMatrix.self, from: data), !matrix.models.isEmpty {
                 matrices.append(matrix)
             } else if let report = try? decoder.decode(EvalReport.self, from: data), !report.cases.isEmpty {
-                matrices.append(EvalMatrixBuilder.build(from: [report]))
+                if let built = try? EvalMatrixBuilder.build(from: [report]) {
+                    matrices.append(built)
+                }
             }
         }
         if matrices.isEmpty { throw EvalMatrixError.noReports(dir.path) }
@@ -298,7 +300,12 @@ public enum EvalCompatBuilder {
             if let matrix = try? decoder.decode(EvalMatrix.self, from: data), !matrix.models.isEmpty {
                 columns = matrix.models
             } else if let report = try? decoder.decode(EvalReport.self, from: data), !report.cases.isEmpty {
-                columns = EvalMatrixBuilder.build(from: [report]).models
+                if let built = try? EvalMatrixBuilder.build(from: [report]) {
+                    columns = built.models
+                } else {
+                    problems.append("\(name): duplicate case ids in report for model `\(report.modelId)`")
+                    continue
+                }
             } else {
                 problems.append("\(name): not a decodable contribution (EvalMatrix or EvalReport)")
                 continue

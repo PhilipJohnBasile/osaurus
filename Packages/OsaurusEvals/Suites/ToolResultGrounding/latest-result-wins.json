@@ -1,5 +1,5 @@
 {
-  "id": "tool_result_grounding.latest-result-wins",
+  "id": "tool_result_grounding.latest_result_wins",
   "domain": "tool_result_grounding",
   "label": "tool result grounding: latest result beats stale earlier data",
   "query": "Read the status twice and report the current release gate.",
@@ -39,10 +39,18 @@
       "assertions": [
         {
           "callId": "read-latest",
-          "answerMustContain": ["amber-42"],
-          "answerMustNotContain": ["green-17"],
-          "resultMustContain": ["release gate: amber-42"],
-          "argumentsMustNotContain": ["amber-42"]
+          "answerMustContain": [
+            "amber-42"
+          ],
+          "answerMustNotContain": [
+            "green-17"
+          ],
+          "resultMustContain": [
+            "release gate: amber-42"
+          ],
+          "argumentsMustNotContain": [
+            "amber-42"
+          ]
         }
       ]
     }

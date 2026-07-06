@@ -58,6 +58,9 @@ public struct EvalMatrixModelColumn: Sendable, Codable, Equatable {
     /// the per-model flakiness signal. nil when no row carried trial data
     /// (single-execution runs), 0 when trials ran and all agreed.
     public let flakyCases: Int?
+    /// Mean per-case trial pass rate across rows that ran `--repeat N`.
+    /// nil when no row carried trial metadata.
+    public let meanTrialPassRate: Double?
     /// Run provenance for this model's reports (hardware, OS, build, judge,
     /// catalog hash). nil for older reports; carried through so the history
     /// log and the crowdsourced compatibility leaderboard stay attributable.
@@ -81,6 +84,7 @@ public struct EvalMatrixModelColumn: Sendable, Codable, Equatable {
         meanPromptTokensPerTask: Double? = nil,
         meanTotalTokensPerTask: Double? = nil,
         flakyCases: Int? = nil,
+        meanTrialPassRate: Double? = nil,
         environment: RunEnvironment? = nil
     ) {
         self.modelId = modelId
@@ -100,6 +104,7 @@ public struct EvalMatrixModelColumn: Sendable, Codable, Equatable {
         self.meanPromptTokensPerTask = meanPromptTokensPerTask
         self.meanTotalTokensPerTask = meanTotalTokensPerTask
         self.flakyCases = flakyCases
+        self.meanTrialPassRate = meanTrialPassRate
         self.environment = environment
     }
 }
@@ -240,6 +245,15 @@ public struct EvalMatrix: Sendable, Codable, Equatable {
                     .joined(separator: " | ") + " |"
             )
         }
+        if models.contains(where: { $0.meanTrialPassRate != nil }) {
+            lines.append(
+                "| trial pass rate (mean) | "
+                    + models.map {
+                        $0.meanTrialPassRate.map { String(format: "%.0f%%", $0 * 100) } ?? "—"
+                    }
+                    .joined(separator: " | ") + " |"
+            )
+        }
         let warnings = comparabilityWarnings
         if !warnings.isEmpty {
             lines.append("")
@@ -343,12 +357,21 @@ public enum EvalMatrixBuilder {
         return reports
     }
 
-    public static func build(from reports: [EvalReport], generatedAt: String? = nil) -> EvalMatrix {
+    public static func build(from reports: [EvalReport], generatedAt: String? = nil) throws -> EvalMatrix {
         // Merge every case for the same model across suite files.
         var byModel: [String: [EvalCaseReport]] = [:]
+        var seenCaseIds: [String: Set<String>] = [:]
         var startedByModel: [String: String] = [:]
         var envByModel: [String: RunEnvironment] = [:]
         for report in reports {
+            var seen = seenCaseIds[report.modelId, default: []]
+            for row in report.cases {
+                if seen.contains(row.id) {
+                    throw EvalMatrixError.duplicateCaseId(modelId: report.modelId, caseId: row.id)
+                }
+                seen.insert(row.id)
+            }
+            seenCaseIds[report.modelId] = seen
             byModel[report.modelId, default: []].append(contentsOf: report.cases)
             // Keep the earliest startedAt per model as the run stamp.
             if let existing = startedByModel[report.modelId] {
@@ -384,6 +407,7 @@ public enum EvalMatrixBuilder {
             let promptToks = telem.compactMap(\.promptTokensTotal)
             let totalToks = telem.compactMap(\.totalModelTokens)
             let trialed = cases.filter { $0.trials != nil }
+            let trialPassRates = cases.compactMap(\.passRate)
             let chatCases = cases.filter { !isSubsystemCase(id: $0.id, domain: $0.domain) }
             let subsystemCases = cases.filter { isSubsystemCase(id: $0.id, domain: $0.domain) }
             let chatTotals = scoreTotals(for: chatCases)
@@ -408,6 +432,8 @@ public enum EvalMatrixBuilder {
                 meanTotalTokensPerTask: totalToks.isEmpty
                     ? nil : Double(totalToks.reduce(0, +)) / Double(totalToks.count),
                 flakyCases: trialed.isEmpty ? nil : trialed.filter(\.isFlaky).count,
+                meanTrialPassRate: trialPassRates.isEmpty
+                    ? nil : trialPassRates.reduce(0, +) / Double(trialPassRates.count),
                 environment: envByModel[modelId]
             )
         }
@@ -428,11 +454,14 @@ public enum EvalMatrixBuilder {
 public enum EvalMatrixError: Error, LocalizedError, Equatable {
     case pathNotFound(String)
     case noReports(String)
+    case duplicateCaseId(modelId: String, caseId: String)
 
     public var errorDescription: String? {
         switch self {
         case .pathNotFound(let p): return "path does not exist: \(p)"
         case .noReports(let p): return "no decodable EvalReport JSONs found under: \(p)"
+        case .duplicateCaseId(let modelId, let caseId):
+            return "duplicate case id '\(caseId)' for model '\(modelId)' — refusing to build matrix"
         }
     }
 }

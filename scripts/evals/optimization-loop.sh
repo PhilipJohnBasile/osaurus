@@ -64,7 +64,8 @@ set -uo pipefail
 #   EVALS_REPEAT   run every case N times per suite (one process, model stays
 #                  warm) and report merged majority outcomes + passRate; flaky
 #                  rows are marked and the diff treats their flips as
-#                  non-blocking. Default 1 (single execution).
+#                  non-blocking. Default 3 for recorded/gating runs; pass
+#                  EVALS_REPEAT=1 for fast ad-hoc iteration.
 #   EVALS_TRANSCRIPTS "1" (default) → pass --transcripts so every failed or
 #                  errored LLM case keeps its FULL transcript (system prompt,
 #                  tool calls + result previews, final text) in a
@@ -170,13 +171,27 @@ OUT="${LOOP_OUT_ROOT}/${STAMP}"
 mkdir -p "${OUT}"
 log "Run dir: ${OUT}"
 
+# Recorded runs publish rubric grades — refuse when only self-judge would grade.
+if [[ "${RECORD}" == "1" ]]; then
+  if [[ -z "${JUDGE_MODEL:-}" ]] \
+     && [[ -z "${XAI_API_KEY:-}" ]] \
+     && [[ -z "${ANTHROPIC_API_KEY:-}" ]] \
+     && [[ -z "${OPENAI_API_KEY:-}" ]] \
+     && [[ -z "${GEMINI_API_KEY:-}" ]]; then
+    log "ERROR: RECORD=1 requires a strong judge (export JUDGE_MODEL or a *_API_KEY)."
+    exit 2
+  fi
+fi
+
 filter_args=()
 [[ -n "${FILTER}" ]] && filter_args=(--filter "${FILTER}")
 
 # Optional per-case repeat trials (EVALS_REPEAT=N → merged majority outcome +
-# passRate per case; the kit marks inconsistent rows flaky).
+# passRate per case; the kit marks inconsistent rows flaky). Default 3 so
+# matrix/diff rows carry trial evidence; use EVALS_REPEAT=1 for fast dev runs.
+EVALS_REPEAT="${EVALS_REPEAT:-3}"
 repeat_args=()
-[[ "${EVALS_REPEAT:-1}" != "1" ]] && repeat_args=(--repeat "${EVALS_REPEAT}")
+[[ "${EVALS_REPEAT}" != "1" ]] && repeat_args=(--repeat "${EVALS_REPEAT}")
 
 # Failed-case transcript sidecars (on by default: the run dir is git-ignored,
 # and a failed row without its transcript usually means a re-run).

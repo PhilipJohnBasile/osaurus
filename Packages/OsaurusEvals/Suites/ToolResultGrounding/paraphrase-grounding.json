@@ -1,0 +1,40 @@
+{
+  "id": "tool_result_grounding.paraphrase_grounding",
+  "domain": "tool_result_grounding",
+  "label": "tool result grounding \u2022 paraphrase grounding",
+  "query": "Use the tool result to answer.",
+  "fixtures": {},
+  "expect": {
+    "toolResultGrounding": {
+      "events": [
+        {
+          "kind": "toolCall",
+          "callId": "c1",
+          "tool": "file_read",
+          "arguments": "{\"path\":\"data.txt\"}"
+        },
+        {
+          "kind": "toolResult",
+          "callId": "c1",
+          "tool": "file_read",
+          "content": "release gate: amber-42\n"
+        },
+        {
+          "kind": "assistant",
+          "content": "The current release gate is amber-42."
+        }
+      ],
+      "assertions": [
+        {
+          "callId": "c1",
+          "answerMustContain": [
+            "amber-42"
+          ],
+          "resultMustContain": [
+            "amber-42"
+          ]
+        }
+      ]
+    }
+  }
+}

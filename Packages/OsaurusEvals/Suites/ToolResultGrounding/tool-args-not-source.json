@@ -1,0 +1,40 @@
+{
+  "id": "tool_result_grounding.tool_args_not_source",
+  "domain": "tool_result_grounding",
+  "label": "tool result grounding \u2022 tool args not source",
+  "query": "Use the tool result to answer.",
+  "fixtures": {},
+  "expect": {
+    "toolResultGrounding": {
+      "events": [
+        {
+          "kind": "toolCall",
+          "callId": "c1",
+          "tool": "file_read",
+          "arguments": "{\"path\":\"data.txt\"}"
+        },
+        {
+          "kind": "toolResult",
+          "callId": "c1",
+          "tool": "file_read",
+          "content": "computed total: 17\n"
+        },
+        {
+          "kind": "assistant",
+          "content": "The computed total is 17."
+        }
+      ],
+      "assertions": [
+        {
+          "callId": "c1",
+          "answerMustContain": [
+            "17"
+          ],
+          "resultMustContain": [
+            "computed total: 17"
+          ]
+        }
+      ]
+    }
+  }
+}

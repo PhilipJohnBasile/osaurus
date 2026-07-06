@@ -148,6 +148,38 @@ extension EvalRunner {
         }
         defer { try? FileManager.default.removeItem(at: workspace) }
 
+        if let commands = testCase.fixtures.seedWorkspaceCommands, !commands.isEmpty {
+            for command in commands {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+                process.arguments = ["-c", command]
+                process.currentDirectoryURL = workspace
+                do {
+                    try process.run()
+                } catch {
+                    return .terminal(
+                        id: testCase.id,
+                        label: label,
+                        domain: testCase.domain,
+                        outcome: .errored,
+                        notes: ["seedWorkspaceCommands failed to launch '\(command)': \(error.localizedDescription)"],
+                        modelId: modelId
+                    )
+                }
+                process.waitUntilExit()
+                if process.terminationStatus != 0 {
+                    return .terminal(
+                        id: testCase.id,
+                        label: label,
+                        domain: testCase.domain,
+                        outcome: .errored,
+                        notes: ["seedWorkspaceCommands exited \(process.terminationStatus): \(command)"],
+                        modelId: modelId
+                    )
+                }
+            }
+        }
+
         // Per-case capability fixtures: register a TEMPORARY agent whose
         // settings carry the requested flags so prompt gating / tool
         // resolution see them exactly as production would. The agent (and
@@ -298,6 +330,61 @@ extension EvalRunner {
             }
         }
 
+        if let memorySeeds = testCase.fixtures.seedMemory, !memorySeeds.isEmpty {
+            guard let seedAgentId = evalAgentId else {
+                return .terminal(
+                    id: testCase.id,
+                    label: label,
+                    domain: testCase.domain,
+                    outcome: .errored,
+                    notes: ["seedMemory requires fixtures.agentCapabilities.searchMemoryEnabled"],
+                    modelId: modelId
+                )
+            }
+            guard testCase.fixtures.agentCapabilities?.searchMemoryEnabled == true else {
+                return .terminal(
+                    id: testCase.id,
+                    label: label,
+                    domain: testCase.domain,
+                    outcome: .errored,
+                    notes: ["seedMemory requires fixtures.agentCapabilities.searchMemoryEnabled=true"],
+                    modelId: modelId
+                )
+            }
+            guard await MemoryDatabase.waitForSharedOpen(timeoutSeconds: 2) else {
+                return .terminal(
+                    id: testCase.id,
+                    label: label,
+                    domain: testCase.domain,
+                    outcome: .errored,
+                    notes: ["seedMemory failed: memory database unavailable"],
+                    modelId: modelId
+                )
+            }
+            let agentIdString = seedAgentId.uuidString
+            do {
+                for seed in memorySeeds {
+                    let fact = PinnedFact(
+                        agentId: agentIdString,
+                        content: seed.content,
+                        salience: seed.salience ?? 0.9,
+                        tagsCSV: seed.tags?.joined(separator: ",")
+                    )
+                    try MemoryDatabase.shared.insertPinnedFact(fact)
+                    await MemorySearchService.shared.indexPinnedFact(fact)
+                }
+            } catch {
+                return .terminal(
+                    id: testCase.id,
+                    label: label,
+                    domain: testCase.domain,
+                    outcome: .errored,
+                    notes: ["seedMemory failed: \(error.localizedDescription)"],
+                    modelId: modelId
+                )
+            }
+        }
+
         let judgeModel = EvalJudgeModel.resolveAndWarnOnce(runModelId: modelId)
         let started = Date()
         let transcript = await AgentLoopEvaluator.run(
@@ -313,21 +400,24 @@ extension EvalRunner {
         var verdicts: [CapabilityClaimsJudgement] = []
         var judgeAudit: EvalJudgeAudit?
         var judgeElapsed: Double?
+        var rubricSkippedForSelfJudge = false
+        var rubricSkipNote: String?
         if transcript.error == nil, let rubric = exp.rubric, !rubric.isEmpty {
-            // Self-heal the ephemeral judge provider before grading — a
-            // provider-mutating suite earlier in the same process (e.g.
-            // `default_agent`'s `osaurus_provider`) can have evicted it,
-            // which would otherwise fail every rubric row spuriously.
-            await ensureJudgeProviderRoutable(judgeModel)
-            let judgeStarted = Date()
-            let audit = await CapabilityClaimsEvaluator.judgeDetailed(
-                finalText: transcript.finalText,
-                conditions: rubric,
-                model: judgeModel
-            )
-            judgeElapsed = Date().timeIntervalSince(judgeStarted) * 1000
-            verdicts = audit.verdicts
-            judgeAudit = EvalJudgeAudit.from(audit, rubric: rubric, selfJudge: judgeModel == nil)
+            if let judgeModel = EvalJudgeModel.rubricJudgeModelId(runModelId: modelId) {
+                await ensureJudgeProviderRoutable(judgeModel)
+                let judgeStarted = Date()
+                let audit = await CapabilityClaimsEvaluator.judgeDetailed(
+                    finalText: transcript.finalText,
+                    conditions: rubric,
+                    model: judgeModel
+                )
+                judgeElapsed = Date().timeIntervalSince(judgeStarted) * 1000
+                verdicts = audit.verdicts
+                judgeAudit = EvalJudgeAudit.from(audit, rubric: rubric, selfJudge: false)
+            } else {
+                rubricSkippedForSelfJudge = true
+                rubricSkipNote = EvalJudgeModel.rubricSkippedNote(conditionCount: rubric.count)
+            }
         }
         let elapsed = Date().timeIntervalSince(started) * 1000
         // Report loop-only latency (model steps + tool execution), not
@@ -361,6 +451,7 @@ extension EvalRunner {
         }
 
         var score = AgentLoopScore()
+        if let rubricSkipNote { score.notes.append(rubricSkipNote) }
 
         // 1+2. Exit shape + transcript assertions.
         scoreTranscriptAssertions(exp, transcript: transcript, into: &score)
@@ -466,7 +557,7 @@ extension EvalRunner {
                 fail: "judge FAIL: \(condition) — \(verdict.reason)"
             )
         }
-        if !rubric.isEmpty && verdicts.count != rubric.count {
+        if !rubric.isEmpty && !rubricSkippedForSelfJudge && verdicts.count != rubric.count {
             score.record(
                 false,
                 note: "judge produced \(verdicts.count) verdicts for \(rubric.count) conditions"
@@ -494,6 +585,13 @@ extension EvalRunner {
             )
         }
 
+        let loopOutcome: EvalCaseOutcome
+        if rubricSkippedForSelfJudge && !Self.hasDeterministicChecks(exp) {
+            loopOutcome = .skipped
+        } else {
+            loopOutcome = score.passed ? .passed : .failed
+        }
+
         return persistAgentLoopTranscript(
             transcript,
             for: EvalCaseReport(
@@ -501,14 +599,15 @@ extension EvalRunner {
                 label: label,
                 domain: testCase.domain,
                 query: testCase.query,
-                outcome: score.passed ? .passed : .failed,
+                outcome: loopOutcome,
                 notes: score.notes,
                 modelId: modelId,
                 latencyMs: latency,
                 judgeLatencyMs: judgeElapsed,
                 toolUsage: toolUsageStats(transcript),
                 telemetry: telemetry(from: transcript),
-                judge: judgeAudit
+                judge: judgeAudit,
+                assertions: score.assertions
             ),
             query: testCase.query
         )
@@ -830,14 +929,25 @@ extension EvalRunner {
     private struct AgentLoopScore {
         var passed = true
         var notes: [String] = []
+        var assertions: [EvalCaseAssertion] = []
+        private var assertionSeq = 0
 
-        mutating func record(_ ok: Bool, note: String) {
+        mutating func record(_ ok: Bool, note: String, kind: String = "check") {
+            assertionSeq += 1
+            assertions.append(
+                EvalCaseAssertion(
+                    id: "\(kind)-\(assertionSeq)",
+                    kind: kind,
+                    pass: ok,
+                    detail: note
+                )
+            )
             passed = passed && ok
             notes.append(note)
         }
 
-        mutating func check(_ ok: Bool, pass: String, fail: String) {
-            record(ok, note: ok ? pass : fail)
+        mutating func check(_ ok: Bool, pass: String, fail: String, kind: String = "check") {
+            record(ok, note: ok ? pass : fail, kind: kind)
         }
     }
 
@@ -1292,5 +1402,19 @@ extension EvalRunner {
             false,
             "command '\(assertion.command)' exited \(exitCode), expected \(assertion.expectExitCode)"
         )
+    }
+
+    /// True when the case carries scored checks beyond an optional rubric.
+    static func hasDeterministicChecks(_ exp: EvalCase.AgentLoopExpectations) -> Bool {
+        exp.files != nil || exp.commands != nil || exp.dbState != nil || exp.sandboxFiles != nil
+            || exp.mustCallTools != nil || exp.mustNotCallTools != nil || exp.mustCallAnyTools != nil
+            || exp.mustCallToolsInOrder != nil || exp.maxToolCalls != nil
+            || exp.noDuplicateExecutedCalls == true || exp.minDedupedReplays != nil
+            || exp.noToolErrors == true || exp.noticesContain != nil || exp.expectCompaction == true
+            || exp.allowedExits != nil || exp.contextWindowOverride != nil
+            || exp.stopOnToolRejection != nil || exp.todoUpdatedBeforeComplete == true
+            || exp.finalTextContains != nil || exp.finalTextMustNotContain != nil
+            || exp.artifactShared != nil || !(exp.toolUsageAudit ?? []).isEmpty
+            || exp.scoredMaxPromptTokens != nil || exp.scoredMaxTotalTokens != nil
     }
 }

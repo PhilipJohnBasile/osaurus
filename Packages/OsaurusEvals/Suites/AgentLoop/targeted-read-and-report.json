@@ -16,6 +16,14 @@
       "maxIterations": 6,
       "mustCallTools": ["file_read"],
       "noToolErrors": true,
+      "toolUsageAudit": [
+        {
+          "tool": "file_read",
+          "argsMustContain": "beta.txt",
+          "minCalls": 1,
+          "maxErrors": 0
+        }
+      ],
       "finalTextContains": ["green"]
     }
   }

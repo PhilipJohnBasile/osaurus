@@ -115,6 +115,32 @@ public enum EvalJudgeModel {
         return resolution.modelId
     }
 
+    /// Whether a strong (non-self) judge resolved for rubric grading.
+    public static func hasStrongJudge(
+        runModelId: String?,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Bool {
+        !resolve(runModelId: runModelId, environment: environment).isSelfJudge
+    }
+
+    /// Human-facing note when rubric grading is skipped because only a
+    /// self-judge would have graded.
+    public static func rubricSkippedNote(conditionCount: Int) -> String {
+        "rubric: skipped (\(conditionCount) condition(s); no strong judge — set "
+            + "JUDGE_MODEL or a *_API_KEY to grade)"
+    }
+
+    /// Returns the judge model id when a strong judge resolves; nil when
+    /// rubric grading should be skipped (self-judge policy — matches the
+    /// AppleScript / screen_context lanes).
+    public static func rubricJudgeModelId(
+        runModelId: String?,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String? {
+        let resolution = resolve(runModelId: runModelId, environment: environment)
+        return resolution.isSelfJudge ? nil : resolution.modelId
+    }
+
     // MARK: - One-shot warning dedup
 
     private static let warnLock = NSLock()

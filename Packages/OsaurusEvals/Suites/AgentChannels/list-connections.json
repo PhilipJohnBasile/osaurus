@@ -1,0 +1,15 @@
+{
+  "id": "agent_channels.list_connections",
+  "domain": "agent_loop",
+  "label": "agent channels • list configured connections",
+  "query": "Use agent_channel_list_connections and tell me how many custom (non-native) connections are configured. If none, say none.",
+  "notes": "Behavioral smoke for the agent_channel_* surface. Uses the live channel configuration store (isolated when OSAURUS_EVALS_ISOLATE_CONFIG=1). Off-CI.",
+  "fixtures": {},
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 6,
+      "mustCallTools": ["agent_channel_list_connections"],
+      "noToolErrors": true
+    }
+  }
+}

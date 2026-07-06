@@ -1,0 +1,37 @@
+{
+  "id": "frontier.efficiency_multi_read",
+  "domain": "agent_loop",
+  "label": "frontier hard \u2022 efficiency multi read",
+  "query": "Read part1.txt and part2.txt and report both codes separated by a space.",
+  "fixtures": {
+    "workspaceFiles": [
+      {
+        "path": "part1.txt",
+        "contents": "code=RAVEN\n"
+      },
+      {
+        "path": "part2.txt",
+        "contents": "code=OTTER\n"
+      }
+    ]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 20,
+      "mustCallTools": [
+        "file_read"
+      ],
+      "toolUsageAudit": [
+        {
+          "tool": "file_read",
+          "minCalls": 2
+        }
+      ],
+      "finalTextContains": [
+        "RAVEN",
+        "OTTER"
+      ],
+      "scoredMaxPromptTokens": 80000
+    }
+  }
+}

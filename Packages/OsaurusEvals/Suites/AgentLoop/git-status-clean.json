@@ -1,0 +1,31 @@
+{
+  "id": "agent_loop.git_status_clean",
+  "domain": "agent_loop",
+  "label": "agent loop \u2022 git status clean",
+  "query": "Run git_status and tell me whether the working tree is clean.",
+  "fixtures": {
+    "workspaceFiles": [
+      {
+        "path": "readme.md",
+        "contents": "hello\n"
+      }
+    ],
+    "seedWorkspaceCommands": [
+      "git init",
+      "git add .",
+      "git commit -m init"
+    ]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 10,
+      "mustCallTools": [
+        "git_status"
+      ],
+      "finalTextContains": [
+        "clean",
+        "nothing to commit"
+      ]
+    }
+  }
+}

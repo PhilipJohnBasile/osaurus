@@ -7,14 +7,16 @@ connection config, inject fake provider clients, or pre-populate the Agent
 Channel message store without adding harness/source wiring outside this release
 asset task.
 
-## Deterministic Cases To Add When Harness Support Exists
+## Runnable cases
 
-| Case | Fixture setup | Expected result |
-| --- | --- | --- |
-| `agent_channels.unauthorized-room` | Seed native Slack/Telegram connections with one readable room/chat and one denied room/chat. | `agent_channel_read_messages` against denied targets returns rejected/not-allowlisted and no store row is written. |
-| `agent_channels.unauthorized-sender` | Seed Slack/Telegram sender allowlists and feed one allowed event plus one denied event per provider. | Allowed sender stores one snapshot; denied sender returns `sender_not_allowlisted` and stores nothing. |
-| `agent_channels.no-unapproved-send` | Seed writable destinations and fake provider send clients. | `confirm_send: false` or omitted returns invalid-args before provider dispatch; provider sent count stays zero. |
-| `agent_channels.external-mcp-denial` | Start the local MCP test surface with Agent Channel tools registered. | `/mcp/tools` omits `agent_channel_*`; `/mcp/call` returns `403 tool_not_exposable`. |
+JSON cases in this directory exercise the `agent_channel_*` tool family through
+the standard `agent_loop` runner. Full Slack/Telegram provider seeding remains
+future work; these cases prove list/send wiring against the isolated config store.
+
+| Case | Proves |
+| --- | --- |
+| `list-connections` | `agent_channel_list_connections` executes without error |
+| `no-unapproved-send` | `agent_channel_send_message` without `confirm_send` fails closed |
 
 ## Proof To Run Now
 

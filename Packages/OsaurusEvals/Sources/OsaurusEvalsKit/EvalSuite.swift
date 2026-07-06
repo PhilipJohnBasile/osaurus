@@ -59,6 +59,12 @@ public struct EvalSuite: Sendable {
         }
         return EvalSuite(directory: directory, cases: cases, decodeFailures: failures)
     }
+
+    /// Case ids that will run after applying `filter` (same rule as the runner).
+    public func selectedCaseIDs(filter: String?) -> [String] {
+        guard let filter else { return cases.map(\.id) }
+        return cases.filter { $0.id.contains(filter) }.map(\.id)
+    }
 }
 
 public enum EvalSuiteError: Error, LocalizedError {

@@ -1,0 +1,29 @@
+{
+  "id": "memory.recall_pinned_fact",
+  "domain": "agent_loop",
+  "label": "memory \u2022 recall pinned fact",
+  "query": "What is the user's preferred meeting time? Use search_memory before answering.",
+  "fixtures": {
+    "agentCapabilities": {
+      "searchMemoryEnabled": true
+    },
+    "seedMemory": [
+      {
+        "content": "Preferred meeting time is 09:30 Pacific.",
+        "salience": 0.95
+      }
+    ]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 8,
+      "mustCallTools": [
+        "search_memory"
+      ],
+      "finalTextContains": [
+        "09:30"
+      ],
+      "finalTextMustNotContain": []
+    }
+  }
+}

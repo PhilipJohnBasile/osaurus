@@ -199,19 +199,24 @@ public struct EvalJudgeAudit: Sendable, Codable {
     /// Retry-ladder attempts the judge call consumed (>1 ⇒ a thrown call
     /// was retried — the judge-stability signal).
     public let attempts: Int?
+    /// Present when the judge returned a body but parsing failed even
+    /// after the JSON-only repair retry.
+    public let parseFailureReason: String?
 
     public init(
         modelId: String,
         selfJudge: Bool,
         verdicts: [Verdict],
         raw: String?,
-        attempts: Int? = nil
+        attempts: Int? = nil,
+        parseFailureReason: String? = nil
     ) {
         self.modelId = modelId
         self.selfJudge = selfJudge
         self.verdicts = verdicts
         self.raw = raw
         self.attempts = attempts
+        self.parseFailureReason = parseFailureReason
     }
 
     /// Cap on persisted raw judge output. Temperature-0 judge replies are
@@ -241,7 +246,8 @@ public struct EvalJudgeAudit: Sendable, Codable {
             selfJudge: selfJudge,
             verdicts: verdicts,
             raw: cappedRaw,
-            attempts: audit.attempts
+            attempts: audit.attempts,
+            parseFailureReason: audit.parseFailureReason
         )
     }
 }
@@ -261,6 +267,23 @@ public struct ToolUsageStat: Sendable, Codable {
         self.calls = calls
         self.errors = errors
         self.deduped = deduped
+    }
+}
+
+/// One scored assertion for a case row — structured complement to the
+/// human-readable `notes` array. Enables diff to distinguish regressions
+/// that flip different sub-assertions.
+public struct EvalCaseAssertion: Sendable, Codable, Equatable {
+    public let id: String
+    public let kind: String
+    public let pass: Bool
+    public let detail: String
+
+    public init(id: String, kind: String, pass: Bool, detail: String) {
+        self.id = id
+        self.kind = kind
+        self.pass = pass
+        self.detail = detail
     }
 }
 
@@ -314,6 +337,9 @@ public struct EvalCaseReport: Sendable, Codable {
     /// rubric (judge model, per-condition verdicts, raw reply). nil for
     /// rows with no rubric or domains that don't judge.
     public let judge: EvalJudgeAudit?
+    /// Structured pass/fail records for each scored assertion. nil when the
+    /// runner did not emit structured assertions (older reports / domains).
+    public let assertions: [EvalCaseAssertion]?
 
     /// Pass fraction across trials — nil for single-execution rows.
     public var passRate: Double? {
@@ -343,7 +369,8 @@ public struct EvalCaseReport: Sendable, Codable {
         telemetry: EvalCaseTelemetry? = nil,
         trials: Int? = nil,
         trialsPassed: Int? = nil,
-        judge: EvalJudgeAudit? = nil
+        judge: EvalJudgeAudit? = nil,
+        assertions: [EvalCaseAssertion]? = nil
     ) {
         self.id = id
         self.label = label
@@ -360,6 +387,7 @@ public struct EvalCaseReport: Sendable, Codable {
         self.trials = trials
         self.trialsPassed = trialsPassed
         self.judge = judge
+        self.assertions = assertions?.isEmpty == true ? nil : assertions
     }
 
     /// Build an early-exit row (decode failure, unknown domain, missing
@@ -428,6 +456,7 @@ public struct EvalCaseReport: Sendable, Codable {
         let judgeLatencies = rows.compactMap(\.judgeLatencyMs)
         let meanJudgeLatency =
             judgeLatencies.isEmpty ? nil : judgeLatencies.reduce(0, +) / Double(judgeLatencies.count)
+        let mergedTelemetry = medianTelemetry(from: rows.compactMap(\.telemetry))
 
         var notes: [String] = []
         var summary = "trials: \(passedCount)/\(rows.count) passed"
@@ -453,10 +482,55 @@ public struct EvalCaseReport: Sendable, Codable {
             latencyMs: meanLatency,
             judgeLatencyMs: meanJudgeLatency,
             toolUsage: representative.toolUsage,
-            telemetry: representative.telemetry,
+            telemetry: mergedTelemetry ?? representative.telemetry,
             trials: rows.count,
             trialsPassed: passedCount,
-            judge: representative.judge
+            judge: representative.judge,
+            assertions: representative.assertions
+        )
+    }
+
+    /// Median telemetry across trial rows — fairer than a single
+    /// representative trial when `--repeat` trials disagree on perf.
+    private static func medianTelemetry(from samples: [EvalCaseTelemetry]) -> EvalCaseTelemetry? {
+        guard !samples.isEmpty else { return nil }
+        func median(_ values: [Double]) -> Double? {
+            guard !values.isEmpty else { return nil }
+            let sorted = values.sorted()
+            let mid = sorted.count / 2
+            if sorted.count.isMultiple(of: 2) {
+                return (sorted[mid - 1] + sorted[mid]) / 2
+            }
+            return sorted[mid]
+        }
+        func medianInt(_ values: [Int]) -> Int? {
+            guard !values.isEmpty else { return nil }
+            let sorted = values.sorted()
+            let mid = sorted.count / 2
+            if sorted.count.isMultiple(of: 2) {
+                return (sorted[mid - 1] + sorted[mid]) / 2
+            }
+            return sorted[mid]
+        }
+        return EvalCaseTelemetry(
+            decodeTokensPerSecond: median(samples.compactMap(\.decodeTokensPerSecond)),
+            prefillTokensPerSecond: median(samples.compactMap(\.prefillTokensPerSecond)),
+            ttftMs: median(samples.compactMap(\.ttftMs)),
+            completionTokens: medianInt(samples.compactMap(\.completionTokens)),
+            promptTokensTotal: medianInt(samples.compactMap(\.promptTokensTotal)),
+            peakContextTokens: medianInt(samples.compactMap(\.peakContextTokens)),
+            totalModelTokens: medianInt(samples.compactMap(\.totalModelTokens)),
+            modelSteps: medianInt(samples.compactMap(\.modelSteps)),
+            peakPhysFootprintMb: median(samples.compactMap(\.peakPhysFootprintMb)),
+            meanCpuPercent: median(samples.compactMap(\.meanCpuPercent)),
+            peakCpuPercent: median(samples.compactMap(\.peakCpuPercent)),
+            kvPrefixHitsDelta: medianInt(samples.compactMap(\.kvPrefixHitsDelta)),
+            kvPrefixMissesDelta: medianInt(samples.compactMap(\.kvPrefixMissesDelta)),
+            ssmCompanionHitsDelta: medianInt(samples.compactMap(\.ssmCompanionHitsDelta)),
+            ssmCompanionReDerivesDelta: medianInt(samples.compactMap(\.ssmCompanionReDerivesDelta)),
+            diskL2HitsDelta: medianInt(samples.compactMap(\.diskL2HitsDelta)),
+            diskL2MissesDelta: medianInt(samples.compactMap(\.diskL2MissesDelta)),
+            diskL2StoresDelta: medianInt(samples.compactMap(\.diskL2StoresDelta))
         )
     }
 }

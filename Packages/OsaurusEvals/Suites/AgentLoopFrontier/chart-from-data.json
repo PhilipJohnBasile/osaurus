@@ -23,13 +23,19 @@
       ],
       "toolUsageAudit": [
         {
+          "tool": "file_read",
+          "argsMustContain": "metrics.csv",
+          "minCalls": 1,
+          "maxErrors": 0
+        },
+        {
           "tool": "render_chart",
           "minCalls": 1,
           "maxErrors": 0
         }
       ],
       "finalTextContains": [
-        "Apr"
+        "3100"
       ]
     }
   }

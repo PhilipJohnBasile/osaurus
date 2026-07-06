@@ -1,0 +1,40 @@
+{
+  "id": "tool_result_grounding.truncated_result_grounded",
+  "domain": "tool_result_grounding",
+  "label": "tool result grounding \u2022 truncated result grounded",
+  "query": "Use the tool result to answer.",
+  "fixtures": {},
+  "expect": {
+    "toolResultGrounding": {
+      "events": [
+        {
+          "kind": "toolCall",
+          "callId": "c1",
+          "tool": "file_read",
+          "arguments": "{\"path\":\"data.txt\"}"
+        },
+        {
+          "kind": "toolResult",
+          "callId": "c1",
+          "tool": "file_read",
+          "content": "first line: alpha\nsecond line: beta\n...[truncated]\n"
+        },
+        {
+          "kind": "assistant",
+          "content": "The payload starts with first line: alpha."
+        }
+      ],
+      "assertions": [
+        {
+          "callId": "c1",
+          "answerMustContain": [
+            "first line: alpha"
+          ],
+          "resultMustContain": [
+            "first"
+          ]
+        }
+      ]
+    }
+  }
+}

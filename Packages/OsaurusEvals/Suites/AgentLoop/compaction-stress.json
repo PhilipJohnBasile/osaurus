@@ -33,8 +33,15 @@
       "maxIterations": 10,
       "contextWindowOverride": 24000,
       "expectCompaction": true,
+      "toolUsageAudit": [
+        {
+          "tool": "file_read",
+          "minCalls": 5,
+          "maxErrors": 0
+        }
+      ],
       "finalTextContains": [
-        "log4"
+        "disk write failed on volume /data"
       ]
     }
   }

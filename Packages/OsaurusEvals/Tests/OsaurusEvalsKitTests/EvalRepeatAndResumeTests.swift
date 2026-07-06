@@ -119,18 +119,20 @@ struct EvalRepeatAndResumeTests {
         )
     }
 
-    @Test func hardFlipWithoutTrialsBlocks() {
-        let summary = EvalDiff.compare(
+    @Test func hardFlipWithoutTrialsIsLowConfidence() throws {
+        let summary = try EvalDiff.compare(
             baseline: reportSet(label: "base", rows: [row(outcome: .passed)]),
             current: reportSet(label: "cur", rows: [row(outcome: .failed)])
         )
-        #expect(summary.regressions.count == 1)
+        #expect(summary.regressions.isEmpty)
+        #expect(summary.lowConfidenceRegressions.count == 1)
         #expect(summary.suspectedFlaky.isEmpty)
-        #expect(summary.hasBlockingRegressions)
+        #expect(!summary.hasBlockingRegressions)
+        #expect(summary.formatConsole().contains("low-confidence regressions"))
     }
 
-    @Test func flipWithFlakyCurrentTrialsIsSuspectedFlaky() {
-        let summary = EvalDiff.compare(
+    @Test func flipWithFlakyCurrentTrialsIsSuspectedFlaky() throws {
+        let summary = try EvalDiff.compare(
             baseline: reportSet(label: "base", rows: [row(outcome: .passed)]),
             current: reportSet(
                 label: "cur",
@@ -144,8 +146,8 @@ struct EvalRepeatAndResumeTests {
         #expect(summary.formatMarkdown().contains("Suspected Flaky"))
     }
 
-    @Test func flipWithFlakyBaselineTrialsIsSuspectedFlaky() {
-        let summary = EvalDiff.compare(
+    @Test func flipWithFlakyBaselineTrialsIsSuspectedFlaky() throws {
+        let summary = try EvalDiff.compare(
             baseline: reportSet(
                 label: "base",
                 rows: [row(outcome: .passed, trials: 3, trialsPassed: 2)]
@@ -156,8 +158,8 @@ struct EvalRepeatAndResumeTests {
         #expect(summary.suspectedFlaky.count == 1)
     }
 
-    @Test func unanimousFailAcrossTrialsStaysBlocking() {
-        let summary = EvalDiff.compare(
+    @Test func unanimousFailAcrossTrialsStaysBlocking() throws {
+        let summary = try EvalDiff.compare(
             baseline: reportSet(label: "base", rows: [row(outcome: .passed, trials: 3, trialsPassed: 3)]),
             current: reportSet(label: "cur", rows: [row(outcome: .failed, trials: 3, trialsPassed: 0)])
         )
@@ -168,7 +170,7 @@ struct EvalRepeatAndResumeTests {
 
     // MARK: - matrix flake rollup
 
-    @Test func matrixCountsFlakyCases() {
+    @Test func matrixCountsFlakyCases() throws {
         let report = EvalReport(
             modelId: "m",
             startedAt: "2026-06-19T00:00:00Z",
@@ -178,11 +180,11 @@ struct EvalRepeatAndResumeTests {
                 row(id: "c", outcome: .failed, trials: 3, trialsPassed: 1),
             ]
         )
-        let matrix = EvalMatrixBuilder.build(from: [report])
+        let matrix = try EvalMatrixBuilder.build(from: [report])
         #expect(matrix.models.count == 1)
         #expect(matrix.models[0].flakyCases == 2)
 
-        let noTrials = EvalMatrixBuilder.build(from: [
+        let noTrials = try EvalMatrixBuilder.build(from: [
             EvalReport(
                 modelId: "m",
                 startedAt: "2026-06-19T00:00:00Z",
@@ -255,5 +257,35 @@ struct EvalRepeatAndResumeTests {
 
         let prior = EvalResume.loadPriorRows(outPath: outURL.path)
         #expect(prior.map(\.id) == ["a", "b"])
+    }
+
+    @Test func resumeHeaderMismatchRefused() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("osaurus-resume-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let outPath = dir.appendingPathComponent("report.json").path
+
+        let sink = try #require(EvalPartialRowSink(outPath: outPath))
+        sink.writeHeader(
+            EvalPartialRunHeader(
+                runModel: "model-a",
+                catalogHash: "abc",
+                judge: "xai/grok-4.3",
+                filter: nil
+            )
+        )
+        sink.append(row(id: "a", outcome: .passed))
+        sink.close()
+
+        let expected = EvalPartialRunHeader(
+            runModel: "model-b",
+            catalogHash: "abc",
+            judge: "xai/grok-4.3",
+            filter: nil
+        )
+        #expect(throws: EvalPartialRunHeaderError.self) {
+            _ = try EvalResume.loadPriorRows(outPath: outPath, expectedHeader: expected)
+        }
     }
 }

@@ -1,0 +1,26 @@
+{
+  "id": "frontier.context_cost_gated_reads",
+  "domain": "agent_loop",
+  "label": "frontier hard \u2022 context cost gated reads",
+  "query": "Read brief.txt and answer: what is the project codename?",
+  "fixtures": {
+    "workspaceFiles": [
+      {
+        "path": "brief.txt",
+        "contents": "codename: ORION\n"
+      }
+    ]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 20,
+      "mustCallTools": [
+        "file_read"
+      ],
+      "finalTextContains": [
+        "ORION"
+      ],
+      "scoredMaxPromptTokens": 120000
+    }
+  }
+}

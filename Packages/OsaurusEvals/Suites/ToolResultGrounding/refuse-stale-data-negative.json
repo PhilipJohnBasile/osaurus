@@ -1,0 +1,43 @@
+{
+  "id": "tool_result_grounding.refuse_stale_data_negative",
+  "domain": "tool_result_grounding",
+  "label": "tool result grounding \u2022 refuse stale data negative",
+  "query": "Use the tool result to answer.",
+  "fixtures": {},
+  "expect": {
+    "toolResultGrounding": {
+      "events": [
+        {
+          "kind": "toolCall",
+          "callId": "c1",
+          "tool": "file_read",
+          "arguments": "{\"path\":\"data.txt\"}"
+        },
+        {
+          "kind": "toolResult",
+          "callId": "c1",
+          "tool": "file_read",
+          "content": "token: ZEBRA-NEW\n"
+        },
+        {
+          "kind": "assistant",
+          "content": "The token is ZEBRA-NEW."
+        }
+      ],
+      "assertions": [
+        {
+          "callId": "c1",
+          "answerMustContain": [
+            "ZEBRA-NEW"
+          ],
+          "resultMustContain": [
+            "ZEBRA-NEW"
+          ],
+          "answerMustNotContain": [
+            "ZEBRA-OLD"
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "id": "agent_loop.git_commit_message",
+  "domain": "agent_loop",
+  "label": "agent loop \u2022 git commit message",
+  "query": "Stage all changes and create a commit whose message is exactly 'eval: add feature'. Then run git_status and confirm the tree is clean.",
+  "fixtures": {
+    "workspaceFiles": [
+      {
+        "path": "feature.txt",
+        "contents": "new\n"
+      }
+    ],
+    "seedWorkspaceCommands": [
+      "git init",
+      "echo x > feature.txt"
+    ]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 10,
+      "mustCallTools": [
+        "git_commit",
+        "git_status"
+      ],
+      "finalTextContains": [
+        "clean",
+        "nothing to commit"
+      ]
+    }
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "id": "tool_result_grounding.result-continuation",
+  "id": "tool_result_grounding.result_continuation",
   "domain": "tool_result_grounding",
   "label": "tool result grounding: final answer continues from executed result",
   "query": "Summarize the blocker counts after running the project report tool.",
@@ -27,9 +27,16 @@
       "assertions": [
         {
           "callId": "report-1",
-          "answerMustContain": ["3 blocked, 2 ready"],
-          "resultMustContain": ["\"summary\":\"3 blocked, 2 ready\""],
-          "argumentsMustNotContain": ["3 blocked", "2 ready"]
+          "answerMustContain": [
+            "3 blocked, 2 ready"
+          ],
+          "resultMustContain": [
+            "\"summary\":\"3 blocked, 2 ready\""
+          ],
+          "argumentsMustNotContain": [
+            "3 blocked",
+            "2 ready"
+          ]
         }
       ]
     }

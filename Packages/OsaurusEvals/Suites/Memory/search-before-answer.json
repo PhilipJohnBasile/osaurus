@@ -1,0 +1,29 @@
+{
+  "id": "memory.search_before_answer",
+  "domain": "agent_loop",
+  "label": "memory \u2022 search before answer",
+  "query": "Before answering, search memory for the project codename, then tell me the codename.",
+  "fixtures": {
+    "agentCapabilities": {
+      "searchMemoryEnabled": true
+    },
+    "seedMemory": [
+      {
+        "content": "Project codename is ORION.",
+        "salience": 0.95
+      }
+    ]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 8,
+      "mustCallTools": [
+        "search_memory"
+      ],
+      "finalTextContains": [
+        "ORION"
+      ],
+      "finalTextMustNotContain": []
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "id": "frontier.ordered_export_verify",
+  "domain": "agent_loop",
+  "label": "frontier hard \u2022 ordered export verify",
+  "query": "Create table t in your DB with one row value=7, export to out.csv, then run zsh check.sh.",
+  "fixtures": {
+    "workspaceFiles": [
+      {
+        "path": "check.sh",
+        "contents": "#!/bin/zsh\ngrep -q ',7' out.csv && echo ok\n"
+      }
+    ],
+    "agentCapabilities": {
+      "dbEnabled": true
+    }
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 20,
+      "mustCallTools": [
+        "db_export"
+      ],
+      "commands": [
+        {
+          "command": "zsh check.sh",
+          "expectExitCode": 0
+        }
+      ]
+    }
+  }
+}

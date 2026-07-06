@@ -1,0 +1,15 @@
+{
+  "id": "mcp_execution.tool_discovery",
+  "domain": "default_agent",
+  "label": "MCP execution • discover MCP tools without hanging",
+  "query": "List what MCP servers are configured using osaurus_status or osaurus_list, then tell me whether any MCP server named 'eval-fixture' is present. Do not invent servers.",
+  "notes": "Mid-loop MCP surface smoke through the Default/configure agent tool family. Proves discovery/read path returns structured state instead of hanging. Off-CI; uses isolated config root.",
+  "fixtures": {},
+  "expect": {
+    "defaultAgent": {
+      "maxIterations": 6,
+      "mustCallAnyTools": ["osaurus_status", "osaurus_list"],
+      "mustNotCallTools": ["shell_run"]
+    }
+  }
+}

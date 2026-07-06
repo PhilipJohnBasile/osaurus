@@ -1,0 +1,33 @@
+{
+  "id": "agent_loop.git_diff_unstaged",
+  "domain": "agent_loop",
+  "label": "agent loop \u2022 git diff unstaged",
+  "query": "Modify readme.md by adding a line, run git_diff, and report whether readme.md appears in the diff.",
+  "fixtures": {
+    "workspaceFiles": [
+      {
+        "path": "readme.md",
+        "contents": "seed\n"
+      }
+    ],
+    "seedWorkspaceCommands": [
+      "git init",
+      "echo hello > readme.md",
+      "git add readme.md",
+      "git commit -m init",
+      "echo change >> readme.md"
+    ]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 10,
+      "mustCallTools": [
+        "git_diff"
+      ],
+      "finalTextContains": [
+        "diff",
+        "readme"
+      ]
+    }
+  }
+}

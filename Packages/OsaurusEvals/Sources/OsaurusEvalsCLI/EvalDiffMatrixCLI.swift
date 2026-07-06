@@ -81,7 +81,7 @@ extension OsaurusEvalsCLI {
                 from: currentURL,
                 label: currentURL.deletingPathExtension().lastPathComponent
             )
-            let summary = EvalDiff.compare(
+            let summary = try EvalDiff.compare(
                 baseline: baseline,
                 current: current,
                 margins: EvalDiff.PerfMargins(decodeTpsPct: decodeMargin, peakRamMb: ramMargin)
@@ -178,7 +178,7 @@ extension OsaurusEvalsCLI {
         do {
             let dir = URL(fileURLWithPath: positional[0])
             let reports = try EvalMatrixBuilder.loadReports(in: dir)
-            let matrix = EvalMatrixBuilder.build(from: reports)
+            let matrix = try EvalMatrixBuilder.build(from: reports)
             print(matrix.formatConsole())
             if let outPath {
                 try matrix.toJSON().write(to: URL(fileURLWithPath: outPath))

@@ -1,0 +1,37 @@
+{
+  "id": "frontier.continuation_from_session_state",
+  "domain": "agent_loop",
+  "label": "frontier hard \u2022 continuation from session state",
+  "query": "session_state.txt records what you did last turn: you created totals.csv with region totals. Read session_state.txt and totals.csv, then append a line to report.md saying which region won.",
+  "fixtures": {
+    "workspaceFiles": [
+      {
+        "path": "session_state.txt",
+        "contents": "prior_turn: wrote totals.csv from orders/\n"
+      },
+      {
+        "path": "totals.csv",
+        "contents": "region,total\nnorth,120\nsouth,95\n"
+      },
+      {
+        "path": "report.md",
+        "contents": "# Report\n"
+      }
+    ]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 20,
+      "mustCallTools": [
+        "file_read",
+        "file_write"
+      ],
+      "files": [
+        {
+          "path": "report.md",
+          "contains": "north"
+        }
+      ]
+    }
+  }
+}

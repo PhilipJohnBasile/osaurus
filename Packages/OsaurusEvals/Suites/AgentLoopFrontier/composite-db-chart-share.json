@@ -1,0 +1,36 @@
+{
+  "id": "frontier.composite_db_chart_share",
+  "domain": "agent_loop",
+  "label": "frontier hard \u2022 composite db chart share",
+  "query": "Load sales.csv into your agent database, query total revenue, render a chart titled Revenue, write result.txt with the numeric total, and share result.txt as an artifact.",
+  "fixtures": {
+    "workspaceFiles": [
+      {
+        "path": "sales.csv",
+        "contents": "item,amount\nA,10\nB,15\n"
+      }
+    ],
+    "agentCapabilities": {
+      "dbEnabled": true,
+      "renderChartEnabled": true
+    }
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 20,
+      "mustCallTools": [
+        "db_create_table",
+        "db_insert",
+        "db_query",
+        "render_chart",
+        "share_artifact"
+      ],
+      "dbState": [
+        {
+          "sql": "SELECT SUM(amount) FROM sales",
+          "expectFirstValue": "25"
+        }
+      ]
+    }
+  }
+}

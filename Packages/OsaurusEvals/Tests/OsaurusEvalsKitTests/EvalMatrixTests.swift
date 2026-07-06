@@ -91,7 +91,7 @@ struct EvalMatrixTests {
         #expect(warnings.contains { $0.contains("self-judged column(s): b") })
     }
 
-    @Test func chatModelAndSubsystemTotalsSplit() {
+    @Test func chatModelAndSubsystemTotalsSplit() throws {
         let cases: [EvalCaseReport] = [
             .init(
                 id: "agent_loop.ok", label: "ok", domain: "agent_loop", query: nil,
@@ -106,7 +106,7 @@ struct EvalMatrixTests {
                 query: nil, outcome: .passed, notes: [], modelId: "m", latencyMs: 0
             ),
         ]
-        let col = EvalMatrixBuilder.build(from: [
+        let col = try EvalMatrixBuilder.build(from: [
             EvalReport(
                 modelId: "m",
                 startedAt: "2026-06-19T00:00:00Z",

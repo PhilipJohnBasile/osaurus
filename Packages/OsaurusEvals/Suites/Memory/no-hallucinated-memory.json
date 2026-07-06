@@ -1,0 +1,30 @@
+{
+  "id": "memory.no_hallucinated_memory",
+  "domain": "agent_loop",
+  "label": "memory \u2022 no hallucinated memory",
+  "query": "What is my dog's name? Use search_memory; if nothing matches, say you don't know.",
+  "fixtures": {
+    "agentCapabilities": {
+      "searchMemoryEnabled": true
+    },
+    "seedMemory": [
+      {
+        "content": "Favorite editor is Neovim.",
+        "salience": 0.95
+      }
+    ]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 8,
+      "mustCallTools": [
+        "search_memory"
+      ],
+      "finalTextMustNotContain": [
+        "Fido",
+        "Rex",
+        "Buddy"
+      ]
+    }
+  }
+}

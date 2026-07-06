@@ -110,12 +110,20 @@ public struct EvalDiffSummary: Sendable, Codable, Equatable {
     /// Pass→not-pass flips with repeat-trial flake evidence (either side ran
     /// `--repeat` and its trials DISAGREED, or the current side still passed
     /// some trials). Surfaced for review but NOT blocking — a flip inside a
-    /// case's observed flake band is noise, not a regression. Flips with no
-    /// trial evidence (single-execution runs) stay in `regressions`.
+    /// case's observed flake band is noise, not a regression.
     public let suspectedFlaky: [EvalCaseDelta]
+    /// Pass→not-pass flips where NEITHER side carried repeat-trial metadata.
+    /// Surfaced for review but NOT blocking — single-shot flips lack flake
+    /// information and are often judge/LLM noise. Unanimous multi-trial
+    /// failures stay in `regressions`.
+    public let lowConfidenceRegressions: [EvalCaseDelta]
     public let newFailures: [EvalCaseDelta]
     public let fixed: [EvalCaseDelta]
     public let persistentFailures: [EvalCaseDelta]
+    /// Still failing on both sides with the same failing assertion ids/kinds.
+    public let persistentFailuresSameAssertion: [EvalCaseDelta]
+    /// Still failing on both sides but different sub-assertions failed.
+    public let persistentFailuresDifferentAssertion: [EvalCaseDelta]
     public let newCases: [EvalCaseDelta]
     public let removedCases: [EvalCaseDelta]
     /// Perf movements worth a human glance (not gating by default): a
@@ -164,6 +172,11 @@ public struct EvalDiffSummary: Sendable, Codable, Equatable {
             suspectedFlaky,
             into: &lines
         )
+        appendConsoleDeltaSection(
+            "low-confidence regressions (single-shot flip — review, not blocking)",
+            lowConfidenceRegressions,
+            into: &lines
+        )
         appendConsoleDeltaSection("new failing cases", newFailures, into: &lines)
         appendConsoleDeltaSection("fixed (fail/err -> pass)", fixed, into: &lines)
         if !perfWins.isEmpty {
@@ -175,6 +188,11 @@ public struct EvalDiffSummary: Sendable, Codable, Equatable {
             lines.append("")
             lines.append("  perf warnings:")
             for w in perfWarnings { lines.append("    ! \(w)") }
+        }
+        if !warnings.isEmpty {
+            lines.append("")
+            lines.append("  comparability / integrity warnings:")
+            for w in warnings { lines.append("    ⚠ \(w)") }
         }
         return lines.joined(separator: "\n")
     }
@@ -219,9 +237,24 @@ public struct EvalDiffSummary: Sendable, Codable, Equatable {
         }
         appendMarkdownDeltaSection("Blocking Regressions", regressions, into: &lines)
         appendMarkdownDeltaSection("Suspected Flaky (non-blocking)", suspectedFlaky, into: &lines)
+        appendMarkdownDeltaSection(
+            "Low-Confidence Regressions (non-blocking)",
+            lowConfidenceRegressions,
+            into: &lines
+        )
         appendMarkdownDeltaSection("New Failing Cases", newFailures, into: &lines)
         appendMarkdownDeltaSection("Fixed Cases", fixed, into: &lines)
         appendMarkdownDeltaSection("Persistent Failures", persistentFailures, into: &lines)
+        appendMarkdownDeltaSection(
+            "Persistent Failures (same assertion)",
+            persistentFailuresSameAssertion,
+            into: &lines
+        )
+        appendMarkdownDeltaSection(
+            "Persistent Failures (different assertion)",
+            persistentFailuresDifferentAssertion,
+            into: &lines
+        )
         appendMarkdownDeltaSection("Suite Drift", newCases + removedCases, into: &lines)
         if !perfWins.isEmpty || !perfWarnings.isEmpty {
             lines.append("")
@@ -284,6 +317,7 @@ public enum EvalDiff {
         /// Repeat-trial evidence (`--repeat N`), nil for single executions.
         let trials: Int?
         let trialsPassed: Int?
+        let assertions: [EvalCaseAssertion]?
 
         /// Trials disagreed — observed flake.
         var isFlaky: Bool {
@@ -297,9 +331,9 @@ public enum EvalDiff {
         current: AgentLoopRegressionReportSet,
         margins: PerfMargins = PerfMargins(),
         generatedAt: String? = nil
-    ) -> EvalDiffSummary {
-        let baselineIndex = index(baseline)
-        let currentIndex = index(current)
+    ) throws -> EvalDiffSummary {
+        let baselineIndex = try index(baseline)
+        let currentIndex = try index(current)
 
         let baselineIds = Set(baselineIndex.byId.keys)
         let currentIds = Set(currentIndex.byId.keys)
@@ -309,8 +343,11 @@ public enum EvalDiff {
 
         var regressions: [EvalCaseDelta] = []
         var suspectedFlaky: [EvalCaseDelta] = []
+        var lowConfidenceRegressions: [EvalCaseDelta] = []
         var fixed: [EvalCaseDelta] = []
         var persistentFailures: [EvalCaseDelta] = []
+        var persistentFailuresSameAssertion: [EvalCaseDelta] = []
+        var persistentFailuresDifferentAssertion: [EvalCaseDelta] = []
         var newFailures: [EvalCaseDelta] = []
         var newCases: [EvalCaseDelta] = []
         var removedCases: [EvalCaseDelta] = []
@@ -324,13 +361,20 @@ public enum EvalDiff {
             if isBlockingRegression(baseline: b?.outcome, current: c?.outcome) {
                 if hasFlakeEvidence(baseline: b, current: c) {
                     suspectedFlaky.append(delta)
-                } else {
+                } else if hasTrialEvidence(baseline: b, current: c) {
                     regressions.append(delta)
+                } else {
+                    lowConfidenceRegressions.append(delta)
                 }
             } else if isFixed(baseline: b?.outcome, current: c?.outcome) {
                 fixed.append(delta)
             } else if isFailing(b?.outcome) && isFailing(c?.outcome) {
                 persistentFailures.append(delta)
+                if sameFailingAssertions(baseline: b, current: c) {
+                    persistentFailuresSameAssertion.append(delta)
+                } else {
+                    persistentFailuresDifferentAssertion.append(delta)
+                }
             }
             classifyPerf(delta, margins: margins, warnings: &perfWarnings, wins: &perfWins)
         }
@@ -346,6 +390,9 @@ public enum EvalDiff {
             removedCases.append(EvalCaseDelta(baseline: baselineIndex.byId[id], current: nil))
         }
 
+        var warnings = (baselineIndex.warnings + currentIndex.warnings).sorted()
+        warnings.append(contentsOf: environmentMismatchWarnings(baseline: baseline, current: current))
+
         return EvalDiffSummary(
             generatedAt: generatedAt ?? isoNow(),
             baselineLabel: baseline.label,
@@ -355,22 +402,36 @@ public enum EvalDiff {
             domainCounts: domainCounts(baselineIndex.cases, currentIndex.cases),
             regressions: regressions,
             suspectedFlaky: suspectedFlaky,
+            lowConfidenceRegressions: lowConfidenceRegressions,
             newFailures: newFailures,
             fixed: fixed,
             persistentFailures: persistentFailures,
+            persistentFailuresSameAssertion: persistentFailuresSameAssertion,
+            persistentFailuresDifferentAssertion: persistentFailuresDifferentAssertion,
             newCases: newCases,
             removedCases: removedCases,
             perfWarnings: perfWarnings.sorted(),
             perfWins: perfWins.sorted(),
-            warnings: (baselineIndex.warnings + currentIndex.warnings).sorted()
+            warnings: warnings
         )
+    }
+
+    public enum EvalDiffError: Error, LocalizedError, Equatable {
+        case duplicateCaseId(String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .duplicateCaseId(let id):
+                return "duplicate case id '\(id)' across reports — refusing to diff"
+            }
+        }
     }
 
     // MARK: - Indexing
 
     private static func index(
         _ set: AgentLoopRegressionReportSet
-    ) -> (cases: [CaseSnapshot], byId: [String: CaseSnapshot], warnings: [String]) {
+    ) throws -> (cases: [CaseSnapshot], byId: [String: CaseSnapshot], warnings: [String]) {
         var cases: [CaseSnapshot] = []
         var byId: [String: CaseSnapshot] = [:]
         var warnings: [String] = []
@@ -385,17 +446,74 @@ public enum EvalDiff {
                     notes: row.notes,
                     telemetry: row.telemetry,
                     trials: row.trials,
-                    trialsPassed: row.trialsPassed
+                    trialsPassed: row.trialsPassed,
+                    assertions: row.assertions
                 )
                 cases.append(snap)
                 if byId[row.id] != nil {
-                    warnings.append("duplicate case id '\(row.id)' across reports; keeping first")
+                    throw EvalDiffError.duplicateCaseId(row.id)
                 } else {
                     byId[row.id] = snap
                 }
             }
         }
         return (cases, byId, warnings)
+    }
+
+    private static func failedAssertionSignature(_ assertions: [EvalCaseAssertion]?) -> Set<String> {
+        Set(
+            (assertions ?? [])
+                .filter { !$0.pass }
+                .map { "\($0.kind):\($0.id)" }
+        )
+    }
+
+    private static func sameFailingAssertions(
+        baseline: CaseSnapshot?,
+        current: CaseSnapshot?
+    ) -> Bool {
+        let baseSig = failedAssertionSignature(baseline?.assertions)
+        let currentSig = failedAssertionSignature(current?.assertions)
+        guard !baseSig.isEmpty, !currentSig.isEmpty else { return false }
+        return baseSig == currentSig
+    }
+
+    private static func mergedEnvironment(
+        from set: AgentLoopRegressionReportSet
+    ) -> RunEnvironment? {
+        set.reports.compactMap(\.report.environment).first
+    }
+
+    private static func environmentMismatchWarnings(
+        baseline: AgentLoopRegressionReportSet,
+        current: AgentLoopRegressionReportSet
+    ) -> [String] {
+        let baselineEnv = mergedEnvironment(from: baseline)
+        let currentEnv = mergedEnvironment(from: current)
+        var warnings: [String] = []
+        if let baseHash = baselineEnv?.catalogHash,
+            let currentHash = currentEnv?.catalogHash,
+            baseHash != currentHash
+        {
+            warnings.append(
+                "⚠ catalogHash mismatch (baseline=\(baseHash), current=\(currentHash)) — "
+                    + "pass rates are NOT comparable"
+            )
+        } else if baselineEnv?.catalogHash != nil && currentEnv?.catalogHash == nil {
+            warnings.append("⚠ current side missing catalogHash — comparability unverified")
+        } else if baselineEnv?.catalogHash == nil && currentEnv?.catalogHash != nil {
+            warnings.append("⚠ baseline side missing catalogHash — comparability unverified")
+        }
+        if let baseJudge = baselineEnv?.judge,
+            let currentJudge = currentEnv?.judge,
+            baseJudge != currentJudge
+        {
+            warnings.append(
+                "⚠ judge mismatch (baseline=\(baseJudge), current=\(currentJudge)) — "
+                    + "rubric grades are NOT comparable"
+            )
+        }
+        return warnings
     }
 
     private static func domainCounts(
@@ -483,6 +601,16 @@ public enum EvalDiff {
     ) -> Bool {
         if baseline?.isFlaky == true { return true }
         if let current, current.isFlaky { return true }
+        return false
+    }
+
+    /// True when either side ran with `--repeat N` (carries trial metadata).
+    private static func hasTrialEvidence(
+        baseline: CaseSnapshot?,
+        current: CaseSnapshot?
+    ) -> Bool {
+        if let trials = baseline?.trials, trials > 1 { return true }
+        if let trials = current?.trials, trials > 1 { return true }
         return false
     }
 
