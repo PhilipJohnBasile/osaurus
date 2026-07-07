@@ -666,8 +666,12 @@ struct RuntimePolicySourceTests {
         // set_input_array double-free), and the NormConventionResolver
         // fallback (vmlx-swift#117) so an unrecognized norm_convention
         // declaration defers to the order-independent vote instead of
-        // silently disabling the (1+weight) RMSNorm shift.
-        let expectedRuntimeHardenedRevision = "53840914f693e9e1305fbbacb1ecc8e5c1e9625f"
+        // silently disabling the (1+weight) RMSNorm shift, plus the
+        // incremental tool-call envelope progress event
+        // (vmlx-swift#119, `Generation.toolCallProgress`) that lets the
+        // native chat show a live "Preparing tool call" card during a long
+        // buffered tool write instead of a frozen typing indicator.
+        let expectedRuntimeHardenedRevision = "8d0ef7e115f40bf428d05eee6f6a21ab0ddffb65"
         let manifestRevision = try Self.vmlxPinRevision(in: manifest)
         let workspaceRevision = try Self.vmlxPinRevision(in: workspaceResolved)
         let appRevision = try Self.vmlxPinRevision(in: appResolved)
@@ -1968,8 +1972,11 @@ struct RuntimePolicySourceTests {
                 && runtime.contains("availableMemoryBytes: available"),
             "The load assessment must track available memory and expose it through health/logs without using it as a hard RAM block."
         )
+        // The verdict math lives in the shared builder so the advisory
+        // pre-load gate and the chat input's candidate projection can't
+        // drift apart.
         let assessmentBody = try Self.functionBody(
-            "private func checkRAMFeasibility",
+            "static func buildRAMFeasibility",
             in: runtime
         )
         // RAM pressure must not refuse a user-requested load: unified memory
@@ -1981,6 +1988,15 @@ struct RuntimePolicySourceTests {
                 && !assessmentBody.contains("throw LoadRefusedError(")
                 && !assessmentBody.contains("verdict = .refused"),
             "RAM pressure must warn as .tight, not throw or mark a hard refusal before vMLX attempts the load."
+        )
+        let advisoryGateBody = try Self.functionBody(
+            "private func checkRAMFeasibility",
+            in: runtime
+        )
+        #expect(
+            advisoryGateBody.contains("buildRAMFeasibility(")
+                && !advisoryGateBody.contains("throw LoadRefusedError("),
+            "The pre-load gate must route through the shared assessment builder and stay advisory."
         )
 
         let health = try Self.source("Networking/HTTPHandler.swift")
@@ -2302,7 +2318,13 @@ struct RuntimePolicySourceTests {
         #expect(health.contains("\"idle_unload_at\""))
         #expect(health.contains("\"idle_seconds_remaining\""))
         #expect(windows.contains("modelIdleResidencyPolicy"))
-        #expect(windows.contains("if idlePolicy == .immediately"))
+        // Window close must branch on the full policy: immediate GC for
+        // `.immediately`, short-grace acceleration for `.afterSeconds`
+        // (chat-sourced models only, with a fire-time reopen guard), and no
+        // action for `.never`.
+        #expect(windows.contains("case .immediately:"))
+        #expect(windows.contains("case .afterSeconds:"))
+        #expect(windows.contains("accelerateIdleUnloadAfterChatClose"))
         #expect(
             windows.contains("let found = ModelManager.findInstalledModel(named: model)")
                 && windows.contains("return found.name"),
@@ -2335,7 +2357,7 @@ struct RuntimePolicySourceTests {
     func residentSameModelTurnsDoNotFlashModelLoadingUI() throws {
         let runtime = try Self.source("Services/ModelRuntime.swift")
 
-        #expect(runtime.contains("let shouldReportModelLoad = modelCache[modelName] == nil"))
+        #expect(runtime.contains("let shouldReportModelLoad = modelCache[modelName] == nil && !parameters.suppressProgressUI"))
         #expect(
             runtime.contains(
                 "if shouldReportModelLoad {\n            InferenceProgressManager.shared.modelLoadWillStartAsync()"

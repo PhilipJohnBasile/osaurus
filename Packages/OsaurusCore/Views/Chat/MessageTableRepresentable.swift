@@ -620,8 +620,11 @@ extension MessageTableRepresentable {
             noteRowHeightsChanged(rows)
         }
 
-        /// Re-measure specific rows without animation.
-        private func noteRowHeightsChanged(_ rows: IndexSet) {
+        /// Re-measure specific rows. Non-animated by default; the streaming
+        /// row passes `animated: true` so line-by-line growth eases in instead
+        /// of snapping (height changes land a few times a second when a new
+        /// line wraps, so the short animation reads as smooth expansion).
+        private func noteRowHeightsChanged(_ rows: IndexSet, animated: Bool = false) {
             guard let tableView else { return }
             ChatPerfTrace.shared.count("noteHeightOfRows")
             ChatPerfTrace.shared.count("noteHeightOfRows.rows", rows.count)
@@ -630,7 +633,12 @@ extension MessageTableRepresentable {
                 if let h = heightCache[bid] { lastNotedHeight[bid] = h }
             }
             NSAnimationContext.beginGrouping()
-            NSAnimationContext.current.duration = 0
+            NSAnimationContext.current.duration = animated ? 0.15 : 0
+            if animated {
+                NSAnimationContext.current.timingFunction =
+                    CAMediaTimingFunction(name: .easeOut)
+                NSAnimationContext.current.allowsImplicitAnimation = true
+            }
             tableView.noteHeightOfRows(withIndexesChanged: rows)
             NSAnimationContext.endGrouping()
         }
@@ -724,6 +732,18 @@ extension MessageTableRepresentable {
                     for key in toolGroupViewCache.keys where !newIdSet.contains(key) {
                         toolGroupViewCache[key]?.removeFromSuperview()
                         toolGroupViewCache.removeValue(forKey: key)
+                    }
+                }
+                // Drop measured heights for blocks that left the thread —
+                // without this, chat switches / session reloads accumulate
+                // stale entries until a width or theme change wipes the cache.
+                if !heightCache.isEmpty || !lastNotedHeight.isEmpty {
+                    let newIdSet = Set(newIds)
+                    for key in heightCache.keys where !newIdSet.contains(key) {
+                        heightCache.removeValue(forKey: key)
+                    }
+                    for key in lastNotedHeight.keys where !newIdSet.contains(key) {
+                        lastNotedHeight.removeValue(forKey: key)
                     }
                 }
             }
@@ -1108,7 +1128,7 @@ extension MessageTableRepresentable {
                     }
                 }
 
-                self.noteRowHeightsChanged(IndexSet(integer: row))
+                self.noteRowHeightsChanged(IndexSet(integer: row), animated: true)
 
                 if self.scrollAnchor.isPinnedToBottom {
                     ChatPerfTrace.shared.count("scrollToBottom.streaming")

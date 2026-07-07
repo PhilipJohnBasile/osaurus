@@ -165,6 +165,8 @@ final class ChatSession: ObservableObject {
     @Published var input: String = ""
     @Published var pendingAttachments: [Attachment] = []
     @Published var selectedModel: String? = nil
+    /// Proactive model + KV-cache warm-up for faster first-token latency.
+    let warmupController = ChatWarmupController()
     @Published var pickerItems: [ModelPickerItem] = []
     @Published var activeModelOptions: [String: ModelOptionValue] = [:]
     @Published var imageComposerSettings = ImageComposerSettings()
@@ -217,6 +219,15 @@ final class ChatSession: ObservableObject {
     /// Whether this run appended a new user turn. Regeneration sends reuse
     /// historical user turns and must not pop one during privacy-cancel rollback.
     private var appendedUserTurnForCurrentRun = false
+    /// True while a send is parked on the pre-send warm-up handshake (the
+    /// in-flight warm-up generation may still be loading the model). Drives a
+    /// placeholder typing-indicator row so the wait shows "Loading Model..."
+    /// instead of a silent gap under the user's message.
+    private var awaitingPreSendHandshake = false
+    /// Stable placeholder assistant turn rendered (never persisted, never in
+    /// `turns`) while `awaitingPreSendHandshake` is true. Stable identity so
+    /// the typing-indicator block id doesn't churn across rebuilds.
+    private let preSendHandshakePlaceholderTurn = ChatTurn(role: .assistant, content: "")
     /// Full transcript snapshot to restore when privacy review cancels a
     /// regeneration/edit-regeneration before the request leaves the device.
     private var turnsRollbackOnCancel: [ChatTurn]?
@@ -363,6 +374,7 @@ final class ChatSession: ObservableObject {
     // nonisolated(unsafe) allows deinit to access these for cleanup
     nonisolated(unsafe) private var remoteModelsObserver: NSObjectProtocol?
     nonisolated(unsafe) private var modelSelectionCancellable: AnyCancellable?
+    nonisolated(unsafe) private var modelOptionsCancellable: AnyCancellable?
     nonisolated(unsafe) private var agentAutoSpeakCancellable: AnyCancellable?
     /// Direct subscription to the shared model-picker cache. The
     /// `.remoteProviderModelsChanged` notification bridge above only
@@ -563,7 +575,8 @@ final class ChatSession: ObservableObject {
             .dropFirst()
             .removeDuplicates()
             .sink { [weak self] newModel in
-                guard let self = self, !self.isLoadingModel, let model = newModel else { return }
+                guard let self = self, !self.isLoadingModel else { return }
+                guard let model = newModel else { return }
                 let pid = self.agentId ?? Agent.defaultId
                 // Mode 2 (remote agent run): the model is pinned to the remote
                 // agent's own model. Don't write that pin into the LOCAL agent's
@@ -584,10 +597,28 @@ final class ChatSession: ObservableObject {
                     self.pendingAttachments = []
                 }
 
-                Task { @MainActor in
-                    let active = ChatWindowManager.shared.activeLocalModelNames()
-                    await ModelRuntime.shared.unloadModelsNotIn(active)
-                }
+                self.warmupController.handleModelSelectionChange(
+                    session: self,
+                    to: model,
+                    performSwitch: { [weak self] evictOthers in
+                        await self?.performModelResidencySwitch(evictOthers: evictOthers)
+                    }
+                )
+            }
+
+        // Model-option toggles (Thinking, reasoning effort) change both the
+        // rendered prompt tokens and the runtime's cache-scope salt, so a
+        // previously warmed prefix no longer matches — re-warm under the new
+        // options. Debounced so a quick toggle-and-back doesn't run two
+        // warm-up generations.
+        modelOptionsCancellable =
+            $activeModelOptions
+            .dropFirst()
+            .removeDuplicates()
+            .debounce(for: .milliseconds(400), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, !self.isStreaming else { return }
+                self.invalidateWarmupAfterContextShapeChange()
             }
 
         // Keep the welcome-screen context-budget estimate in sync with the
@@ -686,6 +717,7 @@ final class ChatSession: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         modelSelectionCancellable = nil
+        modelOptionsCancellable = nil
         agentAutoSpeakCancellable = nil
         promptQueueCancellable = nil
         contextEstimateCancellable = nil
@@ -754,6 +786,7 @@ final class ChatSession: ObservableObject {
         loadActiveModelOptions(for: selectedModel)
         applyImageModelDefaults(for: selectedModel)
         isLoadingModel = false
+        notifySessionBecameActive()
     }
 
     func refreshPickerItems() async {
@@ -965,7 +998,17 @@ final class ChatSession: ObservableObject {
         // In Mode 2 the remote agent owns the conversation, so its name heads
         // the thread; otherwise fall back to the local agent's name.
         let displayName = threadAgentDisplayName ?? localName
-        let streamingTurnId = isStreaming ? turns.last?.id : nil
+        var streamingTurnId = isStreaming ? turns.last?.id : nil
+
+        // While a send waits on the pre-send warm-up handshake there is no
+        // assistant turn yet; render a placeholder typing-indicator group so
+        // the model-load/prefill wait is visible. The placeholder never
+        // enters `turns` — it exists only in this rebuild's block input.
+        var effectiveTurns = turns
+        if awaitingPreSendHandshake, !isStreaming, !turns.isEmpty {
+            effectiveTurns.append(preSendHandshakePlaceholderTurn)
+            streamingTurnId = preSendHandshakePlaceholderTurn.id
+        }
 
         if MockChatData.isEnabled {
             let mockTurns = MockChatData.mockTurnsForPerformanceTest()
@@ -986,7 +1029,7 @@ final class ChatSession: ObservableObject {
         updateStreamingThinkingExpansion(streamingTurnId: streamingTurnId)
 
         let newBlocks = blockMemoizer.blocks(
-            from: turns,
+            from: effectiveTurns,
             streamingTurnId: streamingTurnId,
             agentName: displayName
         )
@@ -1340,6 +1383,21 @@ final class ChatSession: ObservableObject {
         send(text, attachments: attachments)
     }
 
+    /// Pre-send warm-up handshake: wait for an in-flight model switch
+    /// (stale warm-up unwind + eviction) to settle, then wait for any
+    /// in-flight warm-up generation to finish so its prefilled KV prefix is
+    /// stored and the real request can prefix-hit. Does NOT start new
+    /// warm-up work.
+    private func prepareForSendWarmup() async {
+        await warmupController.awaitActiveModelSwitch()
+        // The switch task's last step schedules a fresh warm-up; this send
+        // owns the next generation, so drop that scheduled warm-up before it
+        // starts (a warm-up that already reached generation is covered by
+        // the await below and only pre-warms this send's own prefix).
+        warmupController.cancelScheduledWarmup()
+        await warmupController.awaitInFlightWarmup()
+    }
+
     func stop() {
         stopRequested = true
         let task = currentTask
@@ -1588,6 +1646,7 @@ final class ChatSession: ObservableObject {
         showVoiceOverlay = false
         transientSessionIdForCurrentRun = nil
         appendedUserTurnForCurrentRun = false
+        awaitingPreSendHandshake = false
         turnsRollbackOnCancel = nil
         suppressQueuedSendFlushForCurrentRun = false
         // Clear session identity for new chat
@@ -1629,6 +1688,7 @@ final class ChatSession: ObservableObject {
         visibleBlocksStore.groupHeaderMap = [:]
 
         resetGenerativeGreeting()
+        warmupController.reset()
 
         applyEffectiveModel(for: agentId)
         rebuildVisibleBlocks()
@@ -1927,6 +1987,7 @@ final class ChatSession: ObservableObject {
         pendingAttachments = []
         transientSessionIdForCurrentRun = nil
         appendedUserTurnForCurrentRun = false
+        awaitingPreSendHandshake = false
         turnsRollbackOnCancel = nil
         suppressQueuedSendFlushForCurrentRun = false
         isDirty = false  // Fresh load, not dirty
@@ -1940,8 +2001,12 @@ final class ChatSession: ObservableObject {
         isScreenContextFrozen = false
         suppressVisibleBlockRebuild = false
         rebuildVisibleBlocks()
+        warmupController.reset()
 
-        Task { [weak self] in await self?.refreshContextEstimates() }
+        Task { [weak self] in
+            await self?.refreshContextEstimates()
+            self?.notifySessionBecameActive()
+        }
     }
 
     /// Recompute the cached memory-section token estimate. Returns `true`
@@ -2066,6 +2131,7 @@ final class ChatSession: ObservableObject {
     /// open chat windows, saturated the cooperative pool (see #1324).
     private func refreshPreviewEstimate() {
         if recomputePreviewContext() {
+            invalidateWarmupAfterContextShapeChange()
             objectWillChange.send()
         }
     }
@@ -2560,6 +2626,7 @@ final class ChatSession: ObservableObject {
             flushQueuedSendIfEligible()
         }
         suppressQueuedSendFlushForCurrentRun = false
+        handleWarmupAfterRunCompleted()
     }
 
     /// A stopped (or errored) run can leave an assistant tool call that never
@@ -2743,6 +2810,18 @@ final class ChatSession: ObservableObject {
     /// Processes the streaming delta loop from the chat engine, updating the given
     /// assistant turn and UI state. Returns any parsed tool invocations and the
     /// final updated assistant turn.
+    /// Clears the transient `pendingToolName` placeholder seeded by the
+    /// tool-call-progress branch when — and only when — it is still the
+    /// sentinel at stream end (i.e. no committed tool name ever overwrote it).
+    /// A real tool name replaces the sentinel at `\u{FFFE}tool:`, so this is a
+    /// no-op for genuine pending tool calls; it only prevents a "Preparing tool
+    /// call" card from surviving on a cancelled or reclassified turn.
+    private static func clearPendingToolCallProgressPlaceholder(on turn: ChatTurn) {
+        if turn.pendingToolName == ToolDisplayName.pendingToolSentinel {
+            turn.pendingToolName = nil
+        }
+    }
+
     private func processStreamDeltas(
         stream: AsyncThrowingStream<String, Error>,
         assistantTurn: ChatTurn,
@@ -2752,6 +2831,12 @@ final class ChatSession: ObservableObject {
         selectedModel: String?
     ) async throws -> (invocations: [ServiceToolInvocation], finalTurn: ChatTurn) {
         var currentTurn = assistantTurn
+        // On every exit — clean end, cancel, tool-invocation throw, or a
+        // mid-stream error — drop a tool-call-progress placeholder if it never
+        // resolved to a committed tool name, so the "Preparing tool call" card
+        // can't persist on the finalized turn. No-op for real pending calls
+        // (the committed `\u{FFFE}tool:` name overwrites the sentinel first).
+        defer { Self.clearPendingToolCallProgressPlaceholder(on: currentTurn) }
         var uiDeltaCount = 0
         var uiReasoningDeltaCount = 0
         var uiToolSentinelCount = 0
@@ -2877,8 +2962,66 @@ final class ChatSession: ObservableObject {
                 }
                 if let toolName = StreamingToolHint.decode(delta) {
                     uiToolSentinelCount += 1
-                    currentTurn.pendingToolName = toolName.isEmpty ? nil : toolName
-                    rebuildVisibleBlocks()
+                    // Local models stream the raw envelope as args fragments
+                    // BEFORE the parsed call's name hint. When the hint lands
+                    // the runtime re-sends the full canonical argsJSON, so
+                    // drop the envelope accumulation — the canonical args
+                    // rebuild the preview without envelope wrapper noise.
+                    // Remote providers send the hint before any fragment
+                    // (size 0), so this is a no-op there.
+                    if currentTurn.pendingToolArgSize > 0 {
+                        currentTurn.clearPendingToolArgs()
+                    }
+                    let newName = toolName.isEmpty ? nil : toolName
+                    // Only rebuild when the name actually changed. On the
+                    // envelope-first flow the name was already derived
+                    // mid-stream — rebuilding here (right after the args
+                    // clear, right before the canonical args re-send) would
+                    // blank the live diff preview for one frame.
+                    let nameChanged = currentTurn.pendingToolName != newName
+                    currentTurn.pendingToolName = newName
+                    if nameChanged {
+                        rebuildVisibleBlocks()
+                    }
+                    continue
+                }
+                // A tool call is still being generated: the model is emitting the
+                // raw envelope (e.g. a large `write_file` argument) but it hasn't
+                // closed yet, so the parsed name/args aren't available. Local MLX
+                // buffers the whole envelope, so without this the assistant turn
+                // has no visible content and no `pendingToolName`, leaving only the
+                // frozen typing indicator for the entire (multi-second) write.
+                // Seed a neutral in-progress tool card so the view flips from the
+                // static dots to the shimmering pending-tool row; the committed
+                // `StreamingToolHint.decode` above overwrites the placeholder with
+                // the real tool name once the envelope closes. The raw envelope
+                // text itself is intentionally NOT rendered (it isn't parsed args
+                // and could be any format), so it never leaks as message text.
+                if let envelopeDelta = StreamingToolCallProgressHint.decode(delta) {
+                    uiToolSentinelCount += 1
+                    // Also accumulate the raw envelope: the live diff preview
+                    // extracts path/content from it mid-stream, and the tool
+                    // NAME usually completes within the first fragments —
+                    // upgrading the neutral placeholder card to the real
+                    // "Writing file…" chip + growing diff card. The committed
+                    // name hint clears this buffer and re-sends canonical args.
+                    currentTurn.appendToolArgFragment(envelopeDelta)
+                    if currentTurn.pendingToolName == nil
+                        || currentTurn.pendingToolName == ToolDisplayName.pendingToolSentinel,
+                        let full = currentTurn.pendingToolArgFull,
+                        let name = FileDiff.partialToolName(inArgs: full)
+                    {
+                        currentTurn.pendingToolName = name
+                    }
+                    if currentTurn.pendingToolName == nil {
+                        currentTurn.pendingToolName = ToolDisplayName.pendingToolSentinel
+                    }
+                    let count = currentTurn.pendingToolArgFragmentCount
+                    let now = Date()
+                    if count <= 3 || now.timeIntervalSince(lastToolArgRebuildAt) >= 0.08 {
+                        lastToolArgRebuildAt = now
+                        rebuildVisibleBlocks()
+                    }
                     continue
                 }
                 // Captured OpenAI Responses reasoning item (id + encrypted blob).
@@ -2893,6 +3036,16 @@ final class ChatSession: ObservableObject {
                 if let argFragment = StreamingToolHint.decodeArgs(delta) {
                     uiToolSentinelCount += 1
                     currentTurn.appendToolArgFragment(argFragment)
+                    // Envelope-first flow (local models): the tool name rides
+                    // inside the streamed envelope, no name hint yet. Derive
+                    // it as soon as the "name" field completes so the pending
+                    // chip / live diff preview appear mid-generation.
+                    if currentTurn.pendingToolName == nil,
+                        let full = currentTurn.pendingToolArgFull,
+                        let name = FileDiff.partialToolName(inArgs: full)
+                    {
+                        currentTurn.pendingToolName = name
+                    }
                     // Always rebuild for the first few fragments so the chip
                     // appears immediately; afterwards cap at ~12 rebuilds/sec
                     // so the table stays responsive during long arg streams
@@ -3343,6 +3496,80 @@ final class ChatSession: ObservableObject {
             restoreTurnsRollbackAfterAbortedRegeneration()
             return
         }
+
+        // A scheduled-but-not-started warm-up must not fire mid-run.
+        warmupController.cancelScheduledWarmup()
+
+        // Common case: nothing pending — dispatch synchronously so the user
+        // turn is appended inside send() (callers and tests rely on this).
+        // Only a model switch still settling or an in-flight warm-up
+        // generation requires the async handshake first.
+        guard warmupController.needsPreSendHandshake else {
+            dispatchSend(trimmed: trimmed, attachments: attachments, hasContent: hasContent)
+            return
+        }
+
+        // The handshake can wait out an entire model load (the in-flight
+        // warm-up generation loads the container first), so the user's
+        // message must appear NOW — not when the model finishes loading.
+        // Append the turn eagerly; dispatchSend skips the append, and the
+        // post-handshake guards roll it back if the dispatch aborts.
+        var preAppendedUserTurn: ChatTurn?
+        var preAppendIntroducedFirstTurn = false
+        if hasContent {
+            preAppendIntroducedFirstTurn = turns.isEmpty
+            let turn = ChatTurn(role: .user, content: trimmed, attachments: attachments)
+            turns.append(turn)
+            preAppendedUserTurn = turn
+        }
+        // Show the typing-indicator row (which surfaces "Loading Model..." /
+        // prefill progress) while the send waits on the warm-up, so the wait
+        // isn't a silent gap between the user's message and the run starting.
+        awaitingPreSendHandshake = true
+        rebuildVisibleBlocks()
+
+        Task { @MainActor in
+            await self.prepareForSendWarmup()
+            self.awaitingPreSendHandshake = false
+            self.dispatchSend(
+                trimmed: trimmed,
+                attachments: attachments,
+                hasContent: hasContent,
+                preAppendedUserTurn: preAppendedUserTurn,
+                preAppendIntroducedFirstTurn: preAppendIntroducedFirstTurn
+            )
+        }
+    }
+
+    /// Continuation of `send(_:attachments:)` after the pre-send warm-up
+    /// handshake. Re-checks the run/busy guards because the handshake
+    /// yielded the MainActor.
+    private func dispatchSend(
+        trimmed: String,
+        attachments: [Attachment],
+        hasContent: Bool,
+        preAppendedUserTurn: ChatTurn? = nil,
+        preAppendIntroducedFirstTurn: Bool = false
+    ) {
+        guard activeRunId == nil, !isStreaming else {
+            rollbackPreAppendedUserTurn(
+                preAppendedUserTurn, restoringDraft: (trimmed, attachments))
+            restoreTurnsRollbackAfterAbortedRegeneration()
+            return
+        }
+        if localModelBusyInOtherWindow {
+            windowState?.showLocalModelBusyAlert = true
+            // `sendCurrent` already cleared the composer, and the warm-up
+            // await above widened the window in which another window can
+            // grab the runtime. Put the draft back instead of dropping it.
+            rollbackPreAppendedUserTurn(preAppendedUserTurn, restoringDraft: nil)
+            if hasContent, input.isEmpty, pendingAttachments.isEmpty {
+                input = trimmed
+                pendingAttachments = attachments
+            }
+            restoreTurnsRollbackAfterAbortedRegeneration()
+            return
+        }
         if hasContent {
             turnsRollbackOnCancel = nil
         }
@@ -3375,13 +3602,25 @@ final class ChatSession: ObservableObject {
         awaitingClarify = nil
 
         if hasContent {
-            let sendIntroducesFirstTurn = turns.isEmpty
+            // The pre-appended turn normally still sits in `turns`; it only
+            // disappears if the transcript was reset during the handshake
+            // (new chat / session load), in which case re-appending here
+            // restores the old dispatch-time-append behavior.
+            let preAppendedTurnPresent = preAppendedUserTurn.map { pre in
+                turns.contains { $0.id == pre.id }
+            }
+            let sendIntroducesFirstTurn =
+                preAppendedTurnPresent == true ? preAppendIntroducedFirstTurn : turns.isEmpty
             // One-shot activation signal — the install's first ever chat-UI
             // message. Inside the `hasContent` branch so a contentless
             // regeneration doesn't count as "used".
             FeatureTelemetry.firstTimeChatUsed()
 
-            turns.append(ChatTurn(role: .user, content: trimmed, attachments: attachments))
+            if let pre = preAppendedUserTurn {
+                if preAppendedTurnPresent == false { turns.append(pre) }
+            } else {
+                turns.append(ChatTurn(role: .user, content: trimmed, attachments: attachments))
+            }
             appendedUserTurnForCurrentRun = true
             // Stash the draft so we can put it back if the user cancels
             // out of the privacy review sheet. The text and attachments
@@ -4832,6 +5071,25 @@ final class ChatSession: ObservableObject {
         turns.map { ChatTurn(from: ChatTurnData(from: $0)) }
     }
 
+    /// Undo the eager user-turn append from `send()`'s pre-send-handshake
+    /// path when the post-handshake dispatch aborts (a run started or
+    /// another window grabbed the local runtime while we waited). Restores
+    /// the draft when asked so the user's text isn't silently dropped.
+    private func rollbackPreAppendedUserTurn(
+        _ turn: ChatTurn?,
+        restoringDraft draft: (text: String, attachments: [Attachment])?
+    ) {
+        guard let turn else { return }
+        if let index = turns.lastIndex(where: { $0.id == turn.id }) {
+            turns.remove(at: index)
+            rebuildVisibleBlocks()
+        }
+        if let draft, input.isEmpty, pendingAttachments.isEmpty {
+            input = draft.text
+            pendingAttachments = draft.attachments
+        }
+    }
+
     private func restoreTurnsRollbackAfterAbortedRegeneration() {
         guard let rollback = turnsRollbackOnCancel else { return }
         turns = rollback
@@ -5454,7 +5712,9 @@ struct ChatView: View {
                                     guard let observedSession else { return [] }
                                     return ChatInputHistory.entries(from: observedSession.turns)
                                 },
-                                inputHistoryKey: observedSession.sessionId
+                                inputHistoryKey: observedSession.sessionId,
+                                warmModelsOnLoadEnabled: ChatConfigurationStore.load().warmModelsOnLoad,
+                                warmupController: observedSession.warmupController
                             )
                             .frame(maxWidth: 1100)
                             .frame(maxWidth: .infinity)
@@ -5541,6 +5801,7 @@ struct ChatView: View {
         }
         .onAppear {
             setupKeyMonitor()
+            observedSession.notifySessionBecameActive()
 
             // Register close callback with ChatWindowManager
             ChatWindowManager.shared.setCloseCallback(for: windowState.windowId) { [weak windowState] in

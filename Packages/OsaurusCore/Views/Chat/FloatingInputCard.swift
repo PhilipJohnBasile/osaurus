@@ -108,6 +108,10 @@ struct FloatingInputCard: View {
     /// Identity of the conversation backing the history. Navigation state
     /// resets when it changes so a recalled index can't leak across chats.
     var inputHistoryKey: UUID?
+    /// When true, the model chip dot reflects warm-up state (yellow/green).
+    var warmModelsOnLoadEnabled: Bool = false
+    /// Warm-up state for the selected local model in this session.
+    @ObservedObject var warmupController: ChatWarmupController = ChatWarmupController()
 
     init(
         text: Binding<String>,
@@ -147,7 +151,9 @@ struct FloatingInputCard: View {
         remoteConnectionPending: Bool = false,
         isRemoteAgentRun: Bool = false,
         inputHistoryProvider: (() -> [String])? = nil,
-        inputHistoryKey: UUID? = nil
+        inputHistoryKey: UUID? = nil,
+        warmModelsOnLoadEnabled: Bool = false,
+        warmupController: ChatWarmupController = ChatWarmupController()
     ) {
         self._text = text
         self._selectedModel = selectedModel
@@ -187,6 +193,8 @@ struct FloatingInputCard: View {
         self.isRemoteAgentRun = isRemoteAgentRun
         self.inputHistoryProvider = inputHistoryProvider
         self.inputHistoryKey = inputHistoryKey
+        self.warmModelsOnLoadEnabled = warmModelsOnLoadEnabled
+        self._warmupController = ObservedObject(wrappedValue: warmupController)
     }
 
     // Observe managers for reactive updates
@@ -203,6 +211,8 @@ struct FloatingInputCard: View {
     /// gate is now per-agent (a child of Computer Use), read via `agentManager`.
     @ObservedObject private var frontmostApp = FrontmostAppTracker.shared
     @ObservedObject private var permissionService = SystemPermissionService.shared
+    /// Per-model warm-up progress (load / prefill %) for the chip tooltip.
+    @ObservedObject private var warmupProgressHub = WarmupProgressHub.shared
 
     // MARK: - Slash Command State
 
@@ -273,6 +283,19 @@ struct FloatingInputCard: View {
     @State private var clipboardPulseOpacity: Double = 0.0
     // Cache picker items to prevent popover refresh during streaming
     @State private var cachedPickerItems: [ModelPickerItem] = []
+
+    // MARK: - RAM Tight-Fit State
+
+    /// Latest candidate-load RAM projection for the selected local model.
+    /// Non-nil only when the projection crosses the soft threshold (warn) or
+    /// hard ceiling (block). `nil` = resident model, remote model, or a
+    /// comfortable fit — no banner, no gate.
+    @State private var pendingLoadFeasibility: ModelRuntime.RAMFeasibility?
+    /// Host memory usage captured alongside the feasibility refresh so the
+    /// banner shows a live percentage without this (large) view observing
+    /// `SystemMonitorService` and re-rendering on every 2s tick.
+    @State private var ramBannerUsagePercent: Int = 0
+    @State private var ramBannerTotalGB: Int = 0
     // MARK: - Voice Input State
     @ObservedObject private var speechService = SpeechService.shared
     @ObservedObject private var speechModelManager = SpeechModelManager.shared
@@ -372,6 +395,13 @@ struct FloatingInputCard: View {
         // let the inline notice explain, instead of silently degrading to a
         // tool-less chat that can't configure anything.
         guard !configContextTooSmall else { return false }
+
+        // RAM gate: loading the selected model would cross the hard RAM
+        // ceiling (documented `modelLoadRAMHardThreshold` setting). Block the
+        // send and let the floating banner explain; the periodic feasibility
+        // re-check lifts the block as memory frees. UI-only — the HTTP API
+        // and the runtime load path stay advisory.
+        guard !ramBlocked else { return false }
 
         let hasText = !localText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasContent = hasText || !pendingAttachments.isEmpty
@@ -590,7 +620,16 @@ struct FloatingInputCard: View {
                 configContextErrorOverlay
             }
             .animation(.easeOut(duration: 0.2), value: configContextTooSmall)
+            .modifier(
+                RAMTightFitModifier(
+                    severity: ramPressureSeverity,
+                    selectedModel: selectedModel,
+                    banner: ramPressureOverlay,
+                    refresh: refreshLoadFeasibility
+                )
+            )
             .onAppear {
+                refreshLoadFeasibility()
                 let isReappear = !localText.isEmpty || voiceInputState != .idle
                 localText = text
                 print("[VoiceDebug] FloatingInputCard onAppear (reappear=\(isReappear))")
@@ -882,6 +921,34 @@ fileprivate func voiceDebugLog(
 }
 
 // MARK: - Voice Debug Observers
+
+/// Groups the RAM tight-fit banner overlay and its refresh triggers into one
+/// modifier so the already-enormous `FloatingInputCard.body` chain doesn't
+/// gain four more inference nodes (the type-checker times out otherwise).
+private struct RAMTightFitModifier<Banner: View>: ViewModifier {
+    let severity: ModelRuntime.RAMFeasibility.LoadPressureSeverity
+    let selectedModel: String?
+    let banner: Banner
+    let refresh: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            // Float the tight-fit disclaimer above the card, same overlay
+            // mechanics as the configuration-context error banner.
+            .overlay(alignment: .top) {
+                banner
+            }
+            .animation(.easeOut(duration: 0.2), value: severity)
+            .onChange(of: selectedModel) { _, _ in
+                refresh()
+            }
+            // 2s host-memory tick: re-projects the tight-fit assessment so
+            // the warn/block banner clears on its own as RAM frees.
+            .onReceive(SystemMonitorService.shared.$memoryUsage) { _ in
+                refresh()
+            }
+    }
+}
 
 /// Watches the four properties that feed into isVoiceConfigured / isVoiceAvailable
 /// and emits a debug log line whenever any of them change.
@@ -2224,6 +2291,44 @@ extension FloatingInputCard {
         return ModelManager.replacementForDeprecatedModel(id) != nil
     }
 
+    private var isSelectedModelLocal: Bool {
+        guard let id = selectedModel else { return false }
+        return ModelManager.findInstalledModel(named: id) != nil
+    }
+
+    private var modelWarmupDotColor: Color {
+        if warmModelsOnLoadEnabled, isSelectedModelLocal, !isRemoteAgentRun {
+            return warmupController.isWarmForDisplay ? .green : .yellow
+        }
+        return .green
+    }
+
+    private var modelWarmupDotHelp: String {
+        guard warmModelsOnLoadEnabled, isSelectedModelLocal, !isRemoteAgentRun else {
+            return String(localized: "Model ready", bundle: .module)
+        }
+        if warmupController.isWarmForDisplay {
+            return String(localized: "Model warm — ready for a fast first response", bundle: .module)
+        }
+        guard let model = selectedModel, let phase = warmupProgressHub.phases[model] else {
+            return String(localized: "Warming up…", bundle: .module)
+        }
+        switch phase {
+        case .loadingModel:
+            return String(localized: "Warming up — loading model…", bundle: .module)
+        case .prefilling(let state):
+            guard state.totalUnitCount > 0 else {
+                return String(localized: "Warming up — prefilling context…", bundle: .module)
+            }
+            let percent = Int(state.percentCompleted.rounded())
+            return String(
+                localized:
+                    "Warming up — prefilling context \(percent)% (\(state.completedUnitCount)/\(state.totalUnitCount) tokens)",
+                bundle: .module
+            )
+        }
+    }
+
     @ViewBuilder
     private var modelSelectorChip: some View {
         if isModelPinned {
@@ -2267,10 +2372,11 @@ extension FloatingInputCard {
                         .foregroundColor(.orange)
                         .localizedHelp("This model is outdated. Click to switch to a newer version.")
                 } else {
+                    // Tooltip comes from the chip-wide `.help` below — the
+                    // 6px dot is too small to be its own hover target.
                     Circle()
-                        .fill(Color.green)
+                        .fill(modelWarmupDotColor)
                         .frame(width: 6, height: 6)
-                        .localizedHelp("Model ready")
                 }
 
                 // Model name with metadata badges
@@ -2311,6 +2417,12 @@ extension FloatingInputCard {
                     .foregroundColor(theme.tertiaryText)
             }
         }
+        // Chip-wide hover target: the 6px dot alone is too small to hover.
+        .help(
+            isSelectedModelDeprecated
+                ? String(localized: "This model is outdated. Click to switch to a newer version.", bundle: .module)
+                : modelWarmupDotHelp
+        )
         .popover(isPresented: $showModelPicker, arrowEdge: .top) {
             ModelPickerView(
                 options: cachedPickerItems,
@@ -2493,6 +2605,58 @@ extension FloatingInputCard {
     private var configContextTooSmall: Bool {
         guard isDefaultConfigAgent, let model = selectedModel else { return false }
         return ContextSizeResolver.resolve(modelId: model).sizeClass.disablesTools
+    }
+
+    // MARK: - RAM Tight-Fit Gate
+
+    private var ramPressureSeverity: ModelRuntime.RAMFeasibility.LoadPressureSeverity {
+        pendingLoadFeasibility?.loadPressureSeverity ?? .none
+    }
+
+    /// Send is blocked while loading the selected model would cross the hard
+    /// RAM ceiling. Cleared automatically by the periodic feasibility
+    /// re-check as memory frees (or when the user picks a smaller model).
+    private var ramBlocked: Bool {
+        ramPressureSeverity == .block
+    }
+
+    /// Re-project the selected model's load feasibility. Called on appear,
+    /// on model change, and on `SystemMonitorService`'s 2s memory tick — the
+    /// tick is what auto-clears the warn/block state when RAM frees. The
+    /// runtime memoizes the bundle-size scan, so steady-state re-checks cost
+    /// one actor hop and a `vm_statistics64` read.
+    private func refreshLoadFeasibility() {
+        guard !isRemoteAgentRun, let model = selectedModel, isSelectedModelLocal else {
+            if pendingLoadFeasibility != nil { pendingLoadFeasibility = nil }
+            return
+        }
+        Task { @MainActor in
+            let assessment = await ModelRuntime.shared.projectedLoadFeasibility(for: model)
+            // The selection may have moved while we were on the runtime actor.
+            guard selectedModel == model else { return }
+
+            guard let assessment, assessment.loadPressureSeverity != .none else {
+                if pendingLoadFeasibility != nil { pendingLoadFeasibility = nil }
+                return
+            }
+            let monitor = SystemMonitorService.shared
+            let usagePercent = Int(monitor.memoryUsage.rounded())
+            let totalGB = Int(monitor.totalMemoryGB.rounded())
+            // Only touch @State when something the banner displays actually
+            // changed, so idle ticks don't re-render the card.
+            let changed =
+                pendingLoadFeasibility?.loadPressureSeverity != assessment.loadPressureSeverity
+                || pendingLoadFeasibility?.modelName != assessment.modelName
+                || pendingLoadFeasibility?.requiredAvailableBytes
+                    != assessment.requiredAvailableBytes
+                || ramBannerUsagePercent != usagePercent
+                || ramBannerTotalGB != totalGB
+            if changed {
+                pendingLoadFeasibility = assessment
+                ramBannerUsagePercent = usagePercent
+                ramBannerTotalGB = totalGB
+            }
+        }
     }
 
     private var isSandboxAvailable: Bool {
@@ -3210,6 +3374,90 @@ extension FloatingInputCard {
                 .alignmentGuide(.top) { dimensions in dimensions.height + 10 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
+    }
+
+    /// Floating wrapper for `ramPressureBanner`, same overlay mechanics as
+    /// `configContextErrorOverlay`. The config-context error wins when both
+    /// apply — the two toasts share the space above the card.
+    @ViewBuilder
+    private var ramPressureOverlay: some View {
+        if !configContextTooSmall, let feasibility = pendingLoadFeasibility {
+            ramPressureBanner(feasibility)
+                .alignmentGuide(.top) { dimensions in dimensions.height + 10 }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
+
+    /// Foundation-style disclaimer shown above the card when loading the
+    /// selected model would be a tight RAM fit. Orange = warn (send allowed),
+    /// red = blocked (send paused until memory frees; the 2s feasibility
+    /// re-check clears it automatically).
+    private func ramPressureBanner(_ feasibility: ModelRuntime.RAMFeasibility) -> some View {
+        let blocked = feasibility.loadPressureSeverity == .block
+        let tint: Color = blocked ? .red : .orange
+        let modelName = selectedPickerItem?.displayName ?? feasibility.modelName
+        let neededGB = Self.formatGigabytes(feasibility.requiredAvailableBytes)
+        let usage = "\(ramBannerUsagePercent)"
+        let total = "\(ramBannerTotalGB)"
+
+        return HStack(spacing: 8) {
+            Image(systemName: blocked ? "memorychip.fill" : "memorychip")
+                .font(.system(size: CGFloat(theme.captionSize)))
+                .foregroundColor(tint)
+
+            Group {
+                if blocked {
+                    Text(
+                        "\(modelName) needs ~\(neededGB) GB to load, but memory is at \(usage)% of \(total) GB. Sending is paused until memory frees — close other apps or pick a smaller model.",
+                        bundle: .module
+                    )
+                } else {
+                    Text(
+                        "\(modelName) needs ~\(neededGB) GB to load and memory is at \(usage)% of \(total) GB. Close other apps for best performance.",
+                        bundle: .module
+                    )
+                }
+            }
+            .font(theme.font(size: CGFloat(theme.captionSize), weight: .medium))
+            .foregroundColor(theme.primaryText)
+            .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                showModelPicker = true
+            } label: {
+                Text("Choose model", bundle: .module)
+                    .font(theme.font(size: CGFloat(theme.captionSize), weight: .semibold))
+                    .foregroundColor(theme.accentColor)
+            }
+            .buttonStyle(.plain)
+            .pointingHandCursor()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(tint.opacity(0.12))
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(tint.opacity(0.35), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 3)
+        .frame(maxWidth: 560)
+        .accessibilityLabel(
+            blocked
+                ? Text("Sending paused: not enough memory to load \(modelName)", bundle: .module)
+                : Text("Memory is tight for \(modelName)", bundle: .module)
+        )
+    }
+
+    /// One-decimal GB formatting for the RAM banner (e.g. "12.4").
+    private static func formatGigabytes(_ bytes: Int64) -> String {
+        String(format: "%.1f", Double(bytes) / 1_073_741_824.0)
     }
 
     /// Compact, floating toast shown above the card when the Default agent's
