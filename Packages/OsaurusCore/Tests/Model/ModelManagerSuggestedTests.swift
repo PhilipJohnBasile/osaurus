@@ -135,7 +135,11 @@ struct ModelManagerSuggestedTests {
 
             #expect(mxfp8 != nil)
             #expect(mxfp8?.modelType == "lfm2_moe")
-            #expect(mxfp8?.isTopSuggestion == true)
+            // Demoted from Top Pick 2026-07-08: the official OsaurusAI
+            // LFM2.5-8B-A1B-MXFP8 bundle does not reliably call tools when
+            // live-tested in osaurus (refuses the tool loop). It stays a
+            // catalog chat model but is no longer a recommended onboarding pick.
+            #expect(mxfp8?.isTopSuggestion == false)
             // Sizes now come from `ModelSizeCache` (empty here), not literals.
             #expect(mxfp8?.downloadSizeBytes == nil)
             #expect(mxfp8?.releasedAt != nil)

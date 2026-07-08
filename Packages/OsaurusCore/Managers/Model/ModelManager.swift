@@ -678,11 +678,21 @@ extension ModelManager {
     nonisolated fileprivate static let curatedSuggestedModels: [MLXModel] = [
         // MARK: Top Picks
 
+        // LFM2.5-8B-A1B demoted from Top Pick (2026-07-08): live-tested the
+        // OFFICIAL OsaurusAI/LFM2.5-8B-A1B-MXFP8 bundle in osaurus and it does
+        // NOT call tools — on a weather/multiply agent loop it refuses every
+        // turn ("I don't have access to real-time weather data or a function to
+        // check current temperature") instead of emitting a tool call, and it
+        // over-reasons + slips multi-turn recall. Onboarding only surfaces Top
+        // Picks, and osaurus is tool-first, so it stays in the catalog for
+        // plain chat but is no longer a recommended onboarding pick. (Matches
+        // the local-CRACK 3/7 no-tool-call finding — confirmed not a CRACK
+        // artifact.) Re-promote only after a bundle that passes the AgentLoop
+        // tool-use proof.
         curated(
             id: "OsaurusAI/LFM2.5-8B-A1B-MXFP8",
             description:
-                "Liquid AI LFM2.5 8B hybrid MoE (~1B active), MXFP8 — high-precision, fast Apple Silicon chat. 128K context.",
-            isTopSuggestion: true,
+                "Liquid AI LFM2.5 8B hybrid MoE (~1B active), MXFP8 — fast Apple Silicon chat. Chat-only: does not reliably call tools. 128K context.",
             modelType: "lfm2_moe",
             releasedAt: date("2026-05-29"),
             useCase: .general
