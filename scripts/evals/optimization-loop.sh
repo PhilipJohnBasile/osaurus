@@ -118,7 +118,7 @@ fi
 # `read -ra` is the robust, SC2206-clean way to split the space-separated
 # override/default into the array (and is bash 3.2-safe). The `${VAR:-...}`
 # default is expanded before `read` reassigns the same name.
-read -ra DET_SUITES <<< "${DET_SUITES:-ArgumentCoercion CapabilitySearch ComputerUse PrefixHash RequestValidation SandboxDiagnostics Schema ScreenContext StreamingHint ToolEnvelope}"
+read -ra DET_SUITES <<< "${DET_SUITES:-AgentChannels ArgumentCoercion CapabilitySearch ComputerUse PrefixHash SandboxDiagnostics Schema ScreenContext ToolEnvelope ToolResultGrounding}"
 # Suites that drive a model (or the sandbox VM) — run PER model.
 # `Subagent` runs all subagent flows through the one SubagentSession host:
 # its scripted cases are model-independent (identical per model) while the live
@@ -130,8 +130,12 @@ read -ra DET_SUITES <<< "${DET_SUITES:-ArgumentCoercion CapabilitySearch Compute
 # scripted cases are model-independent (identical per model) while the live lanes
 # (real-model + mock/real executor) vary with the run model, so it lands real
 # `apple_script` rows in the cross-model matrix (same rationale as `Subagent`).
+# `ReasoningChannel`, `Memory`, `CacheProof`, and `HTTPAPI` are in the default
+# per-model set because they gate daily-driver behavior (reasoning boundary,
+# pinned-memory recall, KV/SSM/disk cache telemetry, API envelope contracts)
+# that varies with the run model just like the agent suites do.
 # `read -ra` splits the override/default into the array (SC2206-clean, bash 3.2-safe).
-read -ra LLM_SUITES <<< "${LLM_SUITES:-AgentLoop AgentLoopFrontier AgentDB AppleScript CapabilityClaims ComputerUseLoop DefaultAgent MicroPerf PromptInjection SandboxFrontier Subagent}"
+read -ra LLM_SUITES <<< "${LLM_SUITES:-AgentLoop AgentLoopFrontier AgentDB AppleScript CacheProof CapabilityClaims ComputerUseLoop DefaultAgent HTTPAPI Memory MicroPerf PromptInjection ReasoningChannel SandboxFrontier Subagent}"
 
 log() { printf '[opt-loop] %s\n' "$*"; }
 

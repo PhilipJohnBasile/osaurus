@@ -3,7 +3,7 @@
   "domain": "agent_loop",
   "label": "agent loop • long tool outputs on a small context window",
   "query": "Read each of the five log files in order (log1.txt, then log2.txt, then log3.txt, then log4.txt, then log5.txt). After each read, state in one short sentence whether that file contains the word ERROR before moving to the next. Never re-read a file you have already read — rely on the sentences you already wrote. Finish by telling me which file contains the word ERROR.",
-  "notes": "Five multi-KB reads against a 24K-token window override force the sticky compaction path mid-run. Five reads matter: the trimmer protects the most recent 3 turn-pairs, so the first two reads must age out and compact while the protected tail still fits the history budget — a smaller window would end the run with the distinct overBudget exit before compaction ever fires (over-budget-hard-overflow pins that separately), and a larger one never compacts. The ERROR lives in log4, and the prompt makes the model externalize per-file findings into assistant turns — the narrated findings (not the compacted tool results) are what survive trimming, which is exactly the behaviour the harness banks on in production.",
+  "notes": "Five multi-KB reads against a 16K-token (was 24K) window override force the sticky compaction path mid-run. Five reads matter: the trimmer protects the most recent 3 turn-pairs, so the first two reads must age out and compact while the protected tail still fits the history budget — a smaller window would end the run with the distinct overBudget exit before compaction ever fires (over-budget-hard-overflow pins that separately), and a larger one never compacts. The ERROR lives in log4, and the prompt makes the model externalize per-file findings into assistant turns — the narrated findings (not the compacted tool results) are what survive trimming, which is exactly the behaviour the harness banks on in production.",
   "fixtures": {
     "workspaceFiles": [
       {
@@ -31,7 +31,7 @@
   "expect": {
     "agentLoop": {
       "maxIterations": 10,
-      "contextWindowOverride": 24000,
+      "contextWindowOverride": 16000,
       "expectCompaction": true,
       "finalTextContains": [
         "log4"

@@ -857,7 +857,15 @@ struct MLXBatchAdapter {
             }
             return context
         }
-        if ModelFamilyNames.isQwenFamily(modelName) {
+        // Ornith 1.0 is the same qwen3_5 template family (negative
+        // `enable_thinking` gate — absent kwarg means thinking ON) under a
+        // bundle id with no "qwen" substring, so it needs the identical
+        // closed-rail default: without it, omitted reasoning controls left
+        // thinking on and API/local-chat rows died as hidden reasoning-only
+        // length stops (empty visible answer at the max_tokens cap).
+        if ModelFamilyNames.isQwenFamily(modelName)
+            || ModelFamilyNames.isOrnithFamily(modelName)
+        {
             if directRailReasoningEffort {
                 context["enable_thinking"] = false
                 return context

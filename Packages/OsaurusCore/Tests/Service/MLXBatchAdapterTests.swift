@@ -1199,6 +1199,49 @@ struct MLXBatchAdapterTests {
                 == false
         )
 
+        // Ornith 1.0 is the same qwen3_5 template family (negative
+        // enable_thinking gate) under a bundle id with no "qwen" substring;
+        // the closed-rail default for omitted reasoning controls must apply
+        // identically, or API/local-chat rows die as hidden reasoning-only
+        // length stops.
+        for ornithName in [
+            "OsaurusAI/Ornith-1.0-9B-MXFP8",
+            "Ornith-1.0-9B-MXFP4",
+            "ornith-1.0-35b-mxfp8",
+        ] {
+            #expect(
+                MLXBatchAdapter.additionalContext(for: unspecified, modelName: ornithName)["enable_thinking"] as? Bool
+                    == false,
+                "Ornith (\(ornithName)) must default to the closed/no-thinking rail like the rest of the qwen3_5 family"
+            )
+            #expect(
+                MLXBatchAdapter.additionalContext(for: enabled, modelName: ornithName)["enable_thinking"] as? Bool
+                    == true,
+                "an explicit enable_thinking=true request must still open the rail on Ornith (\(ornithName))"
+            )
+            #expect(
+                MLXBatchAdapter.additionalContext(for: disabled, modelName: ornithName)["enable_thinking"] as? Bool
+                    == false
+            )
+        }
+        let ornithEffort = MLXBatchAdapter.additionalContext(
+            for: GenerationParameters(
+                temperature: nil,
+                maxTokens: 16,
+                modelOptions: ["reasoningEffort": .string("high")]
+            ),
+            modelName: "OsaurusAI/Ornith-1.0-9B-MXFP8"
+        )
+        #expect(ornithEffort["enable_thinking"] as? Bool == true)
+        #expect(ornithEffort["reasoning_effort"] as? String == "high")
+        #expect(
+            MLXBatchAdapter.additionalContext(
+                for: unspecified,
+                modelName: "notornith-9b"
+            )["enable_thinking"] == nil,
+            "unrelated names must not inherit the Ornith closed rail"
+        )
+
         let zayaUnspecified = MLXBatchAdapter.additionalContext(
             for: unspecified,
             modelName: "zaya1-8b-jangtq_k"

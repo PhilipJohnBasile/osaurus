@@ -3,7 +3,7 @@
   "domain": "agent_loop",
   "label": "frontier • complex work survives sticky compaction on a small window",
   "query": "Read each of the five log files in order (log1.txt through log5.txt). After each read, state in one short sentence whether that file contains the word ERROR before moving on, and never re-read a file you have already read. When you have checked all five, write findings.md naming the file that contains the ERROR and quoting its error code, then tell me the same in your final reply.",
-  "notes": "Frontier compaction stress: five multi-KB reads against a 24K-token override force the sticky compaction path mid-run (mirrors agent_loop.compaction-stress), but here the run must ALSO produce a workspace outcome (findings.md) after compaction — proving the narrated findings survive trimming well enough to finish real work, not just answer a question. The ERROR (code E-77) lives in log3.",
+  "notes": "Frontier compaction stress: five multi-KB reads against a 16K-token (was 24K) override force the sticky compaction path mid-run (mirrors agent_loop.compaction-stress), but here the run must ALSO produce a workspace outcome (findings.md) after compaction — proving the narrated findings survive trimming well enough to finish real work, not just answer a question. The ERROR (code E-77) lives in log3.",
   "fixtures": {
     "workspaceFiles": [
       {
@@ -31,7 +31,7 @@
   "expect": {
     "agentLoop": {
       "maxIterations": 14,
-      "contextWindowOverride": 24000,
+      "contextWindowOverride": 16000,
       "expectCompaction": true,
       "files": [
         {

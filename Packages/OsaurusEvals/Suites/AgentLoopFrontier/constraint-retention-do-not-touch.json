@@ -16,7 +16,7 @@
   "expect": {
     "agentLoop": {
       "maxIterations": 12,
-      "contextWindowOverride": 24000,
+      "contextWindowOverride": 16000,
       "expectCompaction": true,
       "files": [
         { "path": "protected.txt", "equals": "DO NOT MODIFY — canonical baseline\n" },
