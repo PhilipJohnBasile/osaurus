@@ -35,17 +35,15 @@ Baseline scored pass rate: 227/290 = 78%. Deterministic suites: 126/127
 (the one FAIL is `capability_search.shell-execution`, a tracking-only
 policy row that predates this loop — see the case note).
 
-## Root cause 1 (runtime, FIXED): Ornith missed the qwen3_5 closed-thinking rail
+## Root cause 1 (model contract, ATTRIBUTED after a live-disproven fix)
 
-**The single biggest failure cluster.** Ornith is the qwen3_5 template
-family (negative `enable_thinking` gate: absent kwarg = thinking ON) under
-a bundle id that carries no "qwen" substring. The family policy pinned by
-`RuntimePolicySourceTests` — Qwen local chat defaults omitted reasoning
-controls to the closed/no-thinking rail so requests never die as hidden
-reasoning-only length stops — is keyed on `ModelFamilyNames.isQwenFamily`,
-which Ornith does not match. Result: every API/local-chat surface that
-omitted reasoning controls ran Ornith with thinking ON and a finite
-`max_tokens`, and the thinking span regularly consumed the entire budget.
+**The single biggest failure cluster — and the loop's most important
+negative result.** Ornith is the qwen3_5 template family (negative
+`enable_thinking` gate: absent kwarg = thinking ON, template prefills
+`<think>\n`) under a bundle id that carries no "qwen" substring. Every
+API/local-chat surface that omitted reasoning controls ran Ornith with
+thinking ON and a finite `max_tokens`, and the thinking span regularly
+consumed the entire budget.
 
 Observed downstream failures, all sharing this signature (empty/short
 visible text, `finish_reason == length`, unclosed reasoning span):
@@ -59,18 +57,34 @@ visible text, `finish_reason == length`, unclosed reasoning span):
   `responses-event-ordering` (no output_text deltas),
   `stop-sequence-honored` (finish_reason length),
   `concurrent-request-isolation` (response B empty).
-- `ComputerUseLoop`: forced `agent_action` steps burned ~600 tokens per
-  attempt and repeatedly failed action decode (see root cause 4 below —
-  most of these rows are expected to improve on the closed rail).
 
-**Fix:** `ModelFamilyNames.isOrnithFamily(_:)` added and OR-ed into the
-qwen3_5 closed-rail branch in `MLXBatchAdapter.additionalContext`.
-Explicit `enable_thinking=true` / positive `reasoning_effort` still opens
-the rail (verified by new targeted tests in `MLXBatchAdapterTests
-.additionalContext_mapsDisableThinkingToEnableThinkingKwarg`). This is
-the same mechanism `ModelRuntime.isKnownHybridModel` already uses to
-match Ornith explicitly for hybrid-cache detection — a family-contract
-alignment, not a synthetic default.
+**Attempted fix (REVERTED):** extending the Qwen closed/no-thinking rail
+to Ornith via `MLXBatchAdapter.additionalContext` (commit `a6ad7417`).
+The re-run vs baseline live-disproved it: with the pre-closed
+`<think>\n\n</think>` block, Ornith's agent loops collapsed —
+`AgentLoopFrontier` fell from 27/39 passing to 11/33 at the point the run
+was cut, dominated by `emptyResponseExhausted` exits and repeated
+"previous turn produced no output" notices after tool results, plus
+quality losses on rows that still completed (`fix-failing-tests` patched
+one of three planted bugs and claimed success; `write-new-file` used
+`share_artifact` instead of `file_write`). `AgentLoop` slipped 31→29.
+
+**Resolution (final):** Ornith's bundle contract is thinking-enabled
+(`jang_config.capabilities`: `supports_thinking: true`,
+`think_in_template: true`) and the model is RL-tuned for agentic coding
+WITH the thinking channel. Per the model-runtime non-negotiables, the
+closed rail was a synthetic Osaurus default that contradicted the bundle
+contract, so it was reverted; omitted reasoning controls now leave Ornith
+on its native template default (pinned by updated
+`MLXBatchAdapterTests.additionalContext_mapsDisableThinkingToEnableThinkingKwarg`
+expectations; explicit `disableThinking` / `reasoningEffort` requests
+still work through the generic branches). The ReasoningChannel / Memory /
+HTTPAPI empty-visible-answer rows are therefore **attributed model
+behavior**: under its native contract Ornith spends more than the case
+token budgets (512–2048) on hidden reasoning for short prompts. Daily
+local users who want budget-bounded plain-chat answers should set
+Disable Thinking or a `reasoning_effort` override explicitly — the
+harness rows stay red as an honest report of the default contract.
 
 ## Root cause 2 (harness, FIXED): stale loop suite defaults
 
@@ -106,18 +120,19 @@ carry-token` additionally had an assertion/query mismatch — it scored
 `finalTextContains` on the build tag but the query only asked for the tag
 in the file; the query now asks for the tag in the final reply too.
 
-## Root cause 4 (needs re-run evidence): CU-loop `mark` decode giveUps
+## Root cause 4 (attributed): CU-loop `mark` decode giveUps
 
 7 of 9 `ComputerUseLoop` fails ended `gaveUp` at step 0 with three
 consecutive invalid `agent_action` emissions ("Property 'mark' must be an
 integer"). The preflight coercion already accepts numeric strings and the
 re-ask hint is correct; the raw emissions ride the `_error` envelope so
 the exact wrong shape isn't recoverable from this run. Each attempt
-burned ~600 tokens — consistent with a thinking span preceding the tool
-call under the thinking-ON default. Re-run decides: if the closed rail
-fixes these rows, they were root cause 1; whatever remains is a genuine
-model formatting gap and stays attributed (boolean/string marks are
-rejected by design — mapping `true`→1 would be a synthetic repair).
+burned ~600 tokens — a thinking span preceding the action decode under
+the (native, now confirmed-kept) thinking-ON default. With the closed
+rail rejected as a fix, these rows stay **attributed** as a genuine model
+formatting gap on the forced-`agent_action` surface (boolean/string
+marks are rejected by design — mapping `true`→1 would be a synthetic
+repair).
 
 ## Attributed failures (genuine model gaps — documented, not forced)
 
@@ -155,7 +170,9 @@ rejected by design — mapping `true`→1 would be a synthetic repair).
 
 ## Status
 
-- [x] Baseline MXFP8 lane complete (this doc).
-- [ ] MXFP4 lane completing (validates the 16K-window case fix live).
-- [ ] Re-run vs `BASELINE=build/evals/loop/20260710-200932` after fixes.
+- [x] Baseline MXFP8 + MXFP4 lanes complete.
+- [x] First re-run vs baseline (dir `20260711-024343`, cut early):
+  live-disproved the Ornith closed-rail fix — reverted (root cause 1).
+- [ ] Clean re-run vs `BASELINE=build/evals/loop/20260710-200932` with the
+  revert + harness case fixes (16K compaction windows, carry-token query).
 - [ ] Final `RECORD=1` run + M4 Pro MXFP8 community row + COMPATIBILITY rebuild.

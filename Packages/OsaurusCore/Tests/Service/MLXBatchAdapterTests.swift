@@ -1199,29 +1199,30 @@ struct MLXBatchAdapterTests {
                 == false
         )
 
-        // Ornith 1.0 is the same qwen3_5 template family (negative
-        // enable_thinking gate) under a bundle id with no "qwen" substring;
-        // the closed-rail default for omitted reasoning controls must apply
-        // identically, or API/local-chat rows die as hidden reasoning-only
-        // length stops.
+        // Ornith 1.0 shares the qwen3_5 template class but must NOT inherit
+        // the Qwen closed rail: its bundle contract is thinking-enabled
+        // (`jang_config.capabilities.think_in_template=true`) and the model
+        // is RL-tuned for agentic coding WITH the thinking channel. The
+        // 2026-07-11 optimization-loop re-run proved that pre-closing the
+        // think block collapses its agent loops into empty turns
+        // (emptyResponseExhausted; AgentLoopFrontier 27→11 passing).
         for ornithName in [
             "OsaurusAI/Ornith-1.0-9B-MXFP8",
             "Ornith-1.0-9B-MXFP4",
             "ornith-1.0-35b-mxfp8",
         ] {
             #expect(
-                MLXBatchAdapter.additionalContext(for: unspecified, modelName: ornithName)["enable_thinking"] as? Bool
-                    == false,
-                "Ornith (\(ornithName)) must default to the closed/no-thinking rail like the rest of the qwen3_5 family"
+                MLXBatchAdapter.additionalContext(for: unspecified, modelName: ornithName)["enable_thinking"] == nil,
+                "Ornith (\(ornithName)) must keep its native thinking-enabled template default when reasoning controls are omitted"
             )
             #expect(
                 MLXBatchAdapter.additionalContext(for: enabled, modelName: ornithName)["enable_thinking"] as? Bool
-                    == true,
-                "an explicit enable_thinking=true request must still open the rail on Ornith (\(ornithName))"
+                    == true
             )
             #expect(
                 MLXBatchAdapter.additionalContext(for: disabled, modelName: ornithName)["enable_thinking"] as? Bool
-                    == false
+                    == false,
+                "an explicit disableThinking request must still close the rail on Ornith (\(ornithName))"
             )
         }
         let ornithEffort = MLXBatchAdapter.additionalContext(
@@ -1234,13 +1235,6 @@ struct MLXBatchAdapterTests {
         )
         #expect(ornithEffort["enable_thinking"] as? Bool == true)
         #expect(ornithEffort["reasoning_effort"] as? String == "high")
-        #expect(
-            MLXBatchAdapter.additionalContext(
-                for: unspecified,
-                modelName: "notornith-9b"
-            )["enable_thinking"] == nil,
-            "unrelated names must not inherit the Ornith closed rail"
-        )
 
         let zayaUnspecified = MLXBatchAdapter.additionalContext(
             for: unspecified,

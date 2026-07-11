@@ -74,17 +74,6 @@ enum ModelFamilyNames {
         matches(#"(^|/|[\-_])qwen($|[\-_/\.0-9])"#, in: modelId.lowercased())
     }
 
-    /// Ornith 1.0 bundles (DeepReinforce, OsaurusAI catalog) in repo,
-    /// local-folder, and picker alias forms. Ornith is the qwen3_5 /
-    /// qwen3_5_moe runtime family under a bundle id that carries no
-    /// "qwen" substring (same reason `ModelRuntime.isKnownHybridModel`
-    /// matches it explicitly), so family-contract policies keyed on
-    /// `isQwenFamily` must also check this helper. Strict enough to
-    /// reject unrelated names like `notornith`.
-    static func isOrnithFamily(_ modelId: String) -> Bool {
-        matches(#"(^|/|[\-_])ornith($|[\-_/\.0-9])"#, in: modelId.lowercased())
-    }
-
     /// Gemma/Gemma3n/Gemma4 bundles in repo, local-folder, and picker alias
     /// forms. This is used for metadata surfaces only; tokenizer/template
     /// selection still comes from the resolved bundle.

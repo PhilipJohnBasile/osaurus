@@ -857,15 +857,17 @@ struct MLXBatchAdapter {
             }
             return context
         }
-        // Ornith 1.0 is the same qwen3_5 template family (negative
-        // `enable_thinking` gate — absent kwarg means thinking ON) under a
-        // bundle id with no "qwen" substring, so it needs the identical
-        // closed-rail default: without it, omitted reasoning controls left
-        // thinking on and API/local-chat rows died as hidden reasoning-only
-        // length stops (empty visible answer at the max_tokens cap).
-        if ModelFamilyNames.isQwenFamily(modelName)
-            || ModelFamilyNames.isOrnithFamily(modelName)
-        {
+        // NOTE: Ornith 1.0 shares the qwen3_5 template class but must NOT
+        // inherit this closed rail. Its bundle contract is thinking-enabled
+        // (`jang_config.capabilities.think_in_template=true`) and the model
+        // is RL-tuned for agentic coding WITH the thinking channel: the
+        // 2026-07-11 optimization-loop re-run proved that pre-closing the
+        // think block collapses its agent loops into empty turns
+        // (`emptyResponseExhausted`, AgentLoopFrontier 27→11 passing).
+        // Omitted reasoning controls therefore leave Ornith on its native
+        // template default; explicit disableThinking/reasoningEffort
+        // requests still flow through the generic branches above.
+        if ModelFamilyNames.isQwenFamily(modelName) {
             if directRailReasoningEffort {
                 context["enable_thinking"] = false
                 return context
