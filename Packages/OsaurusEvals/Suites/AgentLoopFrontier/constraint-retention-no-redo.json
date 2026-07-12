@@ -15,7 +15,7 @@
   "expect": {
     "agentLoop": {
       "maxIterations": 12,
-      "contextWindowOverride": 16000,
+      "contextWindowOverride": 20000,
       "expectCompaction": true,
       "maxToolCalls": 6,
       "noDuplicateExecutedCalls": true,

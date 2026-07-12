@@ -1,5 +1,5 @@
 {
-  "contributions" : 10,
+  "contributions" : 11,
   "devices" : [
     {
       "chip" : "Apple M4 Max",
@@ -11,14 +11,14 @@
     },
     {
       "chip" : "Apple M4 Pro",
-      "contributions" : 6,
+      "contributions" : 7,
       "osVersions" : [
         "26.2.0"
       ],
       "totalRamMb" : 49152
     }
   ],
-  "generatedAt" : "2026-07-11T03:10:05.176Z",
+  "generatedAt" : "2026-07-12T13:56:32.075Z",
   "models" : [
     {
       "builds" : [
@@ -49,24 +49,26 @@
         "563f91746"
       ],
       "catalogHashes" : [
+        "47bc36714bbf8db1",
         "8632f992dc0872b5"
       ],
       "chips" : [
-        "Apple M4 Max"
+        "Apple M4 Max",
+        "Apple M4 Pro"
       ],
-      "contributions" : 1,
+      "contributions" : 2,
       "decodeTokensPerSecondMax" : 29.489864669001758,
-      "decodeTokensPerSecondMin" : 29.489864669001758,
-      "errored" : 0,
+      "decodeTokensPerSecondMin" : 22.875545040134746,
+      "errored" : 2,
       "hasSelfJudged" : false,
       "maxRamMb" : 131072,
-      "minRamMb" : 131072,
+      "minRamMb" : 49152,
       "model" : "OsaurusAI/Ornith-1.0-9B-MXFP8",
-      "passed" : 178,
-      "peakPhysFootprintMb" : 10590.363494873047,
-      "scored" : 217,
-      "skipped" : 55,
-      "verdict" : "works"
+      "passed" : 428,
+      "peakPhysFootprintMb" : 20608.992179870605,
+      "scored" : 533,
+      "skipped" : 61,
+      "verdict" : "partial"
     },
     {
       "builds" : [

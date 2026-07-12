@@ -1,0 +1,133 @@
+{
+  "domains": [
+    "agent_channels",
+    "agent_loop",
+    "apple_script",
+    "argument_coercion",
+    "cache_proof",
+    "capability_claims",
+    "capability_search",
+    "computer_use",
+    "computer_use_loop",
+    "default_agent",
+    "http_api",
+    "judge_calibration",
+    "memory",
+    "micro_perf",
+    "prefix_hash",
+    "reasoning_channel",
+    "sandbox_diagnostics",
+    "schema",
+    "screen_context",
+    "subagent",
+    "tool_envelope",
+    "tool_result_grounding"
+  ],
+  "generatedAt": "2026-07-12T13:54:12.987Z",
+  "models": [
+    {
+      "chatModelPassed": 241,
+      "chatModelScored": 297,
+      "environment": {
+        "caseCount": 11,
+        "catalogHash": "47bc36714bbf8db1",
+        "chip": "Apple M4 Pro",
+        "cpuCores": 14,
+        "judge": "xai/grok-4.3",
+        "lowPowerMode": false,
+        "osVersion": "26.2.0",
+        "powerSource": "AC",
+        "runModel": "OsaurusAI/Ornith-1.0-9B-MXFP8",
+        "thermalState": "nominal",
+        "totalRamMb": 49152
+      },
+      "meanCpuPercent": 74.07465017775583,
+      "meanDecodeTokensPerSecond": 22.875545040134746,
+      "meanPromptTokensPerTask": 27453.495798319327,
+      "meanTotalTokensPerTask": 24847.434782608696,
+      "meanTtftMs": 142.1449950070885,
+      "modelId": "OsaurusAI/Ornith-1.0-9B-MXFP8",
+      "peakCpuPercent": 525.7715514989653,
+      "peakPhysFootprintMb": 20608.992179870605,
+      "perDomain": {
+        "agent_loop": {
+          "errored": 0,
+          "passed": 92,
+          "scored": 120,
+          "skipped": 4
+        },
+        "apple_script": {
+          "errored": 0,
+          "passed": 25,
+          "scored": 35,
+          "skipped": 0
+        },
+        "cache_proof": {
+          "errored": 0,
+          "passed": 4,
+          "scored": 5,
+          "skipped": 0
+        },
+        "capability_claims": {
+          "errored": 0,
+          "passed": 10,
+          "scored": 11,
+          "skipped": 0
+        },
+        "computer_use_loop": {
+          "errored": 0,
+          "passed": 16,
+          "scored": 23,
+          "skipped": 0
+        },
+        "default_agent": {
+          "errored": 1,
+          "passed": 26,
+          "scored": 27,
+          "skipped": 0
+        },
+        "http_api": {
+          "errored": 0,
+          "passed": 10,
+          "scored": 15,
+          "skipped": 0
+        },
+        "judge_calibration": {
+          "errored": 0,
+          "passed": 11,
+          "scored": 11,
+          "skipped": 0
+        },
+        "memory": {
+          "errored": 0,
+          "passed": 5,
+          "scored": 8,
+          "skipped": 0
+        },
+        "micro_perf": {
+          "errored": 0,
+          "passed": 4,
+          "scored": 4,
+          "skipped": 0
+        },
+        "reasoning_channel": {
+          "errored": 1,
+          "passed": 3,
+          "scored": 12,
+          "skipped": 0
+        },
+        "subagent": {
+          "errored": 0,
+          "passed": 44,
+          "scored": 45,
+          "skipped": 2
+        }
+      },
+      "startedAt": "2026-07-12T07:10:16Z",
+      "subsystemPassed": 9,
+      "subsystemScored": 19,
+      "totalPassed": 250,
+      "totalScored": 316
+    }
+  ]
+}

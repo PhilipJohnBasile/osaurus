@@ -3,7 +3,7 @@
   "domain": "agent_loop",
   "label": "frontier • a formatting constraint stated up front survives compaction",
   "query": "Hard rule for this whole task: the ONLY file you may create is report.txt, and its very first line must be exactly 'CONSTRAINT-OK'. Now review these four large data files in order (data1.csv, data2.csv, data3.csv, data4.csv), reading one at a time and never re-reading. After you have reviewed all four, write report.txt with the required first line followed by a one-line note of how many files you reviewed.",
-  "notes": "Long-horizon constraint retention: the format constraint is stated in turn 1, then four ~9KB reads against a 16K-token window force sticky compaction (mirrors compaction-under-load), so by the time the model writes report.txt the original instruction has aged toward the trim boundary. The case tests compaction QUALITY: the final artifact must still honor the constraint (first line CONSTRAINT-OK) — not just that the run finished. Filler reads reuse the committed commits fixture to keep the case JSON small. 16K window (was 24K) so the reads deterministically overflow the history budget even for a terse model — see constraint-retention-carry-token for the budget math. Off-CI (needs a model).",
+  "notes": "Long-horizon constraint retention: the format constraint is stated in turn 1, then four ~9KB reads against a 20K-token window force sticky compaction (mirrors compaction-under-load), so by the time the model writes report.txt the original instruction has aged toward the trim boundary. The case tests compaction QUALITY: the final artifact must still honor the constraint (first line CONSTRAINT-OK) — not just that the run finished. Filler reads reuse the committed commits fixture to keep the case JSON small. 20K window (24K never fired; 16K died as overBudget before compaction could fire) — see constraint-retention-carry-token for the measured budget math. Off-CI (needs a model).",
   "fixtures": {
     "workspaceFiles": [
       { "path": "data1.csv", "contentsFromFixture": "commits-500.csv" },
@@ -15,7 +15,7 @@
   "expect": {
     "agentLoop": {
       "maxIterations": 12,
-      "contextWindowOverride": 16000,
+      "contextWindowOverride": 20000,
       "expectCompaction": true,
       "files": [
         { "path": "report.txt", "exists": true, "contains": "CONSTRAINT-OK" }

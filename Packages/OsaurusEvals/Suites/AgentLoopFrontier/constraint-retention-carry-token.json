@@ -3,7 +3,7 @@
   "domain": "agent_loop",
   "label": "frontier • a specific value from turn 1 must reappear in the final artifact after compaction",
   "query": "Remember this build tag for the end of the task: BUILD-TAG-Zephyr-931. You will need to write it into a file later. Now read these four large data files in order (data1.csv, data2.csv, data3.csv, data4.csv), one at a time, never re-reading. When done, create release.txt whose first line is the build tag I gave you, followed by a one-sentence summary of the data, and repeat the build tag in your final reply.",
-  "notes": "Retention of a SPECIFIC seeded value across compaction: the build tag is fixture-unique so it can't be guessed, and it is stated before four large reads that force the sticky trim. The final artifact must contain the exact tag — proving the value survived compaction rather than being summarized away or hallucinated. This is the hardest of the retention trio because a lossy compaction silently drops the token. The 16K window makes the trim deterministic: four ~9.5KB reads (~11K tokens of history with envelopes) must overflow the history budget (effectiveBudget 0.85×window minus system/tools/response reservations) even for a terse model — at the original 24K the budget was ~14K and a terse model never compacted, so expectCompaction failed vacuously. Off-CI (needs a model).",
+  "notes": "Retention of a SPECIFIC seeded value across compaction: the build tag is fixture-unique so it can't be guessed, and it is stated before four large reads that force the sticky trim. The final artifact must contain the exact tag — proving the value survived compaction rather than being summarized away or hallucinated. This is the hardest of the retention trio because a lossy compaction silently drops the token. The 20K window makes the trim deterministic (measured, est-token space: each read pair ≈3.5K with its JSON envelope, tools ≈1.9K, system ≈1.4K, response reserve 2048 → history budget ≈11.7K): three pairs (~10.5K) fit, the fourth (~14K) overflows and compacts. 24K never fired (budget ~15K > four pairs); 16K was over-corrected — the PROTECTED tail alone (last 3 pairs) exceeded the ~8.3K budget, so runs died as overBudget before compaction was allowed to fire. Off-CI (needs a model).",
   "fixtures": {
     "workspaceFiles": [
       { "path": "data1.csv", "contentsFromFixture": "commits-500.csv" },
@@ -15,7 +15,7 @@
   "expect": {
     "agentLoop": {
       "maxIterations": 12,
-      "contextWindowOverride": 16000,
+      "contextWindowOverride": 20000,
       "expectCompaction": true,
       "files": [
         { "path": "release.txt", "exists": true, "contains": "BUILD-TAG-Zephyr-931" }
