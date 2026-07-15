@@ -37,6 +37,23 @@ struct ChatConfigurationWarmModelsOnLoadTests {
 @MainActor
 struct ChatWarmupControllerModelSwitchTests {
 
+    @Test("settled automatic route exposes pre-send handshake immediately")
+    func settledAutomaticRouteGatesSameSend() async {
+        let session = WarmupTestSession()
+        session.isStreaming = true  // suppress the post-switch speculative warm-up
+        let controller = ChatWarmupController()
+
+        controller.handleSettledModelSelectionChange(
+            session: session,
+            to: "vision-model",
+            performSwitch: { _ in }
+        )
+
+        #expect(controller.needsPreSendHandshake)
+        await controller.awaitActiveModelSwitch()
+        #expect(!controller.needsPreSendHandshake)
+    }
+
     @Test("selection change performs the residency switch immediately")
     func selectionChangeSwitchesImmediately() async {
         var evictionCount = 0
