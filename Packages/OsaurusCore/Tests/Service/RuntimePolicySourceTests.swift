@@ -1112,6 +1112,16 @@ struct RuntimePolicySourceTests {
         #expect(concurrency.contains("Concurrent Sessions"))
         #expect(concurrency.contains("Continuous Batching"))
         #expect(concurrency.contains("Prompt Prefill Chunk Size"))
+        #expect(
+            concurrency.contains(
+                #"draft.concurrency.maxConcurrentSequences.map(String.init) ?? """#
+            )
+        )
+        #expect(
+            !concurrency.contains(
+                #"draft.concurrency.maxConcurrentSequences.map(String.init) ?? "1""#
+            )
+        )
     }
 
     @Test("Tools settings panel separates wired parser overrides from planned host bridges")
