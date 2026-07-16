@@ -832,11 +832,11 @@ struct ModelDetailView: View, Identifiable {
             let memory = variant.formattedEstimatedMemory
             switch variant.compatibility(totalMemoryGB: totalMemoryGB) {
             case .compatible:
-                return (memory.map { L("Comfortable fit · \($0)") } ?? L("Comfortable fit"), theme.successColor)
+                return (memory.map { "\(L("Comfortable fit")) · \($0)" } ?? L("Comfortable fit"), theme.successColor)
             case .tight:
-                return (memory.map { L("Tight fit · \($0)") } ?? L("Tight fit"), theme.warningColor)
+                return (memory.map { "\(L("Tight fit")) · \($0)" } ?? L("Tight fit"), theme.warningColor)
             case .tooLarge:
-                return (memory.map { L("Too large · \($0)") } ?? L("Too large"), theme.errorColor)
+                return (memory.map { "\(L("Too large")) · \($0)" } ?? L("Too large"), theme.errorColor)
             case .unknown:
                 return (nil, theme.tertiaryText)
             }

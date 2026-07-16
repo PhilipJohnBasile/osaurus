@@ -2396,7 +2396,7 @@ struct AgentDetailView: View {
                         } else if agent.id != Agent.defaultId,
                             let inherited = agentManager.configuredModel(for: agent.id)
                         {
-                            Text("Default → \(formatModelName(inherited))")
+                            Text(verbatim: "Default → \(formatModelName(inherited))")
                                 .font(.system(size: 13))
                                 .foregroundColor(theme.placeholderText)
                                 .lineLimit(1)
@@ -7488,7 +7488,7 @@ private struct AgentEditorSheet: View {
     private var editorModelGuidance: some View {
         if AutomaticModelRoutingPolicy.isAutomatic(selectedModel) {
             if let route = AutomaticModelRoutingPolicy.resolve(items: pickerItems) {
-                Text("Automatic currently selects \(route.displayName). \(route.explanation)")
+                Text(verbatim: "Automatic currently selects \(route.displayName). \(route.explanation)")
                     .font(.system(size: 10))
                     .foregroundColor(theme.secondaryText)
             } else {

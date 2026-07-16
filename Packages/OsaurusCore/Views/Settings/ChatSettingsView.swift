@@ -362,7 +362,7 @@ struct ChatSettingsView: View {
 
             if AutomaticModelRoutingPolicy.isAutomatic(tempDefaultModel) {
                 if let route = AutomaticModelRoutingPolicy.resolve(items: pickerItems) {
-                    Text("Automatic currently selects \(route.displayName). \(route.explanation)")
+                    Text(verbatim: "Automatic currently selects \(route.displayName). \(route.explanation)")
                         .font(.system(size: 10))
                         .foregroundColor(theme.secondaryText)
                 } else {
