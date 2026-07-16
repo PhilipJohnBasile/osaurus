@@ -1027,7 +1027,8 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
 
             let runtimeSettings = ServerRuntimeSettingsStore.snapshot()
             let memoryStatus = MemoryStatus.snapshot()
-            let memorySafetyPlan = runtimeSettings.resolvedMemorySafetyPlan(
+            let memorySafetyPlan = ServerRuntimeSettingsStore.resolvedMemorySafetyPlan(
+                for: runtimeSettings,
                 baseLoadConfiguration: .osaurusProduction,
                 host: memoryStatus
             )
@@ -1471,6 +1472,8 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
         return [
             "mode": memorySafety.mode.rawValue,
             "slider": memorySafety.slider,
+            "automatic_memory_limits_disabled":
+                ServerRuntimeSettingsStore.automaticMemoryLimitsDisabled(for: settings),
             "allowed": plan.blockingIssues.isEmpty,
             "display_summary": plan.displaySummary,
             "resolved_physical_memory_bytes": plan.resolvedPhysicalMemoryBytes,
@@ -9094,6 +9097,8 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
                         "required_available_bytes": f.requiredAvailableBytes,
                         "soft_limit_bytes": f.softLimitBytes,
                         "hard_limit_bytes": f.hardLimitBytes,
+                        "automatic_memory_limits_disabled":
+                            f.automaticMemoryLimitsDisabled,
                         // What Metal actually keeps resident. A load past this
                         // is paged by macOS rather than refused, so support
                         // needs to see it to explain a "fits but crawls" model.
