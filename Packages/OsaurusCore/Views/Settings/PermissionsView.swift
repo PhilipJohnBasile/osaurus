@@ -104,6 +104,9 @@ struct PermissionsView: View {
 private struct SystemPermissionRow: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @ObservedObject private var permissionService = SystemPermissionService.shared
+    /// The diagnostic "Test" button is a developer surface; grant status,
+    /// Grant, and Settings actions stay for everyone.
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
     let permission: SystemPermission
 
     @State private var isTesting = false
@@ -115,7 +118,7 @@ private struct SystemPermissionRow: View {
     }
 
     // Permissions that support the diagnostic test button
-    private var canTest: Bool {
+    private var supportsTest: Bool {
         switch permission {
         case .automation, .automationCalendar, .automationMail, .notes,
             .contacts, .calendar, .reminders, .location, .accessibility:
@@ -123,6 +126,10 @@ private struct SystemPermissionRow: View {
         default:
             return false
         }
+    }
+
+    private var canTest: Bool {
+        supportsTest && developerMode.isEnabled
     }
 
     var body: some View {

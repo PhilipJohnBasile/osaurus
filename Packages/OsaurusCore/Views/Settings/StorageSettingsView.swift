@@ -19,6 +19,9 @@ import SwiftUI
 
 public struct StorageSettingsView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
+    /// The Keychain service/account/cipher detail block is developer-only;
+    /// encryption status, backups, and recovery stay standard.
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
     private var theme: ThemeProtocol { themeManager.currentTheme }
 
     @State private var posture: StorageOnDiskPosture = .empty
@@ -405,7 +408,7 @@ public struct StorageSettingsView: View {
                     }
                 }
 
-                if desiredEncrypted {
+                if desiredEncrypted, developerMode.isEnabled {
                     Divider().background(theme.primaryBorder.opacity(0.2))
                     technicalDetails
                 }

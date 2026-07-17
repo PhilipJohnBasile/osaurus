@@ -6,6 +6,10 @@ struct ConfigurationView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @EnvironmentObject private var updater: UpdaterViewModel
 
+    /// App-wide Developer Mode. Toggled from the Advanced section below and
+    /// applied immediately (persisted by the settings object itself).
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
+
     /// Use computed property to always get the current theme from ThemeManager
     private var theme: ThemeProtocol { themeManager.currentTheme }
 
@@ -112,6 +116,9 @@ struct ConfigurationView: View {
     private static let legalKeywords = [
         "Legal", "Terms", "Terms of Service", "Privacy", "Privacy Policy", "Policy", "About",
     ]
+    private static let advancedKeywords = [
+        "Advanced", "Developer", "Developer Mode", "Debug", "Diagnostics", "Experimental", "Internal",
+    ]
     private static let subagentKeywords = [
         "subagent", "spawn", "delegate", "delegation", "helper jobs",
         "handoff", "ram safety", "residency", "unload", "preflight",
@@ -119,7 +126,7 @@ struct ConfigurationView: View {
     ]
 
     private static let allSearchKeywordGroups: [[String]] = [
-        generalKeywords, notificationsKeywords, subagentKeywords, legalKeywords,
+        generalKeywords, notificationsKeywords, subagentKeywords, advancedKeywords, legalKeywords,
     ]
 
     /// True when an active query matches at least one section. Drives the
@@ -407,6 +414,31 @@ struct ConfigurationView: View {
                                             }
                                             .buttonStyle(SettingsButtonStyle())
                                         }
+                                    }
+                                }
+                            }
+
+                            // MARK: - Advanced Section
+                            if matchesSearch(Self.advancedKeywords) {
+                                SettingsSection(
+                                    title: "Advanced",
+                                    icon: "wrench.and.screwdriver",
+                                    anchorId: "settings.advanced.developerMode"
+                                ) {
+                                    VStack(alignment: .leading, spacing: 20) {
+                                        Text(
+                                            "Options intended for troubleshooting and development.",
+                                            bundle: .module
+                                        )
+                                        .font(.system(size: 12))
+                                        .foregroundColor(theme.secondaryText)
+
+                                        SettingsToggle(
+                                            title: L("Developer Mode"),
+                                            description:
+                                                "Show diagnostics, internal metrics, raw reports, and experimental controls throughout Settings. Errors and recovery actions stay visible either way.",
+                                            isOn: $developerMode.isEnabled
+                                        )
                                     }
                                 }
                             }

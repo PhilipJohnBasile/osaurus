@@ -31,6 +31,9 @@ struct ManagementView: View {
     /// Observed so the pending landing anchor reaches every tab via the
     /// environment, re-rendering their glow targets when a result lands.
     @ObservedObject private var highlightCoordinator = SettingsHighlightCoordinator.shared
+    /// Developer Mode hides developer-only sidebar destinations (e.g.
+    /// Insights) and developer-only search results while off.
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
 
     @EnvironmentObject private var updater: UpdaterViewModel
 
@@ -80,6 +83,14 @@ struct ManagementView: View {
             .overlay(ThemedAlertHost(scope: .management))
             .onAppear(perform: handleAppear)
             .onChange(of: stateManager.selectedTab) { handleTabChange(to: $1) }
+            // Turning Developer Mode off while a developer-only tab is open
+            // would leave the user on a screen with no sidebar row; route
+            // back to the landing tab instead.
+            .onChange(of: developerMode.isEnabled) { _, enabled in
+                if !enabled, stateManager.selectedTab.visibility == .developer {
+                    stateManager.selectedTab = .settings
+                }
+            }
             // The pairing deeplink router publishes an invite here when an
             // `osaurus://...?pair=...` URL is opened. Forwarding it through
             // a local @State (`presentingInvite`) gives the sheet a stable
@@ -243,11 +254,13 @@ private extension ManagementView {
 private extension ManagementView {
 
     var sidebarSections: [SidebarSectionData] {
-        ManagementSection.allCases.map { section in
-            SidebarSectionData(
+        ManagementSection.allCases.compactMap { section in
+            let tabs = section.sidebarTabs(developerModeEnabled: developerMode.isEnabled)
+            guard !tabs.isEmpty else { return nil }
+            return SidebarSectionData(
                 id: section.rawValue,
                 title: section.title,
-                items: section.tabs.map { tab in
+                items: tabs.map { tab in
                     tab.sidebarItem(
                         badge: badgeCount(for: tab),
                         badgeHighlight: badgeHighlight(for: tab)

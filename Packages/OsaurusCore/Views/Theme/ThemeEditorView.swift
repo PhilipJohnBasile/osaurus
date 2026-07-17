@@ -23,6 +23,9 @@ private func decodeThemeBackgroundImage(_ base64: String?) async -> NSImage? {
 
 struct ThemeEditorView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
+    /// Raw JSON editing is a developer surface; normal customization uses
+    /// the structured sections above it.
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
     @Environment(\.dismiss) private var dismiss
 
     private var currentTheme: ThemeProtocol { themeManager.currentTheme }
@@ -112,7 +115,9 @@ struct ThemeEditorView: View {
                     textAndFontsSection
                     bordersAndEffectsSection
                     advancedSection
-                    rawJSONSection
+                    if developerMode.isEnabled {
+                        rawJSONSection
+                    }
                 }
                 .padding(20)
             }

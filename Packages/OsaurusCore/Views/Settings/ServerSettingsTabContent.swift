@@ -45,6 +45,9 @@ struct ServerSettingsTabContent: View {
     @State private var activeSection: ServerSettingsSection = .connection
 
     @ObservedObject private var managementState = ManagementStateManager.shared
+    /// Developer Mode gates the Diagnostics group (Live Activity) here and
+    /// in `ServerSettingsSidebarNav`.
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
     /// Section that just received a settings-search landing, briefly glowing.
     @State private var landedSection: ServerSettingsSection?
     @State private var landedClearTask: Task<Void, Never>?
@@ -143,6 +146,13 @@ struct ServerSettingsTabContent: View {
         .onChange(of: server.configuration) { _, newValue in
             if !hasUnsavedChanges { draftLegacy = newValue }
         }
+        // Turning Developer Mode off removes the Diagnostics group; fall
+        // back to the first section so the sidebar selection stays real.
+        .onChange(of: developerMode.isEnabled) { _, enabled in
+            if !enabled, activeSection.visibility == .developer {
+                activeSection = .connection
+            }
+        }
     }
 
     // MARK: - Content pane
@@ -168,52 +178,57 @@ struct ServerSettingsTabContent: View {
     private var sectionScroll: some View {
         ScrollViewReader { proxy in
             ScrollView {
+                // Order matches `ServerSettingsSection.allCases`: standard
+                // setup first, Advanced tuning next, Diagnostics last
+                // (Developer Mode only).
                 LazyVStack(alignment: .leading, spacing: 24) {
                     ConnectionSection(draft: $draft)
                         .id(ServerSettingsSection.connection)
                         .settingsSearchHighlight(landedSection == .connection)
-                    GlobalProxySection(draft: $draftLegacy)
-                        .id(ServerSettingsSection.globalProxy)
-                        .settingsSearchHighlight(landedSection == .globalProxy)
                     AuthenticationSection(draft: $draft)
                         .id(ServerSettingsSection.authentication)
                         .settingsSearchHighlight(landedSection == .authentication)
                     GenerationDefaultsSection(draft: $draft)
                         .id(ServerSettingsSection.sampling)
                         .settingsSearchHighlight(landedSection == .sampling)
-                    ConcurrencySection(draft: $draft)
-                        .id(ServerSettingsSection.concurrency)
-                        .settingsSearchHighlight(landedSection == .concurrency)
-                    CacheSection(draft: $draft)
-                        .id(ServerSettingsSection.cache)
-                        .settingsSearchHighlight(landedSection == .cache)
                     MemorySafetySection(draft: $draft)
                         .id(ServerSettingsSection.memorySafety)
                         .settingsSearchHighlight(landedSection == .memorySafety)
-                    DecodePerformanceSection(draft: $draft)
-                        .id(ServerSettingsSection.decodePerformance)
-                        .settingsSearchHighlight(landedSection == .decodePerformance)
-                    MTPSection(draft: $draft)
-                        .id(ServerSettingsSection.speculative)
-                        .settingsSearchHighlight(landedSection == .speculative)
-                    LiveActivitySection()
-                        .id(ServerSettingsSection.liveActivity)
-                        .settingsSearchHighlight(landedSection == .liveActivity)
-                    MultimodalSection(draft: $draft)
-                        .id(ServerSettingsSection.multimodal)
-                        .settingsSearchHighlight(landedSection == .multimodal)
-                    ToolsTemplatesSection(draft: $draft)
-                        .id(ServerSettingsSection.tools)
-                        .settingsSearchHighlight(landedSection == .tools)
                     ModelResidencySection(draft: $draftLegacy)
                         .id(ServerSettingsSection.modelMemory)
                         .settingsSearchHighlight(landedSection == .modelMemory)
                     PowerSection(draft: $draft)
                         .id(ServerSettingsSection.power)
                         .settingsSearchHighlight(landedSection == .power)
+                    GlobalProxySection(draft: $draftLegacy)
+                        .id(ServerSettingsSection.globalProxy)
+                        .settingsSearchHighlight(landedSection == .globalProxy)
+                    ConcurrencySection(draft: $draft)
+                        .id(ServerSettingsSection.concurrency)
+                        .settingsSearchHighlight(landedSection == .concurrency)
+                    CacheSection(draft: $draft)
+                        .id(ServerSettingsSection.cache)
+                        .settingsSearchHighlight(landedSection == .cache)
+                    DecodePerformanceSection(draft: $draft)
+                        .id(ServerSettingsSection.decodePerformance)
+                        .settingsSearchHighlight(landedSection == .decodePerformance)
+                    MTPSection(draft: $draft)
+                        .id(ServerSettingsSection.speculative)
+                        .settingsSearchHighlight(landedSection == .speculative)
+                    MultimodalSection(draft: $draft)
+                        .id(ServerSettingsSection.multimodal)
+                        .settingsSearchHighlight(landedSection == .multimodal)
+                    ToolsTemplatesSection(draft: $draft)
+                        .id(ServerSettingsSection.tools)
+                        .settingsSearchHighlight(landedSection == .tools)
                     AdvancedHTTPSection(draft: $draftLegacy)
                         .id(ServerSettingsSection.requestLimits)
                         .settingsSearchHighlight(landedSection == .requestLimits)
+                    if developerMode.isEnabled {
+                        LiveActivitySection()
+                            .id(ServerSettingsSection.liveActivity)
+                            .settingsSearchHighlight(landedSection == .liveActivity)
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 24)

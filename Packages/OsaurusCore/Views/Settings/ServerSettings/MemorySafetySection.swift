@@ -14,6 +14,28 @@ import SwiftUI
 struct MemorySafetySection: View {
     @Binding var draft: VMLXServerRuntimeSettings
 
+    /// Developer Mode reveals the resolved-plan readout, the dangerous
+    /// no-limits mode, and the raw override fields. Normal users keep the
+    /// safe presets (Performance…Strict).
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
+
+    /// Modes offered by the picker. The dangerous diagnostic mode is
+    /// developer-only, but stays listed if it is already selected so an
+    /// existing choice never renders as an empty picker.
+    private var selectableModes: [VMLXMemorySafetyMode] {
+        VMLXMemorySafetyMode.allCases.filter { mode in
+            mode != .diagnosticDangerous
+                || developerMode.isEnabled
+                || draft.memorySafety.mode == .diagnosticDangerous
+        }
+    }
+
+    /// Slider upper bound. Level 4 (no automatic limits) is developer-only,
+    /// but remains reachable if it is the current value.
+    private var sliderUpperBound: Double {
+        (developerMode.isEnabled || draft.memorySafety.slider >= 4) ? 4 : 3
+    }
+
     private var resolvedPlan: VMLXResolvedMemorySafetyPlan {
         ServerRuntimeSettingsStore.resolvedMemorySafetyPlan(
             for: draft,
@@ -35,7 +57,7 @@ struct MemorySafetySection: View {
                     "Safe Auto is the default. Strict can refuse before load when a request cannot fit the selected budget."
             ) {
                 Picker("", selection: memorySafetyModeBinding) {
-                    ForEach(VMLXMemorySafetyMode.allCases, id: \.self) { mode in
+                    ForEach(selectableModes, id: \.self) { mode in
                         Text(modeTitle(mode)).tag(mode)
                     }
                 }
@@ -46,31 +68,23 @@ struct MemorySafetySection: View {
             SettingsField(
                 label: "Safety Level",
                 hint:
-                    "0 favors performance, 2 is Safe Auto, 3 is strict, and 4 removes automatic Osaurus caps."
+                    developerMode.isEnabled
+                        ? "0 favors performance, 2 is Safe Auto, 3 is strict, and 4 removes automatic Osaurus caps."
+                        : "0 favors performance, 2 is Safe Auto, and 3 is strict."
             ) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Slider(value: sliderBinding, in: 0 ... 4, step: 1)
+                    Slider(value: sliderBinding, in: 0 ... sliderUpperBound, step: 1)
                     Text(sliderLabel)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
             }
 
-            SettingsDivider()
-
-            SettingsSubsection(label: "Resolved Plan") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(resolvedPlan.displaySummary)
-                        .font(.system(size: 12, design: .monospaced))
-                        .textSelection(.enabled)
-
-                    HStack(spacing: 12) {
-                        summaryPill(L("Load"), value: loadCapSummary)
-                        summaryPill(L("Allocator"), value: allocatorCapSummary)
-                        summaryPill(L("KV"), value: kvCapSummary)
-                        summaryPill(L("Concurrency"), value: concurrencySummary)
-                    }
-
+            // Actionable plan warnings stay visible for everyone; the raw
+            // resolved-plan readout and override fields are developer-only.
+            if !developerMode.isEnabled, !resolvedPlan.warnings.isEmpty {
+                SettingsDivider()
+                VStack(alignment: .leading, spacing: 6) {
                     ForEach(resolvedPlan.warnings, id: \.self) { warning in
                         Text(warning)
                             .font(.system(size: 11))
@@ -79,55 +93,80 @@ struct MemorySafetySection: View {
                 }
             }
 
-            SettingsDivider()
+            if developerMode.isEnabled {
+                SettingsDivider()
 
-            SettingsSubsection(label: "Advanced Overrides") {
-                VStack(alignment: .leading, spacing: 12) {
-                    SettingsToggle(
-                        title: L("Allow Experimental MLXPress"),
-                        description:
-                            "Only routed bundles with proven support should use this. It is never enabled by default.",
-                        isOn: $draft.memorySafety.allowExperimentalMLXPress
-                    )
+                SettingsSubsection(label: "Resolved Plan") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(resolvedPlan.displaySummary)
+                            .font(.system(size: 12, design: .monospaced))
+                            .textSelection(.enabled)
 
-                    SettingsToggle(
-                        title: L("Fail Closed When Estimate Is Unknown"),
-                        description:
-                            "Strict diagnostic behavior for environments that prefer refusal over unknown memory risk.",
-                        isOn: $draft.memorySafety.failClosedWhenEstimateUnknown
-                    )
+                        HStack(spacing: 12) {
+                            summaryPill(L("Load"), value: loadCapSummary)
+                            summaryPill(L("Allocator"), value: allocatorCapSummary)
+                            summaryPill(L("KV"), value: kvCapSummary)
+                            summaryPill(L("Concurrency"), value: concurrencySummary)
+                        }
 
-                    OptionalDoubleField(
-                        label: "Custom Physical Memory Fraction",
-                        placeholder: "Blank = mode default",
-                        help: "Fraction from 0.10 to 1.00.",
-                        value: $draft.memorySafety.customPhysicalMemoryFraction,
-                        clamp: 0.10 ... 1.00,
-                        format: "%.2f"
-                    )
+                        ForEach(resolvedPlan.warnings, id: \.self) { warning in
+                            Text(warning)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
 
-                    OptionalIntField(
-                        label: "Allocator Cache Cap (MB)",
-                        placeholder: "Blank = mode default",
-                        help: "Maximum MLX allocator cache, in MiB.",
-                        value: allocatorCacheMB,
-                        clamp: 1 ... 262144
-                    )
+                SettingsDivider()
 
-                    OptionalIntField(
-                        label: "Per-Session KV Cap (tokens)",
-                        placeholder: "Blank = mode default",
-                        help: "Maximum cached tokens per chat slot for this memory mode.",
-                        value: $draft.memorySafety.customDefaultMaxKVSize
-                    )
+                SettingsSubsection(label: "Advanced Overrides") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        SettingsToggle(
+                            title: L("Allow Experimental MLXPress"),
+                            description:
+                                "Only routed bundles with proven support should use this. It is never enabled by default.",
+                            isOn: $draft.memorySafety.allowExperimentalMLXPress
+                        )
 
-                    OptionalIntField(
-                        label: "Max Concurrent Sequences",
-                        placeholder: "Blank = mode default",
-                        help: "Upper bound for concurrent decode slots under this memory mode.",
-                        value: $draft.memorySafety.customMaxConcurrentSequences,
-                        clamp: 1 ... 32
-                    )
+                        SettingsToggle(
+                            title: L("Fail Closed When Estimate Is Unknown"),
+                            description:
+                                "Strict diagnostic behavior for environments that prefer refusal over unknown memory risk.",
+                            isOn: $draft.memorySafety.failClosedWhenEstimateUnknown
+                        )
+
+                        OptionalDoubleField(
+                            label: "Custom Physical Memory Fraction",
+                            placeholder: "Blank = mode default",
+                            help: "Fraction from 0.10 to 1.00.",
+                            value: $draft.memorySafety.customPhysicalMemoryFraction,
+                            clamp: 0.10 ... 1.00,
+                            format: "%.2f"
+                        )
+
+                        OptionalIntField(
+                            label: "Allocator Cache Cap (MB)",
+                            placeholder: "Blank = mode default",
+                            help: "Maximum MLX allocator cache, in MiB.",
+                            value: allocatorCacheMB,
+                            clamp: 1 ... 262144
+                        )
+
+                        OptionalIntField(
+                            label: "Per-Session KV Cap (tokens)",
+                            placeholder: "Blank = mode default",
+                            help: "Maximum cached tokens per chat slot for this memory mode.",
+                            value: $draft.memorySafety.customDefaultMaxKVSize
+                        )
+
+                        OptionalIntField(
+                            label: "Max Concurrent Sequences",
+                            placeholder: "Blank = mode default",
+                            help: "Upper bound for concurrent decode slots under this memory mode.",
+                            value: $draft.memorySafety.customMaxConcurrentSequences,
+                            clamp: 1 ... 32
+                        )
+                    }
                 }
             }
         }

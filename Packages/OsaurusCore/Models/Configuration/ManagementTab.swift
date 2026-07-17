@@ -49,6 +49,13 @@ public enum ManagementSection: String, CaseIterable, Identifiable, Sendable {
         case .account: [.credits, .insights]
         }
     }
+
+    /// Tabs to show in the sidebar for the given Developer Mode state.
+    /// Developer-only tabs stay directly routable (deep links, legacy raw
+    /// values) even while hidden — this only affects the sidebar listing.
+    public func sidebarTabs(developerModeEnabled: Bool) -> [ManagementTab] {
+        tabs.filter { developerModeEnabled || $0.visibility != .developer }
+    }
 }
 
 // MARK: - Management Tab
@@ -88,6 +95,16 @@ public enum ManagementTab: String, CaseIterable, Identifiable, Sendable {
     /// All tabs in sidebar display order (sections flattened).
     public static var visibleCases: [ManagementTab] {
         ManagementSection.allCases.flatMap(\.tabs)
+    }
+
+    /// Who this tab is for. `developer` tabs are hidden from the sidebar
+    /// and settings search unless Developer Mode is enabled; they remain
+    /// directly routable so existing deep links keep working.
+    public var visibility: SettingsVisibility {
+        switch self {
+        case .insights: .developer
+        default: .standard
+        }
     }
 
     /// The sidebar section this tab belongs to.

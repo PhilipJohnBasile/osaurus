@@ -4,43 +4,64 @@
 //
 //  Shared compact diagnostics renderer for provider settings rows.
 //
+//  Developer Mode aware: with the mode off, only actionable rows
+//  (warning / blocked) render — under a plain "Needs attention" header,
+//  without the copy-report affordance — so normal users still see why a
+//  provider is failing and what to do, while ok/info internals and the
+//  raw copied report stay a developer surface. With the mode on, the
+//  full report renders as before.
+//
 
 import AppKit
 import SwiftUI
 
 struct ProviderDiagnosticsRowsView: View {
     @Environment(\.theme) private var theme
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
 
     let report: ProviderDiagnosticReport
     var maxRows: Int?
 
+    private var relevantRows: [ProviderDiagnosticRow] {
+        guard !developerMode.isEnabled else { return report.rows }
+        return report.rows.filter { $0.severity == .warning || $0.severity == .blocked }
+    }
+
     private var visibleRows: [ProviderDiagnosticRow] {
-        guard let maxRows else { return report.rows }
-        return Array(report.rows.prefix(maxRows))
+        guard let maxRows else { return relevantRows }
+        return Array(relevantRows.prefix(maxRows))
     }
 
     private var hiddenCount: Int {
-        max(0, report.rows.count - visibleRows.count)
+        max(0, relevantRows.count - visibleRows.count)
     }
 
     var body: some View {
+        if developerMode.isEnabled || !relevantRows.isEmpty {
+            content
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "stethoscope")
+                Image(systemName: developerMode.isEnabled ? "stethoscope" : "exclamationmark.triangle")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(theme.tertiaryText)
-                Text("Diagnostics", bundle: .module)
+                Text(developerMode.isEnabled ? "Diagnostics" : "Needs attention", bundle: .module)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(theme.secondaryText)
                 Spacer()
-                Button(action: copyReport) {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(theme.tertiaryText)
-                        .frame(width: 24, height: 24)
+                if developerMode.isEnabled {
+                    Button(action: copyReport) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(theme.tertiaryText)
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .localizedHelp("Copy")
                 }
-                .buttonStyle(PlainButtonStyle())
-                .localizedHelp("Copy")
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -48,9 +69,15 @@ struct ProviderDiagnosticsRowsView: View {
                     diagnosticRow(row)
                 }
                 if hiddenCount > 0 {
-                    Text("+\(hiddenCount) more in copied report", bundle: .module)
-                        .font(.system(size: 11))
-                        .foregroundColor(theme.tertiaryText)
+                    if developerMode.isEnabled {
+                        Text("+\(hiddenCount) more in copied report", bundle: .module)
+                            .font(.system(size: 11))
+                            .foregroundColor(theme.tertiaryText)
+                    } else {
+                        Text("+\(hiddenCount) more", bundle: .module)
+                            .font(.system(size: 11))
+                            .foregroundColor(theme.tertiaryText)
+                    }
                 }
             }
         }

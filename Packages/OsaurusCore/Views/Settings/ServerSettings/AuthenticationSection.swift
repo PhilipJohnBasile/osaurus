@@ -14,6 +14,10 @@ struct AuthenticationSection: View {
     @Binding var draft: VMLXServerRuntimeSettings
     @Environment(\.theme) private var theme
 
+    /// Planned (not-yet-enforced) request controls only render in
+    /// Developer Mode so they are never presented as functioning controls.
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
+
     var body: some View {
         ServerSettingsCard(
             section: .authentication,
@@ -22,40 +26,42 @@ struct AuthenticationSection: View {
         ) {
             accessKeyCallout
 
-            SettingsDivider()
+            if developerMode.isEnabled {
+                SettingsDivider()
 
-            SettingsSubsection(label: "Planned Controls") {
-                VStack(alignment: .leading, spacing: 12) {
-                    ServerSettingsPlannedBanner(
-                        blurb:
-                            "Saved today; the request pipeline will start enforcing these in a follow-up."
-                    )
+                SettingsSubsection(label: "Planned Controls") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ServerSettingsPlannedBanner(
+                            blurb:
+                                "Saved today; the request pipeline will start enforcing these in a follow-up."
+                        )
 
-                    OptionalIntField(
-                        label: "Rate Limit (requests / minute)",
-                        placeholder: "Empty = unlimited",
-                        help: "Per access key. Blocks excess requests with HTTP 429.",
-                        value: $draft.network.rateLimitRequestsPerMinute
-                    )
+                        OptionalIntField(
+                            label: "Rate Limit (requests / minute)",
+                            placeholder: "Empty = unlimited",
+                            help: "Per access key. Blocks excess requests with HTTP 429.",
+                            value: $draft.network.rateLimitRequestsPerMinute
+                        )
 
-                    OptionalIntField(
-                        label: "Request Timeout (seconds)",
-                        placeholder: "Empty = unlimited",
-                        help: "Drop requests that stall longer than this.",
-                        value: $draft.network.timeoutSeconds
-                    )
+                        OptionalIntField(
+                            label: "Request Timeout (seconds)",
+                            placeholder: "Empty = unlimited",
+                            help: "Drop requests that stall longer than this.",
+                            value: $draft.network.timeoutSeconds
+                        )
 
-                    SettingsField(
-                        label: "Log Level",
-                        hint: "Verbosity of the server-side request log."
-                    ) {
-                        Picker("", selection: $draft.network.logLevel) {
-                            ForEach(VMLXServerLogLevel.allCases, id: \.self) { level in
-                                Text(level.rawValue.capitalized).tag(level)
+                        SettingsField(
+                            label: "Log Level",
+                            hint: "Verbosity of the server-side request log."
+                        ) {
+                            Picker("", selection: $draft.network.logLevel) {
+                                ForEach(VMLXServerLogLevel.allCases, id: \.self) { level in
+                                    Text(level.rawValue.capitalized).tag(level)
+                                }
                             }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
                         }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
                     }
                 }
             }

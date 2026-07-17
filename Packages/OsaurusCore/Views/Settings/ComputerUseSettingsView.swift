@@ -36,6 +36,8 @@ struct ComputerUseSettingsView: View {
     @ObservedObject private var permissionService = SystemPermissionService.shared
     @ObservedObject private var cloudVisionConsent = CloudVisionConsent.shared
     @ObservedObject private var managementState = ManagementStateManager.shared
+    /// Developer Mode gates the raw diagnostics panel inside Advanced.
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
 
     private var theme: ThemeProtocol { themeManager.currentTheme }
 
@@ -483,8 +485,13 @@ struct ComputerUseSettingsView: View {
                     allowlistSection
                     SettingsDivider()
                     cloudVisionSection
-                    SettingsDivider()
-                    ComputerUseDiagnosticsPanel(policy: policy)
+                    // Permission doctor + autonomy gate inspector are raw
+                    // debug surfaces; permission readiness itself is shown
+                    // in the standard cards above.
+                    if developerMode.isEnabled {
+                        SettingsDivider()
+                        ComputerUseDiagnosticsPanel(policy: policy)
+                    }
                 }
                 .padding(.top, 16)
             } label: {

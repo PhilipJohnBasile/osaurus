@@ -19,6 +19,10 @@ import SwiftUI
 struct DecodePerformanceSection: View {
     @Binding var draft: VMLXServerRuntimeSettings
 
+    /// Compiled decode is experimental; only offered in Developer Mode
+    /// (it stays visible if already enabled so it can be turned off).
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
+
     private var performanceBinding: Binding<VMLXServerPerformanceSettings> {
         Binding(
             get: { draft.effectivePerformance },
@@ -47,14 +51,16 @@ struct DecodePerformanceSection: View {
                 .labelsHidden()
             }
 
-            SettingsField(
-                label: "Compiled Decode (Experimental)",
-                hint:
-                    "Fuses the per-token decode graph with MLX compile (+25% measured on Gemma 4 QAT). Takes effect after restarting Osaurus — MLX fixes its compile state at the first model load of the process, so toggling this mid-session cannot turn it on/off live (the setting is saved and applies on next launch). Experimental: kept off by default until the historical model-switch corruption (PR #1173) is root-caused. If model switching misbehaves with this on, turn it off and restart."
-            ) {
-                Toggle("", isOn: performanceBinding.compiledDecode)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
+            if developerMode.isEnabled || draft.effectivePerformance.compiledDecode {
+                SettingsField(
+                    label: "Compiled Decode (Experimental)",
+                    hint:
+                        "Fuses the per-token decode graph with MLX compile (+25% measured on Gemma 4 QAT). Takes effect after restarting Osaurus — MLX fixes its compile state at the first model load of the process, so toggling this mid-session cannot turn it on/off live (the setting is saved and applies on next launch). Experimental: kept off by default until the historical model-switch corruption (PR #1173) is root-caused. If model switching misbehaves with this on, turn it off and restart."
+                ) {
+                    Toggle("", isOn: performanceBinding.compiledDecode)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
             }
         }
     }

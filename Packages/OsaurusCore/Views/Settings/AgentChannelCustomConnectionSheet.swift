@@ -25,6 +25,9 @@ struct AgentChannelCustomConnectionSheet: View {
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var diagnosticsText: String?
+    /// Run Diagnostics doubles as the connection test, so its outcome
+    /// message shows for everyone; the raw JSON report is developer-only.
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
     @State private var isDiagnosing = false
     @State private var showDeleteConfirmation = false
 
@@ -66,7 +69,7 @@ struct AgentChannelCustomConnectionSheet: View {
                 )
             }
 
-            if let diagnosticsText {
+            if let diagnosticsText, developerMode.isEnabled {
                 ScrollView {
                     Text(diagnosticsText)
                         .font(.system(size: 11, design: .monospaced))

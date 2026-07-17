@@ -36,6 +36,10 @@ struct MemoryView: View {
     @ObservedObject var agentManager = AgentManager.shared
     @ObservedObject private var appConfig = AppConfiguration.shared
     @ObservedObject private var managementState = ManagementStateManager.shared
+    /// Developer Mode gates the Diagnostics sub-tab. It stays visible for
+    /// everyone while the memory store is unhealthy, because its recovery
+    /// actions (Retry / Reset) live there.
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
 
     var theme: ThemeProtocol { themeManager.currentTheme }
 
@@ -108,6 +112,16 @@ struct MemoryView: View {
     @State private var selectedTab: MemoryTab = .identity
     @State private var selectedAgent: Agent?
     @State private var hasAppeared = false
+
+    /// Diagnostics is developer-only, except when the memory store failed
+    /// to open — then it must stay reachable for its repair actions.
+    private var showsDiagnosticsTab: Bool {
+        developerMode.isEnabled || (!isLoading && !memoryDBOpen)
+    }
+
+    private var visibleTabs: [MemoryTab] {
+        MemoryTab.allCases.filter { $0 != .diagnostics || showsDiagnosticsTab }
+    }
 
     /// Text-backed mirrors of the numeric config knobs, so the Settings
     /// sub-tab can use the shared `SettingsStepperField`. Hydrated in
@@ -227,6 +241,13 @@ struct MemoryView: View {
             selectedTab = tab
             managementState.memorySubTabRequest = nil
         }
+        // Turning Developer Mode off removes the Diagnostics tab (unless the
+        // store is unhealthy); don't leave the selection on a hidden tab.
+        .onChange(of: developerMode.isEnabled) { _, _ in
+            if selectedTab == .diagnostics, !showsDiagnosticsTab {
+                selectedTab = .identity
+            }
+        }
         .sheet(isPresented: $showIdentityEditor) {
             IdentityEditSheet(
                 identity: identity,
@@ -278,11 +299,14 @@ struct MemoryView: View {
         } tabsRow: {
             HeaderTabsRow(
                 selection: $selectedTab,
+                tabs: visibleTabs,
                 counts: [
                     .memories: totalPinned + totalEpisodes,
                     .agents: agentMemoryCounts.count,
                 ],
-                badges: [.diagnostics: pendingSignals.totalSignals]
+                badges: showsDiagnosticsTab
+                    ? [.diagnostics: pendingSignals.totalSignals]
+                    : nil
             )
         }
     }

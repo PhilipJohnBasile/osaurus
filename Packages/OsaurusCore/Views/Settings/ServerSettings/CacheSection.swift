@@ -14,6 +14,10 @@ import SwiftUI
 struct CacheSection: View {
     @Binding var draft: VMLXServerRuntimeSettings
 
+    /// Planned (not-yet-wired) cache controls only render in Developer
+    /// Mode so they are never presented as functioning user controls.
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
+
     var body: some View {
         ServerSettingsCard(
             section: .cache,
@@ -99,10 +103,12 @@ struct CacheSection: View {
                 isOn: $draft.cache.enableSSMReDerive
             )
 
-            SettingsDivider()
+            if developerMode.isEnabled {
+                SettingsDivider()
 
-            SettingsSubsection(label: "Planned Cache Controls") {
-                plannedControls
+                SettingsSubsection(label: "Planned Cache Controls") {
+                    plannedControls
+                }
             }
         }
     }

@@ -382,6 +382,7 @@ struct RemoteProvidersView: View {
 
 private struct ProviderConnectivityCenterPanel: View {
     @Environment(\.theme) private var theme
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
 
     let snapshot: ProviderConnectivitySnapshot
     let statusFilter: ProviderConnectivityFilter
@@ -430,15 +431,17 @@ private struct ProviderConnectivityCenterPanel: View {
                 .disabled(isReconnecting || snapshot.enabledCount == 0)
                 .localizedHelp("Reconnect all")
 
-                Button(action: onCopyReport) {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 28, height: 28)
+                if developerMode.isEnabled {
+                    Button(action: onCopyReport) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .foregroundColor(theme.secondaryText)
+                    .background(Circle().fill(theme.tertiaryBackground))
+                    .localizedHelp("Copy diagnostics")
                 }
-                .buttonStyle(PlainButtonStyle())
-                .foregroundColor(theme.secondaryText)
-                .background(Circle().fill(theme.tertiaryBackground))
-                .localizedHelp("Copy diagnostics")
             }
 
             HStack(spacing: 8) {
@@ -628,6 +631,7 @@ private struct ProviderConnectivityIssueChip: View {
 
 private struct ProviderCardView: View {
     @Environment(\.theme) private var theme
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
     let report: ProviderConnectivityProviderReport
     let state: RemoteProviderState?
     let isReconnecting: Bool
@@ -758,18 +762,20 @@ private struct ProviderCardView: View {
                     .disabled(!provider.enabled || isReconnecting || isConnecting)
                     .localizedHelp("Reconnect")
 
-                    Button(action: onCopyDiagnostics) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 14))
-                            .foregroundColor(theme.secondaryText)
-                            .frame(width: 32, height: 32)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(theme.tertiaryBackground)
-                            )
+                    if developerMode.isEnabled {
+                        Button(action: onCopyDiagnostics) {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 14))
+                                .foregroundColor(theme.secondaryText)
+                                .frame(width: 32, height: 32)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(theme.tertiaryBackground)
+                                )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .localizedHelp("Copy diagnostics")
                     }
-                    .buttonStyle(PlainButtonStyle())
-                    .localizedHelp("Copy diagnostics")
 
                     Button(action: onEdit) {
                         Image(systemName: "pencil")

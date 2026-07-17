@@ -46,6 +46,8 @@ private nonisolated(unsafe) let sharedByteCountFormatter: ByteCountFormatter = {
 struct ServerView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @ObservedObject private var managementState = ManagementStateManager.shared
+    /// Developer Mode gates the API Reference tab (live request console).
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
     @EnvironmentObject var server: ServerController
 
     private var theme: ThemeProtocol { themeManager.currentTheme }
@@ -53,6 +55,10 @@ struct ServerView: View {
     @State private var selectedTab: ServerTab = .overview
     @State private var searchText: String = ""
     @State private var hasAppeared = false
+
+    private var visibleTabs: [ServerTab] {
+        ServerTab.allCases.filter { $0 != .apiReference || developerMode.isEnabled }
+    }
 
     /// A settings-search result targeting a Server section opens the Settings
     /// tab (the inner section scroll + glow is handled by the content view).
@@ -86,6 +92,9 @@ struct ServerView: View {
         .environment(\.theme, themeManager.currentTheme)
         .onAppear {
             focusSettingsTabIfRequested()
+            if !visibleTabs.contains(selectedTab) {
+                selectedTab = .overview
+            }
             withAnimation(.easeOut(duration: 0.25).delay(0.05)) {
                 hasAppeared = true
             }
@@ -93,17 +102,25 @@ struct ServerView: View {
         .onChange(of: managementState.serverSectionRequest) { _, _ in
             focusSettingsTabIfRequested()
         }
+        // Turning Developer Mode off while API Reference is open would strand
+        // the user on a tab with no selector row; fall back to Overview.
+        .onChange(of: developerMode.isEnabled) { _, enabled in
+            if !enabled, selectedTab == .apiReference {
+                selectedTab = .overview
+            }
+        }
     }
 
     private var headerView: some View {
         ManagerHeaderWithTabs(
             title: L("Server"),
-            subtitle: L("Developer tools and API reference")
+            subtitle: L("Run and configure the local OpenAI-compatible API")
         ) {
             EmptyView()
         } tabsRow: {
             HeaderTabsRow(
                 selection: $selectedTab,
+                tabs: visibleTabs,
                 searchText: $searchText,
                 searchPlaceholder: selectedTab == .models ? "Search models" : "Search endpoints",
                 showSearch: selectedTab == .apiReference || selectedTab == .models

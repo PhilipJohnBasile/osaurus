@@ -352,6 +352,7 @@ struct ProvidersView: View {
 
 private struct MCPServerHubPanel: View {
     @Environment(\.theme) private var theme
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
 
     let snapshot: MCPServerHubSnapshot
     @Binding var filter: MCPServerHubFilter
@@ -402,13 +403,15 @@ private struct MCPServerHubPanel: View {
                     action: onReconnectAll
                 )
 
-                hubIconButton(
-                    systemName: "doc.on.doc",
-                    isBusy: false,
-                    isDisabled: snapshot.totalCount == 0,
-                    help: "Copy diagnostics",
-                    action: onCopyReport
-                )
+                if developerMode.isEnabled {
+                    hubIconButton(
+                        systemName: "doc.on.doc",
+                        isBusy: false,
+                        isDisabled: snapshot.totalCount == 0,
+                        help: "Copy diagnostics",
+                        action: onCopyReport
+                    )
+                }
             }
 
             LazyVGrid(
@@ -535,6 +538,7 @@ private struct MCPServerHubMetricPill: View {
 
 private struct ProviderCard: View {
     @Environment(\.theme) private var theme
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
     let report: MCPServerHubProviderReport
     var animationIndex: Int = 0
     let isTesting: Bool
@@ -720,18 +724,20 @@ private struct ProviderCard: View {
                     .disabled(isTesting)
                     .localizedHelp("Probe")
 
-                    Button(action: onCopyDiagnostics) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(theme.secondaryText)
-                            .frame(width: 28, height: 28)
+                    if developerMode.isEnabled {
+                        Button(action: onCopyDiagnostics) {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(theme.secondaryText)
+                                .frame(width: 28, height: 28)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .background(
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(theme.tertiaryBackground)
+                        )
+                        .localizedHelp("Copy diagnostics")
                     }
-                    .buttonStyle(PlainButtonStyle())
-                    .background(
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(theme.tertiaryBackground)
-                    )
-                    .localizedHelp("Copy diagnostics")
 
                     Menu {
                         Button(action: onEdit) {

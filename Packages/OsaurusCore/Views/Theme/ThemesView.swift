@@ -104,6 +104,9 @@ func themeMatches(
 struct ThemesView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @ObservedObject private var managementState = ManagementStateManager.shared
+    /// The Library Health inspector (preview cache, duplicate/invalid
+    /// internals) is a developer surface.
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
 
     /// Use computed property to always get the current theme from ThemeManager
     private var theme: ThemeProtocol { themeManager.currentTheme }
@@ -431,13 +434,15 @@ struct ThemesView: View {
                 }
             }
 
-            Divider()
+            if developerMode.isEnabled {
+                Divider()
 
-            Toggle(isOn: $showLibraryHealth.animation(theme.animationQuick())) {
-                Label {
-                    Text("Library Health", bundle: .module)
-                } icon: {
-                    Image(systemName: "waveform.path.ecg")
+                Toggle(isOn: $showLibraryHealth.animation(theme.animationQuick())) {
+                    Label {
+                        Text("Library Health", bundle: .module)
+                    } icon: {
+                        Image(systemName: "waveform.path.ecg")
+                    }
                 }
             }
         } label: {
@@ -505,7 +510,7 @@ struct ThemesView: View {
     private var themeBrowser: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                if showLibraryHealth {
+                if showLibraryHealth, developerMode.isEnabled {
                     libraryHealthPanel
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }

@@ -7,6 +7,10 @@
 //  `ServerSettingsTabContent`; the sidebar uses these to render the
 //  left rail and to drive `ScrollViewReader.scrollTo(...)`.
 //
+//  Sections are classified by audience (`SettingsVisibility`):
+//  everyday setup first, operational tuning under Advanced, and
+//  runtime diagnostics only while Developer Mode is on.
+//
 
 import SwiftUI
 
@@ -15,21 +19,24 @@ import SwiftUI
 /// scroll content), so keep new cases inserted in the position they
 /// should render.
 enum ServerSettingsSection: String, CaseIterable, Hashable, Identifiable {
+    // Standard: daily setup and safe defaults.
     case connection
-    case globalProxy
     case authentication
     case sampling
-    case concurrency
-    case cache
     case memorySafety
-    case decodePerformance
-    case speculative
-    case liveActivity
-    case multimodal
-    case tools
     case modelMemory
     case power
+    // Advanced: operational tuning, available to everyone.
+    case globalProxy
+    case concurrency
+    case cache
+    case decodePerformance
+    case speculative
+    case multimodal
+    case tools
     case requestLimits
+    // Developer: runtime diagnostics, visible only in Developer Mode.
+    case liveActivity
 
     var id: String { rawValue }
 
@@ -75,19 +82,41 @@ enum ServerSettingsSection: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
+    /// Who this section is for. Drives sidebar + content filtering: only
+    /// `developer` sections are hidden (while Developer Mode is off);
+    /// `advanced` sections stay reachable under the Advanced group.
+    var visibility: SettingsVisibility {
+        switch self {
+        case .connection, .authentication, .sampling, .memorySafety, .modelMemory, .power:
+            return .standard
+        case .globalProxy, .concurrency, .cache, .decodePerformance, .speculative, .multimodal,
+            .tools, .requestLimits:
+            return .advanced
+        case .liveActivity:
+            return .developer
+        }
+    }
+
     var group: ServerSettingsSectionGroup {
         switch self {
-        case .connection, .globalProxy, .authentication:
+        case .connection, .authentication:
             return .server
         case .sampling:
             return .generation
-        case .concurrency, .cache, .memorySafety, .decodePerformance, .speculative, .liveActivity:
-            return .performance
-        case .multimodal, .tools:
-            return .capabilities
-        case .modelMemory, .power, .requestLimits:
+        case .memorySafety, .modelMemory, .power:
             return .lifecycle
+        case .globalProxy, .concurrency, .cache, .decodePerformance, .speculative, .multimodal,
+            .tools, .requestLimits:
+            return .advanced
+        case .liveActivity:
+            return .diagnostics
         }
+    }
+
+    /// Sections to render for the given Developer Mode state, in display
+    /// order. `developer` sections drop out entirely while the mode is off.
+    static func visibleSections(developerModeEnabled: Bool) -> [ServerSettingsSection] {
+        allCases.filter { developerModeEnabled || $0.visibility != .developer }
     }
 }
 
@@ -96,22 +125,28 @@ enum ServerSettingsSection: String, CaseIterable, Hashable, Identifiable {
 enum ServerSettingsSectionGroup: String, CaseIterable, Hashable {
     case server
     case generation
-    case performance
-    case capabilities
     case lifecycle
+    case advanced
+    case diagnostics
 
     var title: String {
         switch self {
         case .server: return L("Server")
         case .generation: return L("Generation")
-        case .performance: return L("Performance")
-        case .capabilities: return L("Capabilities")
-        case .lifecycle: return L("Lifecycle")
+        case .lifecycle: return L("Memory & Lifecycle")
+        case .advanced: return L("Advanced")
+        case .diagnostics: return L("Diagnostics")
         }
     }
 
     /// Sections in this group, preserving `ServerSettingsSection.allCases` order.
     var sections: [ServerSettingsSection] {
         ServerSettingsSection.allCases.filter { $0.group == self }
+    }
+
+    /// Sections in this group that should render for the given Developer
+    /// Mode state. Groups whose result is empty are hidden entirely.
+    func sections(developerModeEnabled: Bool) -> [ServerSettingsSection] {
+        sections.filter { developerModeEnabled || $0.visibility != .developer }
     }
 }

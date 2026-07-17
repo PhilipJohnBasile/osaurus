@@ -15,9 +15,10 @@ struct SettingsSearchResultsView: View {
     let onSelect: (SettingsSearchEntry) -> Void
 
     @Environment(\.theme) private var theme
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
 
     private var results: [SettingsSearchEntry] {
-        SettingsSearchIndex.search(query)
+        SettingsSearchIndex.search(query, includeDeveloper: developerMode.isEnabled)
     }
 
     /// Results grouped by tab, tabs ordered by their first (best-ranked) hit.

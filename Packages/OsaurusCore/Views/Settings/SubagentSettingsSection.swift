@@ -16,6 +16,10 @@ import SwiftUI
 struct SubagentSettingsSection: View {
     @Binding var configuration: SubagentConfiguration
 
+    /// The experimental coexistence toggle is developer-only (it stays
+    /// visible when already enabled so it can be turned back off).
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
+
     var body: some View {
         // System runtime knobs only. Per-agent spawn/image config (targets,
         // models, permissions, budgets) — including the built-in main chat —
@@ -36,18 +40,20 @@ struct SubagentSettingsSection: View {
                         )
 
                         SettingsToggle(
-                            title: "RAM-Safety Preflight",
+                            title: "Check Memory Before Helper Jobs",
                             description:
                                 "Before a spawned image or text job, verify the helper model fits in memory once the chat model is freed. If it won't fit, refuse the job instead of unloading the chat model and failing to load the helper.",
                             isOn: $configuration.ramSafetyPreflightEnabled
                         )
 
-                        SettingsToggle(
-                            title: "Keep Chat Model Loaded (Coexistence)",
-                            description:
-                                "Experimental: when the server eviction policy is Flexible (Multi Model) and memory projections say both fit, load the helper model alongside the chat model instead of unloading and reloading it — skipping the swap round-trip on high-RAM Macs. Tight RAM or the Strict policy always falls back to the normal handoff.",
-                            isOn: $configuration.subagentCoexistenceEnabled
-                        )
+                        if developerMode.isEnabled || configuration.subagentCoexistenceEnabled {
+                            SettingsToggle(
+                                title: "Keep Chat Model Loaded (Coexistence)",
+                                description:
+                                    "Experimental: when the server eviction policy is Flexible (Multi Model) and memory projections say both fit, load the helper model alongside the chat model instead of unloading and reloading it — skipping the swap round-trip on high-RAM Macs. Tight RAM or the Strict policy always falls back to the normal handoff.",
+                                isOn: $configuration.subagentCoexistenceEnabled
+                            )
+                        }
                     }
                 }
             }

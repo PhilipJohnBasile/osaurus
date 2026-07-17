@@ -18,6 +18,10 @@ import SwiftUI
 struct ConcurrencySection: View {
     @Binding var draft: VMLXServerRuntimeSettings
 
+    /// Planned (not-yet-wired) batching controls only render in Developer
+    /// Mode so they are never presented as functioning user controls.
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
+
     @State private var maxConcurrentText: String = ""
     @State private var initialized: Bool = false
 
@@ -53,40 +57,42 @@ struct ConcurrencySection: View {
                 value: $draft.concurrency.prefillStepSize
             )
 
-            SettingsDivider()
+            if developerMode.isEnabled {
+                SettingsDivider()
 
-            SettingsSubsection(label: "Planned Batching Controls") {
-                VStack(alignment: .leading, spacing: 12) {
-                    ServerSettingsPlannedBanner(
-                        blurb: "Persisted today; runtime consumers for these fields are not yet implemented."
-                    )
+                SettingsSubsection(label: "Planned Batching Controls") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ServerSettingsPlannedBanner(
+                            blurb: "Persisted today; runtime consumers for these fields are not yet implemented."
+                        )
 
-                    OptionalIntField(
-                        label: "Prefill Batch Size",
-                        placeholder: "Empty = engine default",
-                        help: "Number of prefill chunks decoded together.",
-                        value: $draft.concurrency.prefillBatchSize
-                    )
+                        OptionalIntField(
+                            label: "Prefill Batch Size",
+                            placeholder: "Empty = engine default",
+                            help: "Number of prefill chunks decoded together.",
+                            value: $draft.concurrency.prefillBatchSize
+                        )
 
-                    OptionalIntField(
-                        label: "Completion Batch Size",
-                        placeholder: "Empty = engine default",
-                        help: "Number of decode steps run together.",
-                        value: $draft.concurrency.completionBatchSize
-                    )
+                        OptionalIntField(
+                            label: "Completion Batch Size",
+                            placeholder: "Empty = engine default",
+                            help: "Number of decode steps run together.",
+                            value: $draft.concurrency.completionBatchSize
+                        )
 
-                    SettingsField(
-                        label: "SMELT Mode",
-                        hint: "Selects the SMELT execution mode when supported by the model."
-                    ) {
-                        Picker("", selection: $draft.concurrency.smeltMode) {
-                            ForEach(VMLXServerSmeltMode.allCases, id: \.self) { mode in
-                                Text(mode.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
-                                    .tag(mode)
+                        SettingsField(
+                            label: "SMELT Mode",
+                            hint: "Selects the SMELT execution mode when supported by the model."
+                        ) {
+                            Picker("", selection: $draft.concurrency.smeltMode) {
+                                ForEach(VMLXServerSmeltMode.allCases, id: \.self) { mode in
+                                    Text(mode.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
+                                        .tag(mode)
+                                }
                             }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
                         }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
                     }
                 }
             }

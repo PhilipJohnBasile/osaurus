@@ -20,12 +20,16 @@ struct ServerSettingsSidebarNav: View {
     @Binding var selection: ServerSettingsSection
 
     @Environment(\.theme) private var theme
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(ServerSettingsSectionGroup.allCases, id: \.self) { group in
-                    groupBlock(group)
+                    let sections = group.sections(developerModeEnabled: developerMode.isEnabled)
+                    if !sections.isEmpty {
+                        groupBlock(group, sections: sections)
+                    }
                 }
             }
             .padding(.horizontal, 18)
@@ -36,7 +40,10 @@ struct ServerSettingsSidebarNav: View {
         .scrollIndicators(.hidden)
     }
 
-    private func groupBlock(_ group: ServerSettingsSectionGroup) -> some View {
+    private func groupBlock(
+        _ group: ServerSettingsSectionGroup,
+        sections: [ServerSettingsSection]
+    ) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(LocalizedStringKey(group.title), bundle: .module)
                 .font(.system(size: 10, weight: .semibold))
@@ -44,7 +51,7 @@ struct ServerSettingsSidebarNav: View {
                 .padding(.leading, 10)
                 .padding(.bottom, 4)
 
-            ForEach(group.sections) { section in
+            ForEach(sections) { section in
                 row(section)
             }
         }

@@ -32,6 +32,9 @@ public struct SettingsSearchEntry: Identifiable, Sendable, Hashable {
     /// For tabs with their own inner navigation (e.g. Voice), the raw value of
     /// the sub-tab to open on landing. `nil` for flat tabs.
     public let subTab: String?
+    /// Who this setting is for. `developer` entries only appear in results
+    /// while Developer Mode is enabled, matching the surface's own gating.
+    public let visibility: SettingsVisibility
 
     public init(
         id: String,
@@ -39,7 +42,8 @@ public struct SettingsSearchEntry: Identifiable, Sendable, Hashable {
         section: String = "",
         title: String,
         keywords: [String] = [],
-        subTab: String? = nil
+        subTab: String? = nil,
+        visibility: SettingsVisibility = .standard
     ) {
         self.id = id
         self.tab = tab
@@ -47,6 +51,7 @@ public struct SettingsSearchEntry: Identifiable, Sendable, Hashable {
         self.title = title
         self.keywords = keywords
         self.subTab = subTab
+        self.visibility = visibility
     }
 
     /// Breadcrumb shown in results, e.g. ["Voice", "Speech to Text", "Transcription Model"].
@@ -64,7 +69,9 @@ public enum SettingsSearchIndex {
     /// Returns entries matching `query`, ranked so title hits come before
     /// section/keyword-only hits. Token/substring matching (no fuzzy
     /// subsequence) keeps results aligned with what the user typed.
-    public static func search(_ query: String) -> [SettingsSearchEntry] {
+    /// `includeDeveloper: false` drops developer-tier entries so search
+    /// never routes to a surface that Developer Mode currently hides.
+    public static func search(_ query: String, includeDeveloper: Bool = true) -> [SettingsSearchEntry] {
         let prepared = SearchService.PreparedQuery(query)
         guard !prepared.tokens.isEmpty else { return [] }
 
@@ -74,6 +81,7 @@ public enum SettingsSearchIndex {
 
         var ranked: [(entry: SettingsSearchEntry, rank: Int)] = []
         for entry in entries {
+            if !includeDeveloper, entry.visibility == .developer { continue }
             if matches(entry.title) {
                 ranked.append((entry, 0))
             } else if matches(entry.section) || entry.keywords.contains(where: matches) {
@@ -231,6 +239,39 @@ public enum SettingsSearchIndex {
             section: "Legal",
             title: "Terms & Privacy Policy",
             keywords: ["terms", "privacy policy", "legal", "about"]
+        ),
+        .init(
+            id: "settings.advanced.developerMode",
+            tab: .settings,
+            section: "Advanced",
+            title: "Developer Mode",
+            keywords: ["developer", "debug", "diagnostics", "internal", "experimental", "advanced"]
+        ),
+
+        // MARK: Developer-only surfaces (listed only while Developer Mode is on)
+        .init(
+            id: "insights.requests",
+            tab: .insights,
+            title: "Request Insights",
+            keywords: ["insights", "request log", "http log", "usage", "debugging"],
+            visibility: .developer
+        ),
+        .init(
+            id: "memory.diagnostics",
+            tab: .memory,
+            section: "Diagnostics",
+            title: "Memory Diagnostics",
+            keywords: ["memory diagnostics", "buffer probe", "backfill", "processing log"],
+            subTab: "diagnostics",
+            visibility: .developer
+        ),
+        .init(
+            id: "sandbox.diagnostics",
+            tab: .sandbox,
+            section: "Diagnostics",
+            title: "Sandbox Diagnostics",
+            keywords: ["sandbox diagnostics", "provisioning preflight", "container logs", "vsock", "nat"],
+            visibility: .developer
         ),
 
         // MARK: Voice (subTab values are VoiceTab raw values)
@@ -401,8 +442,9 @@ public enum SettingsSearchIndex {
             tab: .server,
             section: "Live Activity",
             title: "Live Activity",
-            keywords: ["live activity", "dynamic island", "status"],
-            subTab: "liveActivity"
+            keywords: ["live activity", "dynamic island", "status", "batch diagnostics"],
+            subTab: "liveActivity",
+            visibility: .developer
         ),
         .init(
             id: "server.multimodal",

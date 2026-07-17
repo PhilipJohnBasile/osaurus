@@ -14,6 +14,10 @@ import UniformTypeIdentifiers
 struct SandboxView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @ObservedObject private var sandboxState = SandboxManager.State.shared
+    /// Developer Mode reveals the preflight report, log console, and
+    /// diagnostics card. Actionable preflight problems still surface for
+    /// everyone (see `preflightNeedsAttention`).
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
 
     private var theme: ThemeProtocol { themeManager.currentTheme }
 
@@ -61,6 +65,14 @@ struct SandboxView: View {
     }
 
     private var configIsDirty: Bool { pendingConfig != config }
+
+    /// True when the last provisioning preflight found something the user
+    /// must act on. Keeps the preflight card visible outside Developer
+    /// Mode whenever there is a real problem to fix.
+    private var preflightNeedsAttention: Bool {
+        guard let report = provisioningReport else { return false }
+        return report.overallReadiness != .ready
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -139,13 +151,17 @@ private extension SandboxView {
                     if needsBridgeMigrationRestart {
                         bridgeMigrationBanner
                     }
-                    provisioningPreflightCard
+                    // Status leads; the raw preflight report is a developer
+                    // surface unless it found something the user must fix.
+                    if developerMode.isEnabled || preflightNeedsAttention {
+                        provisioningPreflightCard
+                    }
                     statusDashboard
                     // Surfaced only while the post-start verifyPlugins
                     // step is active. Self-hides when verify finishes,
                     // so the layout reclaims the space cleanly.
                     PostStartTasksCard()
-                    if sandboxState.status == .running {
+                    if sandboxState.status == .running, developerMode.isEnabled {
                         if hasRenderedHeavyCards {
                             SandboxLogConsoleCard()
                         }
@@ -284,7 +300,9 @@ private extension SandboxView {
                     )
                     .frame(minHeight: 430)
 
-                    provisioningPreflightCard
+                    if developerMode.isEnabled || preflightNeedsAttention {
+                        provisioningPreflightCard
+                    }
                 }
                 .padding(24)
             }
@@ -304,7 +322,7 @@ private extension SandboxView {
 private extension SandboxView {
 
     var provisioningPreflightCard: some View {
-        sectionCard(title: "Provisioning Preflight", icon: "checklist") {
+        sectionCard(title: "Setup Checks", icon: "checklist") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .center, spacing: 10) {
                     if let report = provisioningReport {
@@ -316,7 +334,7 @@ private extension SandboxView {
                     } else {
                         readinessPill(.unproven)
                         Text(
-                            "Run preflight to inspect host paths, permissions, and repair suggestions.",
+                            "Check host paths and permissions, with repair suggestions for anything that fails.",
                             bundle: .module
                         )
                         .font(.system(size: 11))
