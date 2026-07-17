@@ -10,6 +10,7 @@ import SwiftUI
 
 struct MemoryManagementConsoleView: View {
     @Environment(\.theme) private var theme
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
 
     let agents: [Agent]
     let onMemoryChanged: () -> Void
@@ -38,7 +39,7 @@ struct MemoryManagementConsoleView: View {
             searchToolbar
             filtersRow
 
-            if showDiagnostics, let health = snapshot?.health {
+            if developerMode.isEnabled, showDiagnostics, let health = snapshot?.health {
                 diagnosticsPanel(health)
             }
 
@@ -128,13 +129,15 @@ struct MemoryManagementConsoleView: View {
                     )
             )
 
-            consoleToggleButton(
-                title: "Storage health",
-                icon: "stethoscope",
-                isActive: showDiagnostics
-            ) {
-                showDiagnostics.toggle()
-                if showDiagnostics { refresh() }
+            if developerMode.isEnabled {
+                consoleToggleButton(
+                    title: "Storage health",
+                    icon: "stethoscope",
+                    isActive: showDiagnostics
+                ) {
+                    showDiagnostics.toggle()
+                    if showDiagnostics { refresh() }
+                }
             }
 
             consoleToggleButton(

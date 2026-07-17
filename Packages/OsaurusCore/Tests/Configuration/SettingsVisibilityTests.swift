@@ -4,8 +4,8 @@
 //
 //  Guardrails for the Developer Mode visibility policy:
 //  - the preference persists through its UserDefaults key,
-//  - developer-only tabs leave the sidebar (but stay routable) while the
-//    mode is off,
+//  - every sidebar tab (including Insights) stays visible regardless of
+//    the mode; the filtering hook only affects future developer tabs,
 //  - Server settings sections classify into standard/advanced/developer
 //    and filter consistently in both the grouped sidebar and the flat
 //    section list,
@@ -52,24 +52,22 @@ struct DeveloperModePreferenceTests {
 
 struct SidebarVisibilityFilteringTests {
 
-    @Test func insightsIsTheOnlyDeveloperTab() {
-        let developerTabs = ManagementTab.allCases.filter { $0.visibility == .developer }
-        #expect(developerTabs == [.insights])
-    }
-
-    @Test func sidebarHidesDeveloperTabsWhenModeIsOff() {
+    @Test func everyTabStaysVisibleRegardlessOfDeveloperMode() {
+        // No current tab is developer-only; Insights in particular is an
+        // everyday surface and must never leave the sidebar.
+        #expect(ManagementTab.allCases.allSatisfy { $0.visibility != .developer })
         for section in ManagementSection.allCases {
-            let standard = section.sidebarTabs(developerModeEnabled: false)
-            #expect(!standard.contains(.insights))
-            #expect(standard == section.tabs.filter { $0.visibility != .developer })
-            // With the mode on, the full section listing returns.
+            #expect(section.sidebarTabs(developerModeEnabled: false) == section.tabs)
             #expect(section.sidebarTabs(developerModeEnabled: true) == section.tabs)
         }
     }
 
-    @Test func hiddenTabsRemainDirectlyRoutable() {
-        // Deep links resolve regardless of Developer Mode; only the sidebar
-        // listing changes.
+    @Test func insightsRemainsListedAndRoutable() {
+        #expect(
+            ManagementSection.allCases.contains { section in
+                section.sidebarTabs(developerModeEnabled: false).contains(.insights)
+            }
+        )
         #expect(ManagementTab.resolved(from: "insights") == .insights)
         #expect(ManagementTab.visibleCases.contains(.insights))
     }
@@ -168,10 +166,12 @@ struct SettingsSearchVisibilityTests {
         #expect(hits.contains { $0.id == "settings.advanced.developerMode" && $0.tab == .settings })
     }
 
-    @Test func developerSurfacesAreSearchableInDeveloperMode() {
-        let insights = SettingsSearchIndex.search("insights", includeDeveloper: true)
+    @Test func insightsIsSearchableForEveryone() {
+        let insights = SettingsSearchIndex.search("insights", includeDeveloper: false)
         #expect(insights.contains { $0.id == "insights.requests" && $0.tab == .insights })
+    }
 
+    @Test func developerSurfacesAreHiddenOutsideDeveloperMode() {
         let liveActivity = SettingsSearchIndex.search("live activity", includeDeveloper: false)
         #expect(!liveActivity.contains { $0.id == "server.liveActivity" })
     }

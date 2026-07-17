@@ -6,6 +6,9 @@ struct RouterAccountUsageCenterView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @StateObject private var model = RouterAccountUsageCenterViewModel()
     @State private var hasAppeared = false
+    /// Signed-request diagnostics are a developer surface; account status,
+    /// usage, ledger, and support export stay for everyone.
+    @ObservedObject private var developerMode = DeveloperModeSettings.shared
 
     private var theme: ThemeProtocol { themeManager.currentTheme }
 
@@ -13,7 +16,9 @@ struct RouterAccountUsageCenterView: View {
         VStack(spacing: 0) {
             ManagerHeaderWithActions(
                 title: L("Router Account"),
-                subtitle: L("Account status, usage activity, signed request diagnostics, and support export.")
+                subtitle: developerMode.isEnabled
+                    ? L("Account status, usage activity, signed request diagnostics, and support export.")
+                    : L("Account status, usage activity, and support export.")
             ) {
                 HeaderIconButton(
                     "arrow.clockwise",
@@ -23,12 +28,14 @@ struct RouterAccountUsageCenterView: View {
                     Task { await model.refresh() }
                 }
 
-                HeaderIconButton(
-                    "signature",
-                    isLoading: model.isSigningDiagnostics,
-                    help: "Signed request diagnostics"
-                ) {
-                    Task { await model.runSignedRequestDiagnostics() }
+                if developerMode.isEnabled {
+                    HeaderIconButton(
+                        "signature",
+                        isLoading: model.isSigningDiagnostics,
+                        help: "Signed request diagnostics"
+                    ) {
+                        Task { await model.runSignedRequestDiagnostics() }
+                    }
                 }
 
                 HeaderPrimaryButton("Export support", icon: "square.and.arrow.up") {
@@ -49,7 +56,9 @@ struct RouterAccountUsageCenterView: View {
                     accountStatusSection
                     creditsActivitySection
                     ledgerSection
-                    signedDiagnosticsSection
+                    if developerMode.isEnabled {
+                        signedDiagnosticsSection
+                    }
                     supportExportSection
                 }
                 .padding(.horizontal, 24)

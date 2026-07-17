@@ -248,14 +248,14 @@ public enum SettingsSearchIndex {
             keywords: ["developer", "debug", "diagnostics", "internal", "experimental", "advanced"]
         ),
 
-        // MARK: Developer-only surfaces (listed only while Developer Mode is on)
         .init(
             id: "insights.requests",
             tab: .insights,
             title: "Request Insights",
-            keywords: ["insights", "request log", "http log", "usage", "debugging"],
-            visibility: .developer
+            keywords: ["insights", "request log", "http log", "usage", "debugging"]
         ),
+
+        // MARK: Developer-only surfaces (listed only while Developer Mode is on)
         .init(
             id: "memory.diagnostics",
             tab: .memory,

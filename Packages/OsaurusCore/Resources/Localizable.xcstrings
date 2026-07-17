@@ -10139,6 +10139,40 @@
         }
       }
     },
+    "Account status, usage activity, and support export." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Account status, usage activity, and support export."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Account status, usage activity, and support export."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Account status, usage activity, and support export."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "账户状态、使用活动及支持导出。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "帳號狀態、使用活動及支援導出。"
+          }
+        }
+      }
+    },
     "Account status, usage activity, signed request diagnostics, and support export." : {
       "localizations" : {
         "de" : {

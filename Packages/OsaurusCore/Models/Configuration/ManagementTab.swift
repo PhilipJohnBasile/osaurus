@@ -99,12 +99,11 @@ public enum ManagementTab: String, CaseIterable, Identifiable, Sendable {
 
     /// Who this tab is for. `developer` tabs are hidden from the sidebar
     /// and settings search unless Developer Mode is enabled; they remain
-    /// directly routable so existing deep links keep working.
+    /// directly routable so existing deep links keep working. Every current
+    /// tab is standard — request Insights is everyday usage visibility, not
+    /// a debug surface — but the filtering stays for future developer tabs.
     public var visibility: SettingsVisibility {
-        switch self {
-        case .insights: .developer
-        default: .standard
-        }
+        .standard
     }
 
     /// The sidebar section this tab belongs to.
