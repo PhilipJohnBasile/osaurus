@@ -74,10 +74,11 @@ let package = Package(
         // enables safe image/audio hybrid-prefix restore. The paged-cache
         // follow-up separates typed-disk persistence from paged compatibility,
         // restores recurrent companions at the exact matched boundary, and
-        // keeps every unproven cache topology fail-closed.
+        // keeps every unproven cache topology fail-closed. The pinned revision
+        // adds the native Nemotron-Labs-Audex-2B audio-input/text-output runtime.
         .package(
             url: "https://github.com/osaurus-ai/vmlx-swift",
-            revision: "f2b184841e98d969e46dec83109f27cd7bb57357"
+            revision: "6de24bbaf1164948692a869531100bc845c9bbf6"
         ),
         // FluidAudio 0.14.3 added a breaking `language:` parameter to TTS
         // calls that osaurus's `TTSService` doesn't pass. Pinning to the
