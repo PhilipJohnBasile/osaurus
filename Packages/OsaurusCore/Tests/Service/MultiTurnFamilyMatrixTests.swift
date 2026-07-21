@@ -196,9 +196,10 @@ struct CapabilityFromDirectoryTests {
         #expect(cap == .omni, "config_omni.json must resolve to omni")
     }
 
-    @Test func audexModelTypeIsAudioOnlyWithoutVisionConfig() throws {
+    @Test(arguments: ["nemotron_dense_audex", "nemotron_h_audex"])
+    func audexModelTypeIsAudioOnlyWithoutVisionConfig(modelType: String) throws {
         let dir = try makeBundle(
-            modelType: "nemotron_dense_audex",
+            modelType: modelType,
             hasVisionConfig: false,
             hasOmniSidecar: false
         )

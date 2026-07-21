@@ -75,10 +75,11 @@ let package = Package(
         // follow-up separates typed-disk persistence from paged compatibility,
         // restores recurrent companions at the exact matched boundary, and
         // keeps every unproven cache topology fail-closed. The pinned revision
-        // adds the native Nemotron-Labs-Audex-2B audio-input/text-output runtime.
+        // adds the native Nemotron-Labs-Audex 2B and 30B-A3B
+        // audio-input/text-output runtimes.
         .package(
             url: "https://github.com/osaurus-ai/vmlx-swift",
-            revision: "6de24bbaf1164948692a869531100bc845c9bbf6"
+            revision: "8d111cc773598230c81735c36eabc920db8374c5"
         ),
         // FluidAudio 0.14.3 added a breaking `language:` parameter to TTS
         // calls that osaurus's `TTSService` doesn't pass. Pinning to the

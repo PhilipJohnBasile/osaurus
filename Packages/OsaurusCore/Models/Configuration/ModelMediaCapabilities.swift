@@ -163,13 +163,13 @@ public enum ModelMediaCapabilities {
     /// video accept slots. After load, `from(directory:modelId:)`
     /// can refine via the bundle's `config_omni.json` sidecar.
     public static func from(modelId: String) -> Capabilities {
-        let lower = modelId.lowercased()
-
         // NVIDIA Nemotron-Labs-Audex: native audio-in/text-out. This is
         // intentionally audio-only, not Nemotron Omni (no image/video path).
-        if lower.contains("nemotron-labs-audex") || lower.contains("nemotron_labs_audex") {
+        if ModelFamilyNames.isAudexFamily(modelId) {
             return .audioOnly
         }
+
+        let lower = modelId.lowercased()
 
         // Nemotron-3-Nano-Omni / Nemotron-Omni-Nano — native audio plus
         // image/video (unlike audio-only Audex above).
@@ -387,7 +387,7 @@ public enum ModelMediaCapabilities {
         let modelType = (json["model_type"] as? String)?.lowercased() ?? ""
         let hasVisionConfig = json["vision_config"] != nil
 
-        if modelType == "nemotron_dense_audex" {
+        if ["nemotron_dense_audex", "nemotron_h_audex"].contains(modelType) {
             return .audioOnly
         }
 

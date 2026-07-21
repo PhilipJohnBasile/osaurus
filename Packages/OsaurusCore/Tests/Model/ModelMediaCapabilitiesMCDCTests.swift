@@ -31,6 +31,7 @@ struct ModelMediaCapabilitiesMCDCTests {
         for modelId in [
             "nvidia/Nemotron-Labs-Audex-2B",
             "Nemotron-Labs-Audex-2B-4bit-vMLX",
+            "OsaurusAI/Nemotron-Labs-Audex-30B-A3B-6bit",
             "nemotron_labs_audex_local",
         ] {
             let cap = ModelMediaCapabilities.from(modelId: modelId)
