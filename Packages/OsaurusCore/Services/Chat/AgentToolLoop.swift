@@ -1062,6 +1062,20 @@ enum AgentToolLoop {
         "[System Notice] Your todo list still has \(pending) unchecked item\(pending == 1 ? "" : "s") and has not been updated recently. If you finished any, re-send the full list with those boxes checked now; if the plan changed, rewrite the list."
     }
 
+    /// Bounded number of times a text-only final response is bounced back
+    /// to the model while the session todo list still has unchecked items.
+    /// Small local models routinely narrate the next step in plain text
+    /// instead of calling a tool; without this guard the run ends with the
+    /// checklist abandoned (issue #2133).
+    static let maxPendingTodoContinuations = 2
+
+    /// Transient nudge staged when the model tried to end the run with
+    /// unchecked todo items remaining. Rides the same notice channel as the
+    /// staleness nudge — never persisted into history.
+    static func pendingTodoContinuationNotice(pending: Int) -> String {
+        "[System Notice] Your todo list still has \(pending) unchecked item\(pending == 1 ? "" : "s"). Do not stop here: continue with the next unchecked item using tool calls. If everything is actually done, re-send the full list with all boxes checked, then finish."
+    }
+
     // Capability schemas loaded mid-run are delivered append-only in the
     // `capabilities_load` tool *result* (see
     // `CapabilitiesLoadTool.loadedSchemaBlock`), never by rewriting the frozen
@@ -1151,6 +1165,10 @@ enum AgentToolLoop {
         // productive turn; bounds the nudge-and-retry recovery so the loop
         // can never spin on a deterministically-empty model.
         var consecutiveEmptyTurns = 0
+        // Text-only final responses bounced back because unchecked todo
+        // items remained. Bounded so a model that insists on stopping can
+        // still end the run.
+        var pendingTodoContinuations = 0
         // Last iteration that carried a `todo` call (0 = run start), for
         // the staleness check below.
         var lastTodoIteration = 0
@@ -1191,6 +1209,24 @@ enum AgentToolLoop {
             let step = try await hooks.modelStep(input.messages, iteration)
             switch step {
             case .finalResponse:
+                // The model tried to finish with plain text while the
+                // session todo list still has unchecked items. Weak local
+                // models often narrate the next step instead of calling a
+                // tool; bounce the turn back with a continuation nudge a
+                // bounded number of times before accepting the stop.
+                if let pendingTodoCount = hooks.pendingTodoCount,
+                    pendingTodoContinuations < Self.maxPendingTodoContinuations
+                {
+                    let pending = await pendingTodoCount()
+                    if pending > 0 {
+                        pendingTodoContinuations += 1
+                        pendingTodoNotice = Self.pendingTodoContinuationNotice(pending: pending)
+                        // Re-arm the staleness window so the two nudges
+                        // don't stack on the same iteration.
+                        lastTodoIteration = iteration
+                        continue
+                    }
+                }
                 return RunResult(exit: .finalResponse, iterations: iteration)
 
             case .retryWithoutCharge:
@@ -1232,9 +1268,11 @@ enum AgentToolLoop {
                 return RunResult(exit: .lengthExhausted, iterations: iteration)
 
             case .toolCalls(let invocations):
-                // A productive turn — reset the empty-turn recovery budget so
-                // a later unrelated empty turn gets its own fresh allowance.
+                // A productive turn — reset the recovery budgets so a later
+                // unrelated empty turn or premature stop gets its own fresh
+                // allowance.
                 consecutiveEmptyTurns = 0
+                pendingTodoContinuations = 0
 
                 // A desktop subagent already completed successfully, and the
                 // very next model step emitted only a malformed repeat of that
