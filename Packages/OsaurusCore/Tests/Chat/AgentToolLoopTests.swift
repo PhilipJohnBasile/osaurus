@@ -1703,9 +1703,9 @@ struct AgentLoopTodoStalenessTests {
             state: AgentTaskState(),
             hooks: surface.makeHooks()
         )
-        let needle = "[System Notice] Your todo list"
+        let staleness = AgentToolLoop.todoStalenessNotice(pending: 1)
         for notices in surface.builtNotices {
-            #expect(!notices.contains(where: { $0.hasPrefix(needle) }))
+            #expect(!notices.contains(staleness))
         }
     }
 
@@ -1724,6 +1724,70 @@ struct AgentLoopTodoStalenessTests {
         for notices in surface.builtNotices {
             #expect(!notices.contains(where: { $0.hasPrefix(needle) }))
         }
+    }
+}
+
+// MARK: - Pending-todo continuation on premature final response
+
+@MainActor
+struct AgentLoopPendingTodoContinuationTests {
+
+    /// A text-only final response with unchecked todo items is bounced
+    /// back with a continuation nudge instead of ending the run
+    /// (issue #2133), bounded by `maxPendingTodoContinuations`.
+    @Test func prematureFinalResponseIsNudgedThenAccepted() async throws {
+        let surface = ScriptedLoopSurface(steps: [
+            .finalResponse, .finalResponse, .finalResponse,
+        ])
+        surface.pendingTodos = 2
+        let result = try await AgentToolLoop.run(
+            policy: chatPolicy(),
+            state: AgentTaskState(),
+            hooks: surface.makeHooks()
+        )
+        // Two nudged retries, then the third stop is accepted.
+        #expect(result == AgentToolLoop.RunResult(exit: .finalResponse, iterations: 3))
+        let expected = AgentToolLoop.pendingTodoContinuationNotice(pending: 2)
+        #expect(surface.builtNotices.count == 3)
+        #expect(surface.builtNotices[0] == [])
+        #expect(surface.builtNotices[1].contains(expected))
+        #expect(surface.builtNotices[2].contains(expected))
+    }
+
+    /// A productive tool turn after a nudge refreshes the continuation
+    /// allowance for a later premature stop.
+    @Test func toolTurnResetsContinuationAllowance() async throws {
+        let surface = ScriptedLoopSurface(steps: [
+            .finalResponse,
+            .toolCalls([inv("alpha")]),
+            .finalResponse, .finalResponse, .finalResponse,
+        ])
+        surface.pendingTodos = 1
+        let result = try await AgentToolLoop.run(
+            policy: chatPolicy(),
+            state: AgentTaskState(),
+            hooks: surface.makeHooks()
+        )
+        // Nudge, tool turn (reset), then two fresh nudges, then accepted.
+        #expect(result == AgentToolLoop.RunResult(exit: .finalResponse, iterations: 5))
+        let expected = AgentToolLoop.pendingTodoContinuationNotice(pending: 1)
+        let nudgedBuilds = surface.builtNotices.filter { $0.contains(expected) }
+        #expect(nudgedBuilds.count == 3)
+        #expect(surface.executedCalls.map(\.name) == ["alpha"])
+    }
+
+    /// No unchecked items (or no todo hook at all) → the first final
+    /// response ends the run exactly as before.
+    @Test func finalResponseWithNoPendingItemsEndsImmediately() async throws {
+        let surface = ScriptedLoopSurface(steps: [.finalResponse])
+        surface.pendingTodos = 0
+        let result = try await AgentToolLoop.run(
+            policy: chatPolicy(),
+            state: AgentTaskState(),
+            hooks: surface.makeHooks()
+        )
+        #expect(result == AgentToolLoop.RunResult(exit: .finalResponse, iterations: 1))
+        #expect(surface.builtNotices == [[]])
     }
 }
 
