@@ -54,6 +54,13 @@ struct ModelManagerSuggestedTests {
         #expect(ids.contains("osaurusai/minimax-m2.7-jangtq"))
     }
 
+    @Test func curatedSuggestedIds_includesRaptorEntries() {
+        let ids = ModelManager.curatedSuggestedIds
+        #expect(ids.contains("osaurusai/raptor-1.0-16b-a3b"))
+        #expect(ids.contains("osaurusai/raptor-1.0-16b-a3b-w4a16"))
+        #expect(ids.contains("osaurusai/raptor-1.0-16b-a3b-qat-jang_4m"))
+    }
+
     @Test func curatedSuggestedIds_includesLingEntries() {
         let ids = ModelManager.curatedSuggestedIds
         #expect(ids.contains("osaurusai/ling-2.6-flash-mxfp4"))

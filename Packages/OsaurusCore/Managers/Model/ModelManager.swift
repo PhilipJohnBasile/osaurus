@@ -1101,6 +1101,40 @@ extension ModelManager {
             useCase: .general
         ),
 
+        // MARK: Raptor 1.0 (Osaurus fine-tune)
+        //
+        // OsaurusAI's own 16B/3B-active MoE fine-tuned for general-purpose
+        // agentic chat and tool calling inside Osaurus. Three precision
+        // builds: full-precision reference, W4A16 weight-only 4-bit, and a
+        // quantization-aware JANG_4M bundle. The HF repos are gated, so no
+        // pre-download `modelType` hint is hardcoded — runtime auto-detection
+        // reads config.json at load time, same policy as other unconfirmed
+        // families.
+
+        curated(
+            id: "OsaurusAI/Raptor-1.0-16B-A3B",
+            description:
+                "Raptor 1.0 16B/3B-active MoE fine-tuned for agentic chat and tool calling in Osaurus. Full-precision reference build.",
+            releasedAt: date("2026-07-30"),
+            useCase: .general
+        ),
+
+        curated(
+            id: "OsaurusAI/Raptor-1.0-16B-A3B-W4A16",
+            description:
+                "Raptor 1.0 16B/3B-active agentic MoE, W4A16 — 4-bit weights with 16-bit activations for a smaller footprint.",
+            releasedAt: date("2026-07-30"),
+            useCase: .general
+        ),
+
+        curated(
+            id: "OsaurusAI/Raptor-1.0-16B-A3B-qat-JANG_4M",
+            description:
+                "Raptor 1.0 16B/3B-active agentic MoE, quantization-aware JANG 4M — smallest Raptor footprint.",
+            releasedAt: date("2026-07-30"),
+            useCase: .general
+        ),
+
         // MARK: Mistral-Medium-3.5-128B (preview — architecturally supported, end-to-end load unverified)
         //
         // `model_type=mistral3` outer wrapper with `text_config.model_type=
