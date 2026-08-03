@@ -25,6 +25,12 @@ final class NativeCapabilityRequestView: NSView {
     private var kind: DormantCapability.Kind = .tools
     private var agentId: UUID = Agent.defaultId
     private var resolvedAction: CapabilityRequestActions.Action = .alreadyEnabled
+    /// Last configure inputs, kept so the `.agentUpdated` observer can
+    /// re-resolve the affordance in place (the cell doesn't reconfigure on
+    /// settings changes — the block's Equatable payload is unchanged).
+    private var lastPayload: RequestCapabilityTool.Payload?
+    private var lastTheme: (any ThemeProtocol)?
+    private var agentUpdatedObserver: NSObjectProtocol?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -79,6 +85,31 @@ final class NativeCapabilityRequestView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    deinit {
+        if let agentUpdatedObserver {
+            NotificationCenter.default.removeObserver(agentUpdatedObserver)
+        }
+    }
+
+    /// Refresh the card in place when any agent setting changes, so a user
+    /// returning from the settings deep-link sees "enabled" / "Retry
+    /// request" without waiting for a cell reconfigure. Registered lazily
+    /// on first configure (init runs before the card has inputs).
+    private func observeAgentUpdatesIfNeeded() {
+        guard agentUpdatedObserver == nil else { return }
+        agentUpdatedObserver = NotificationCenter.default.addObserver(
+            forName: .agentUpdated,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let payload = self.lastPayload, let theme = self.lastTheme
+                else { return }
+                self.configure(payload: payload, agentId: self.agentId, theme: theme)
+            }
+        }
+    }
+
     func configure(
         payload: RequestCapabilityTool.Payload,
         agentId: UUID,
@@ -86,6 +117,9 @@ final class NativeCapabilityRequestView: NSView {
     ) {
         self.kind = payload.capability
         self.agentId = agentId
+        self.lastPayload = payload
+        self.lastTheme = theme
+        observeAgentUpdatesIfNeeded()
         // Re-resolve on every configure so scroll-back reflects the LIVE
         // state — a card enabled last week renders as already-enabled, not
         // as a stale offer.

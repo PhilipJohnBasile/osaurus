@@ -71165,7 +71165,7 @@
         }
       }
     },
-    "Enable it for this agent to continue." : {
+    "Enable in Settings" : {
 
     },
     "Enable Long Polling" : {
@@ -129080,9 +129080,6 @@
         }
       }
     },
-    "Open Agent Settings" : {
-
-    },
     "Open AI Chat" : {
       "localizations" : {
         "de" : {
@@ -177819,9 +177816,6 @@
           }
         }
       }
-    },
-    "Send your request again to use it." : {
-
     },
     "Sender ids whose incoming messages are stored. Empty denies everyone." : {
       "comment" : "Help text for the text field that lets the user specify which sender IDs are allowed to send messages to this custom channel.",
