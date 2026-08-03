@@ -92,6 +92,13 @@ public final class ManagementStateManager: ObservableObject {
     /// it reaches the Keychain when the user saves the provider.
     @Published public var pendingMCPProviderDraft: MCPProviderDraft?
 
+    /// One-shot request to scroll-to-and-glow a capability's toggle inside
+    /// the agent detail editor — the inline capability-request card's
+    /// settings deep link (chat → Agents tab → flash the exact switch).
+    /// The agent detail view observes this and resets it to nil after
+    /// applying.
+    @Published public var pendingCapabilityHighlight: DormantCapability.Kind?
+
     /// One-shot request to install a theme by content hash from a deeplink
     /// (`osaurus://themes-install?hash=<sha256>`). `ThemesView` observes
     /// this and resets it to nil after presenting the import sheet.

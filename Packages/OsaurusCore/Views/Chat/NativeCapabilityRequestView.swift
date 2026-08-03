@@ -168,10 +168,12 @@ final class NativeCapabilityRequestView: NSView {
             } else {
                 // Agent vanished or is built-in after all — fall back to
                 // the settings surface instead of a dead button.
-                CapabilityRequestActions.openSettings(tab: .agents, agentId: agentId)
+                CapabilityRequestActions.openSettings(
+                    tab: .agents, agentId: agentId, highlighting: kind)
             }
         case .openSettings(let tab, _):
-            CapabilityRequestActions.openSettings(tab: tab, agentId: agentId)
+            CapabilityRequestActions.openSettings(
+                tab: tab, agentId: agentId, highlighting: kind)
         case .alreadyEnabled, .explainOnly:
             break
         }

@@ -148,8 +148,18 @@ public enum CapabilityRequestActions {
     }
 
     /// Open the Management window on `tab`, deep-linked to this agent
-    /// where the tab supports it.
-    public static func openSettings(tab: ManagementTab, agentId: UUID) {
+    /// where the tab supports it. When the destination is the agent
+    /// detail, also arm the one-shot capability highlight so the exact
+    /// toggle scrolls into view and glows (same affordance as the
+    /// settings-search landing).
+    public static func openSettings(
+        tab: ManagementTab,
+        agentId: UUID,
+        highlighting kind: DormantCapability.Kind? = nil
+    ) {
+        if let kind, tab == .agents {
+            ManagementStateManager.shared.pendingCapabilityHighlight = kind
+        }
         AppDelegate.shared?.showManagementWindow(
             initialTab: tab,
             deeplinkAgentId: tab == .agents ? agentId : nil

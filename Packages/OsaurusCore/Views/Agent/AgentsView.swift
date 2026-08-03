@@ -1796,6 +1796,12 @@ struct AgentDetailView: View {
 
     var body: some View {
         bodyWithAlerts
+            .onAppear { consumePendingCapabilityHighlight() }
+            .onReceive(
+                ManagementStateManager.shared.$pendingCapabilityHighlight
+            ) { _ in
+                consumePendingCapabilityHighlight()
+            }
             .sheet(isPresented: $showCreateSchedule) {
                 ScheduleEditorSheet(
                     mode: .create,
@@ -3083,6 +3089,21 @@ struct AgentDetailView: View {
     /// Scroll the Tools card into view and run one highlight breath on
     /// it. Dropping the flag first gives `settingsSearchHighlight` a
     /// fresh rising edge so a repeat tap re-fires; the delayed clear only
+    /// Consume the chat-side capability deep link: land on the Abilities
+    /// tab and pulse the Tools master card, mirroring the settings-search
+    /// landing glow. Only `.tools` has a dedicated flash target today;
+    /// other kinds still get the right agent detail opened (via the
+    /// deeplink that set this) and clear the request so it can't go stale.
+    private func consumePendingCapabilityHighlight() {
+        guard let kind = ManagementStateManager.shared.pendingCapabilityHighlight else { return }
+        ManagementStateManager.shared.pendingCapabilityHighlight = nil
+        guard kind == .tools else { return }
+        selectedTab = .builtIn(.abilities)
+        // Next runloop so the Abilities tab's ScrollViewReader is mounted
+        // before the scroll-to-nonce fires.
+        DispatchQueue.main.async { flashToolsToggle() }
+    }
+
     /// lands if no newer tap has bumped the generation, so a rapid second
     /// tap can't cut its own glow short.
     private func flashToolsToggle() {
