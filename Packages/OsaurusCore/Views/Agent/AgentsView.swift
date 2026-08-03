@@ -3079,7 +3079,11 @@ struct AgentDetailView: View {
             set: { newValue in
                 if newValue, !toolsEnabled {
                     toolsEnabled = true
-                    flashToolsToggle()
+                    // Pulse only — the user is mid-interaction on the ability
+                    // they just flipped; yanking the scroll position to the
+                    // master card would be disorienting. The glow alone is
+                    // enough to show the cascade if the card is in view.
+                    flashToolsToggle(scroll: false)
                 }
                 source.wrappedValue = newValue
                 debouncedSave()
@@ -3111,9 +3115,10 @@ struct AgentDetailView: View {
     /// lands if no newer tap has bumped the generation, so a rapid second
     /// tap can't cut its own glow short. `duration` is how long the glow
     /// holds; in-window taps use the short default, the chat-card deep
-    /// link passes a longer one.
-    private func flashToolsToggle(duration: TimeInterval = 2.2) {
-        scrollToToolsNonce += 1
+    /// link passes a longer one. `scroll: false` pulses in place without
+    /// moving the scroll position (the sub-toggle cascade confirmation).
+    private func flashToolsToggle(duration: TimeInterval = 2.2, scroll: Bool = true) {
+        if scroll { scrollToToolsNonce += 1 }
         toolsHighlightGeneration += 1
         let generation = toolsHighlightGeneration
         toolsHighlightActive = false
