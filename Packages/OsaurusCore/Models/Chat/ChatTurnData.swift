@@ -14,6 +14,9 @@ public struct ChatTurnData: Codable, Identifiable, Sendable {
     public var content: String
     public var attachments: [Attachment]
     public var sharedArtifacts: [SharedArtifact]
+    /// Chat-local capability enable card (deterministic fallback), never
+    /// model-visible. Optional for backward-compatible decode.
+    public var capabilityPrompt: RequestCapabilityTool.Payload? = nil
     public var toolCalls: [ToolCall]?
     public var toolCallId: String?
     public var toolResults: [String: String]
@@ -136,6 +139,8 @@ public struct ChatTurnData: Codable, Identifiable, Sendable {
             attachments = legacyImages.map { .image($0) }
         }
         sharedArtifacts = try container.decodeIfPresent([SharedArtifact].self, forKey: .sharedArtifacts) ?? []
+        capabilityPrompt = try container.decodeIfPresent(
+            RequestCapabilityTool.Payload.self, forKey: .capabilityPrompt)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -147,6 +152,7 @@ public struct ChatTurnData: Codable, Identifiable, Sendable {
         if !sharedArtifacts.isEmpty {
             try container.encode(sharedArtifacts, forKey: .sharedArtifacts)
         }
+        try container.encodeIfPresent(capabilityPrompt, forKey: .capabilityPrompt)
         try container.encodeIfPresent(toolCalls, forKey: .toolCalls)
         try container.encodeIfPresent(toolCallId, forKey: .toolCallId)
         try container.encode(toolResults, forKey: .toolResults)
@@ -172,6 +178,7 @@ public struct ChatTurnData: Codable, Identifiable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, role, content, attachments
         case sharedArtifacts
+        case capabilityPrompt
         case attachedImages  // legacy key for reading old sessions
         case toolCalls, toolCallId, toolResults, toolCallDurations, thinking
         case thinkingDuration
@@ -194,6 +201,7 @@ extension ChatTurnData {
         self.content = turn.content
         self.attachments = turn.attachments
         self.sharedArtifacts = turn.sharedArtifacts
+        self.capabilityPrompt = turn.capabilityPrompt
         self.toolCalls = turn.toolCalls
         self.toolCallId = turn.toolCallId
         self.toolResults = turn.toolResults
@@ -224,6 +232,7 @@ extension ChatTurn {
             id: data.id,
             createdAt: data.createdAt ?? Date()
         )
+        self.capabilityPrompt = data.capabilityPrompt
         self.toolCalls = data.toolCalls
         self.toolCallId = data.toolCallId
         self.toolResults = data.toolResults

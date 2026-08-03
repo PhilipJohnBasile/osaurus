@@ -291,6 +291,15 @@ final class ChatSession: ObservableObject {
     var pendingCapabilityRequest: PendingCapabilityRequest?
     private var capabilityResumeCancellables = Set<AnyCancellable>()
 
+    /// True while the current run composed with the tools-off consent
+    /// carve-out (schema == exactly `request_capability`). Drives the
+    /// deterministic fallback card when the model refuses in prose
+    /// instead of calling the tool.
+    private var currentRunCarveOutToolsOff = false
+    /// One fallback card per session — repeated refusals reference the
+    /// card already on screen instead of stacking new ones.
+    private var shownCapabilityFallbackCard = false
+
     /// Last typed draft preserved when a send is cancelled
     /// (Cancel-send button in review sheet, or Task cancel during
     /// review). The chat view re-reads this in the cancel branch and
@@ -3666,6 +3675,48 @@ final class ChatSession: ObservableObject {
 
     // MARK: - Capability request + post-enable resume
 
+    /// Deterministic fallback: in a tools-off carve-out session, a run
+    /// that ends with the model refusing in prose (no `request_capability`
+    /// call — small models routinely ignore the prompt rule) still gets
+    /// the enable card, attached chat-locally beneath the reply. The model
+    /// is out of the critical path: the card renders, and enabling arms
+    /// the same post-enable resume as the tool path.
+    private func applyCapabilityFallbackCardIfNeeded() {
+        guard currentRunCarveOutToolsOff,
+            !shownCapabilityFallbackCard,
+            !stopRequested,
+            // The tool path already armed a card this run.
+            pendingCapabilityRequest == nil,
+            let turn = turns.last(where: { $0.role == .assistant }),
+            turn.toolCalls?.isEmpty ?? true,
+            Self.textSignalsCapabilityRefusal(turn.content)
+        else { return }
+        shownCapabilityFallbackCard = true
+        turn.capabilityPrompt = RequestCapabilityTool.Payload(
+            capability: .tools,
+            reason: nil,
+            agentId: agentId ?? Agent.defaultId
+        )
+        pendingCapabilityRequest = PendingCapabilityRequest(kind: .tools, turnId: turn.id)
+        isDirty = true
+    }
+
+    /// Loose refusal detector for the fallback card. Deliberately
+    /// generous: false positives only show a truthful "Tools is off"
+    /// card in a session where Tools IS off, while false negatives
+    /// degrade to today's dead end. Bounded to carve-out sessions and
+    /// once per session by the caller.
+    static func textSignalsCapabilityRefusal(_ text: String) -> Bool {
+        let lowered = text.lowercased()
+        let signals = [
+            "can't", "cannot", "can not", "unable", "not able",
+            "no access", "don't have", "do not have", "not available",
+            "disabled", "turned off", "enable", "tools", "real-time",
+            "real time", "up-to-date", "current information",
+        ]
+        return signals.contains { lowered.contains($0) }
+    }
+
     /// Resume the request that was blocked on a dormant capability, once
     /// that capability is actually callable. Deterministic by design — the
     /// chat layer, not the model, verifies the toggle flipped. Regenerating
@@ -3843,6 +3894,7 @@ final class ChatSession: ObservableObject {
         trimTrailingEmptyAssistantTurn()
         consolidateAssistantTurns()
         markUnfinishedToolCallsInterrupted()
+        applyCapabilityFallbackCardIfNeeded()
         rebuildVisibleBlocks()
         save()
         maybeGenerateAutoTitle()
@@ -5477,6 +5529,9 @@ final class ChatSession: ObservableObject {
                     // whole run: `capabilities_load` legitimately GROWS this set mid-run while
                     // `toolSpecs` stays frozen, so an immutable snapshot would kill that feature.
                     let toolScope = ToolExecutionScope(exposed: toolSpecs)
+                    self.currentRunCarveOutToolsOff =
+                        toolSpecs.count == 1
+                        && toolSpecs.first?.function.name == CapabilityRequestContract.toolName
 
                     // Persist the always-loaded snapshot back onto the session
                     // so the next send freezes the schema against tools that

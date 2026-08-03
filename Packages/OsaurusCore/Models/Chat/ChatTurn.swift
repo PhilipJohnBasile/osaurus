@@ -176,6 +176,12 @@ final class ChatTurn: ObservableObject, Identifiable {
     /// Chat-local artifacts rendered in the transcript without being sent as
     /// model-visible tool calls.
     @Published var sharedArtifacts: [SharedArtifact] = []
+    /// Chat-local capability enable card attached beneath this turn's text.
+    /// Set by the deterministic fallback when a tools-off carve-out run ends
+    /// with the model refusing in prose instead of calling
+    /// `request_capability` — the card renders regardless of model
+    /// cooperation. Never sent to the model.
+    @Published var capabilityPrompt: RequestCapabilityTool.Payload? = nil
     /// Assistant-issued tool calls attached to this turn (OpenAI compatible)
     @Published var toolCalls: [ToolCall]? = nil
     /// OpenAI Responses reasoning item captured for this assistant turn: the

@@ -640,6 +640,21 @@ extension ContentBlock {
                 }
             }
 
+            // Deterministic capability enable card (chat-local, like
+            // sharedArtifacts): attached by the session when a tools-off
+            // carve-out run refused in prose instead of calling
+            // `request_capability`. Rendered below the reply text.
+            if let capabilityPrompt = turn.capabilityPrompt {
+                turnBlocks.append(
+                    .capabilityRequest(
+                        turnId: turn.id,
+                        callId: "fallback",
+                        payload: capabilityPrompt,
+                        position: .middle
+                    )
+                )
+            }
+
             if isStreaming && !hasVisibleContent && !hasRenderableThinking
                 && !hasSharedArtifacts && (turn.toolCalls ?? []).isEmpty && turn.pendingToolName == nil
                 && !turn.hasRemoteToolActivity
