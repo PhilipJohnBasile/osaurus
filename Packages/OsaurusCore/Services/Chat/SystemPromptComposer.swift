@@ -557,12 +557,14 @@ public struct SystemPromptComposer: Sendable {
             executionMode: executionMode
         )
         // Consent-gated tools-off: when ONLY the per-agent Tools toggle is
-        // off, compose the NORMAL schema and prompt — the chat layer blocks
-        // the first tool call before dispatch and renders the enable card
-        // instead of executing. Asking the model to refuse-then-request via
-        // a meta-tool fought its training (no weather tool in schema → "I
-        // can't" is the trained answer); letting it call the real tool and
-        // gating execution works WITH the training and stays deterministic.
+        // off, the prompt composes LEAN (all tool sections gated off, same
+        // token cost as a true tools-off session) but the request still
+        // carries skeleton stubs of the intent-bearing tools. The model's
+        // trained reflex — call the obvious tool — fires off the stub; the
+        // chat layer blocks execution pre-dispatch and renders the enable
+        // card. Asking the model to refuse-then-request via a meta-tool
+        // fought its training; a full schema paid the whole prefill cost
+        // users turn the toggle off to avoid. Stubs buy both properties.
         // The global kill switch and tiny-context strip remain hard-off.
         let consentGatedToolsOff =
             hardToolsOff
@@ -570,7 +572,7 @@ public struct SystemPromptComposer: Sendable {
                 snapshot: snapshot,
                 sizeClassDisablesTools: window.sizeClass.disablesTools
             )
-        let effectiveToolsOff = hardToolsOff && !consentGatedToolsOff
+        let effectiveToolsOff = hardToolsOff
         let contextDisable = ContextDisableInfo.from(
             sizeClass: window.sizeClass,
             modelId: snapshot.model,
@@ -594,15 +596,18 @@ public struct SystemPromptComposer: Sendable {
             )
 
         trace?.mark("resolve_tools_start")
-        let resolvedTools = resolveTools(
+        var resolvedTools = resolveTools(
             snapshot: snapshot,
             executionMode: executionMode,
-            toolsDisabled: effectiveToolsOff,
+            toolsDisabled: effectiveToolsOff && !consentGatedToolsOff,
             additionalToolNames: additionalToolNames,
             frozenAlwaysLoadedNames: frozenAlwaysLoadedNames,
             frozenToolSpecs: frozenToolSpecs,
             spawnTargets: spawnTargets
         )
+        if consentGatedToolsOff {
+            resolvedTools = consentDiscoverySchema(from: resolvedTools)
+        }
         trace?.mark("resolve_tools_done")
         let alwaysLoadedNames = resolveAlwaysLoadedNames(
             tools: resolvedTools,
@@ -756,6 +761,36 @@ public struct SystemPromptComposer: Sendable {
             && !sizeClassDisablesTools
     }
 
+    /// Tools that carry no discovery signal for a consent-gated tools-off
+    /// session: chat-layer loop plumbing, meta/capability tooling, and
+    /// display-only outputs. Offering these as stubs would only mint
+    /// pointless enable cards ("what time is it" must not prompt a
+    /// settings trip — the time is already injected into the prompt).
+    static let consentDiscoveryExcludedNames: Set<String> =
+        agentLoopToolNames.union([
+            "share_artifact",
+            "capabilities",
+            "capabilities_discover",
+            "capabilities_load",
+            CapabilityRequestContract.toolName,
+            "get_current_time",
+            "render_chart",
+            "speak",
+            "search_memory",
+        ])
+
+    /// Reduce a full resolved toolset to the consent-gated discovery
+    /// schema: intent-bearing tools only, each as a forced compact stub
+    /// (name + one-line description, no parameter schema). Enough for the
+    /// model's trained call reflex to fire — the call is blocked before
+    /// dispatch anyway, so argument fidelity is irrelevant — at a small
+    /// fraction of the full schema's prefill cost.
+    static func consentDiscoverySchema(from tools: [Tool]) -> [Tool] {
+        tools
+            .filter { !consentDiscoveryExcludedNames.contains($0.function.name) }
+            .map(forcedCompactBootstrapSpec)
+    }
+
     /// Append the `## Dormant capabilities` section (shared by the minimal
     /// custom-agent/sandbox harness and the rich default-agent path). Kept
     /// out of line so both paths render the identical section from the same
@@ -767,6 +802,11 @@ public struct SystemPromptComposer: Sendable {
         toolset: ResolvedToolset,
         resolvedNames: Set<String>
     ) {
+        // Consent-gated sessions get no dormant narration: the discovery
+        // stubs in the schema ARE the affordance, and telling the model
+        // tools are off would fight the call reflex the stubs exist to
+        // trigger. The prompt stays lean, matching a true tools-off run.
+        guard !toolset.consentGatedToolsOff else { return }
         let cache = ModelPickerItemCache.shared
         let dormant = DormantCapabilityResolver.resolve(
             snapshot: snapshot,
@@ -2148,12 +2188,14 @@ public struct SystemPromptComposer: Sendable {
             executionMode: executionMode
         )
         // Consent-gated tools-off: when ONLY the per-agent Tools toggle is
-        // off, compose the NORMAL schema and prompt — the chat layer blocks
-        // the first tool call before dispatch and renders the enable card
-        // instead of executing. Asking the model to refuse-then-request via
-        // a meta-tool fought its training (no weather tool in schema → "I
-        // can't" is the trained answer); letting it call the real tool and
-        // gating execution works WITH the training and stays deterministic.
+        // off, the prompt composes LEAN (all tool sections gated off, same
+        // token cost as a true tools-off session) but the request still
+        // carries skeleton stubs of the intent-bearing tools. The model's
+        // trained reflex — call the obvious tool — fires off the stub; the
+        // chat layer blocks execution pre-dispatch and renders the enable
+        // card. Asking the model to refuse-then-request via a meta-tool
+        // fought its training; a full schema paid the whole prefill cost
+        // users turn the toggle off to avoid. Stubs buy both properties.
         // The global kill switch and tiny-context strip remain hard-off.
         let consentGatedToolsOff =
             hardToolsOff
@@ -2161,7 +2203,7 @@ public struct SystemPromptComposer: Sendable {
                 snapshot: snapshot,
                 sizeClassDisablesTools: window.sizeClass.disablesTools
             )
-        let effectiveToolsOff = hardToolsOff && !consentGatedToolsOff
+        let effectiveToolsOff = hardToolsOff
         let contextDisable = ContextDisableInfo.from(
             sizeClass: window.sizeClass,
             modelId: snapshot.model,
@@ -2179,12 +2221,15 @@ public struct SystemPromptComposer: Sendable {
                 modelNotes: configuredSpawn.notes,
                 launcherModelOverride: configuredSpawn.launcherModelOverride
             )
-        let tools = resolveTools(
+        var tools = resolveTools(
             snapshot: snapshot,
             executionMode: executionMode,
-            toolsDisabled: effectiveToolsOff,
+            toolsDisabled: effectiveToolsOff && !consentGatedToolsOff,
             spawnTargets: spawnTargets
         )
+        if consentGatedToolsOff {
+            tools = consentDiscoverySchema(from: tools)
+        }
         let alwaysLoadedNames = resolveAlwaysLoadedNames(
             tools: tools,
             executionMode: executionMode,

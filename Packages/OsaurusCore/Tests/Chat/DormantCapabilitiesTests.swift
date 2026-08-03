@@ -280,6 +280,39 @@ struct CapabilityAutoResumePolicyTests {
     }
 }
 
+@Suite("Consent discovery schema")
+struct ConsentDiscoverySchemaTests {
+
+    private func tool(_ name: String) -> Tool {
+        Tool(
+            type: "function",
+            function: ToolFunction(
+                name: name,
+                description: "A tool description that is long enough to be compacted away.",
+                parameters: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "query": .object(["type": .string("string")])
+                    ]),
+                ])
+            )
+        )
+    }
+
+    @Test("keeps intent-bearing tools as stubs, drops plumbing")
+    func filtersAndStubs() {
+        let schema = SystemPromptComposer.consentDiscoverySchema(from: [
+            tool("web_search"),
+            tool("todo"),
+            tool("complete"),
+            tool("share_artifact"),
+            tool("get_current_time"),
+            tool(CapabilityRequestContract.toolName),
+        ])
+        #expect(schema.map { $0.function.name } == ["web_search"])
+    }
+}
+
 @Suite("request_capability constrained spec")
 struct CapabilityRequestConstrainedSpecTests {
 
