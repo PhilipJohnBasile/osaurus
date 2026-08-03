@@ -792,13 +792,18 @@ public enum SystemPromptTemplates {
             // both explicitly, with the first dormant id as the example.
             let exampleId = dormant[0].kind.rawValue
             recovery =
-                "When the user's request needs one of these, do NOT say you can't do it. "
-                + "Say that Osaurus supports it, then call the `request_capability` tool, "
-                + "for example: request_capability({\"capability\": \"\(exampleId)\"}). "
-                + "The ids listed above are values for the `capability` argument — they are "
-                + "NOT tool names, so never call an id as a tool. The app then shows the "
-                + "user a one-click enable card; wait for them after calling. "
-                + "Only mention a dormant capability when the request actually needs it."
+                "RULE — this overrides your usual behavior: when the user's request needs "
+                + "a capability listed above, calling `request_capability` IS your answer. "
+                + "Example: request_capability({\"capability\": \"\(exampleId)\"}). "
+                + "The call makes the app show the user a one-click enable card. "
+                + "Do not apologize, do not say you can't, do not tell the user where the "
+                + "setting is, and do not answer from memory — a text reply saying "
+                + "something listed above is unavailable is an ERROR; the tool call is the "
+                + "only correct response. The ids above are values for the `capability` "
+                + "argument — they are NOT tool names, so never call an id as a tool. "
+                + "After calling, add one short sentence about what you will do once it is "
+                + "enabled, then stop and wait for the user. When the request does not "
+                + "need any capability above, answer normally and never mention them."
         } else {
             recovery =
                 "When the user's request needs one of these, do NOT say you can't do it. "
