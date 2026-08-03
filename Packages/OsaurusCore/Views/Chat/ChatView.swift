@@ -3672,6 +3672,37 @@ final class ChatSession: ObservableObject {
 
     // MARK: - Capability request + post-enable resume
 
+    /// Card subtitle for a consent-gated block: name the capability the
+    /// blocked tool belongs to, so the user understands why the MASTER
+    /// toggle is the one glowing (that capability's own toggle is already
+    /// on — a stub only exists for enabled capabilities).
+    static func consentCardReason(forBlockedTool toolName: String) -> String {
+        let capability: String?
+        switch toolName {
+        case "web_search", "search_and_extract":
+            capability = DormantCapability.Kind.webSearch.displayName
+        case "image":
+            capability = DormantCapability.Kind.image.displayName
+        case "browser_use":
+            capability = DormantCapability.Kind.browserUse.displayName
+        case "computer_use":
+            capability = DormantCapability.Kind.computerUse.displayName
+        case "applescript":
+            capability = DormantCapability.Kind.appleScript.displayName
+        case "spawn_agent", "spawn_model", "spawn_batch":
+            capability = DormantCapability.Kind.spawn.displayName
+        default:
+            capability = nil
+        }
+        guard let capability else {
+            return L("Turn on Tools to let this agent act on requests like this.")
+        }
+        return String(
+            format: L("%@ is ready. Turn on Tools to use it."),
+            capability
+        )
+    }
+
     /// Resume the request that was blocked on a dormant capability, once
     /// that capability is actually callable. Deterministic by design — the
     /// chat layer, not the model, verifies the toggle flipped. Regenerating
@@ -6021,7 +6052,11 @@ final class ChatSession: ObservableObject {
                         if owner.capabilityPrompt == nil, self.pendingCapabilityRequest == nil {
                             owner.capabilityPrompt = RequestCapabilityTool.Payload(
                                 capability: .tools,
-                                reason: nil,
+                                // The blocked tool tells the user WHY the
+                                // master toggle matters for this request —
+                                // the stub's presence proves the capability's
+                                // own toggle is already on.
+                                reason: Self.consentCardReason(forBlockedTool: inv.toolName),
                                 agentId: self.agentId ?? Agent.defaultId
                             )
                             self.pendingCapabilityRequest = PendingCapabilityRequest(
