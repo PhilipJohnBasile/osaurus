@@ -291,11 +291,12 @@ final class ChatSession: ObservableObject {
     var pendingCapabilityRequest: PendingCapabilityRequest?
     private var capabilityResumeCancellables = Set<AnyCancellable>()
 
-    /// True while the current run composed with the consent-gated
-    /// tools-off carve-out (normal schema, per-agent Tools toggle off).
-    /// Every tool call this run is blocked before dispatch and rendered
-    /// as the inline enable card instead of executing.
-    private var currentRunCarveOutToolsOff = false
+    /// Tool names in the current run's schema that are consent DISCOVERY
+    /// STUBS (tools-off: the whole schema; tools-on: dormant capabilities'
+    /// primary tools). Calls to these are blocked before dispatch and
+    /// rendered as the inline enable card instead of executing; the names
+    /// are also excluded from the run's execution scope.
+    private var currentRunConsentStubNames: Set<String> = []
 
     /// Last typed draft preserved when a send is cancelled
     /// (Cancel-send button in review sheet, or Task cancel during
@@ -5545,9 +5546,16 @@ final class ChatSession: ObservableObject {
                     // once a schema exists) and the registry used to run it. One object for the
                     // whole run: `capabilities_load` legitimately GROWS this set mid-run while
                     // `toolSpecs` stays frozen, so an immutable snapshot would kill that feature.
-                    let toolScope = ToolExecutionScope(exposed: toolSpecs)
-                    self.currentRunCarveOutToolsOff =
-                        !isRemoteAgentTarget && context.consentGatedToolsOff
+                    // Stubs are display-and-block only: they never enter the
+                    // execution scope, so even a bypassed gate could not run
+                    // a capability whose toggle is off.
+                    self.currentRunConsentStubNames =
+                        isRemoteAgentTarget ? [] : context.consentStubToolNames
+                    let toolScope = ToolExecutionScope(
+                        exposed: toolSpecs.filter {
+                            !self.currentRunConsentStubNames.contains($0.function.name)
+                        }
+                    )
 
                     // Persist the always-loaded snapshot back onto the session
                     // so the next send freezes the schema against tools that
@@ -6083,6 +6091,17 @@ final class ChatSession: ObservableObject {
                         callId: String
                     ) -> AgentLoopToolExecution {
                         consentBlockedCallCount += 1
+                        let blockedCardAgentId = self.agentId ?? Agent.defaultId
+                        let blockedCardKind = Self.consentCardKind(
+                            forBlockedTool: inv.toolName,
+                            agentId: blockedCardAgentId
+                        )
+                        // Name the actual blocker: the master switch for
+                        // `.tools` cards, the capability itself when its own
+                        // toggle is off.
+                        let blockerName =
+                            blockedCardKind == .tools
+                            ? L("Tools") : blockedCardKind.displayName
                         // Kind matters: `.rejected`/`.userDenied` trip the
                         // chat policy's `stopOnToolRejection` and end the run
                         // BEFORE the model's follow-up step — the card then
@@ -6094,13 +6113,13 @@ final class ChatSession: ObservableObject {
                         let envelope = ToolEnvelope.failure(
                             kind: .unavailable,
                             message:
-                                "Tools are turned off for this agent, so `\(inv.toolName)` "
-                                + "was not run. The user has been shown a card that opens "
-                                + "the setting. Do not call any other tool now: reply with "
-                                + "one short sentence telling the user what you will do "
-                                + "once Tools is enabled, then stop and wait. Only the user "
-                                + "can enable it, on the card; never say you will enable it "
-                                + "for them.",
+                                "\(blockerName) is turned off for this agent, so "
+                                + "`\(inv.toolName)` was not run. The user has been shown a "
+                                + "card that opens the setting. Do not call any other tool "
+                                + "now: reply with one short sentence telling the user what "
+                                + "you will do once \(blockerName) is enabled, then stop "
+                                + "and wait. Only the user can enable it, on the card; "
+                                + "never say you will enable it for them.",
                             tool: inv.toolName,
                             // `retryable: false` + `.unavailable` reads as a
                             // terminal desktop-subagent failure for
@@ -6116,24 +6135,19 @@ final class ChatSession: ObservableObject {
                                     && (turn.toolCalls?.contains { $0.id == callId } ?? false)
                             }) ?? assistantTurn
                         if owner.capabilityPrompt == nil, self.pendingCapabilityRequest == nil {
-                            let cardAgentId = self.agentId ?? Agent.defaultId
-                            let cardKind = Self.consentCardKind(
-                                forBlockedTool: inv.toolName,
-                                agentId: cardAgentId
-                            )
                             owner.capabilityPrompt = RequestCapabilityTool.Payload(
-                                capability: cardKind,
+                                capability: blockedCardKind,
                                 // For a `.tools` card, name the blocked
                                 // capability so the user understands why the
                                 // master toggle glows; capability cards
                                 // carry their meaning in the title.
-                                reason: cardKind == .tools
+                                reason: blockedCardKind == .tools
                                     ? Self.consentCardReason(forBlockedTool: inv.toolName)
                                     : nil,
-                                agentId: cardAgentId
+                                agentId: blockedCardAgentId
                             )
                             self.pendingCapabilityRequest = PendingCapabilityRequest(
-                                kind: cardKind,
+                                kind: blockedCardKind,
                                 turnId: owner.id
                             )
                             self.isDirty = true
@@ -6158,9 +6172,7 @@ final class ChatSession: ObservableObject {
                         _ inv: ServiceToolInvocation,
                         callId: String
                     ) async -> AgentLoopToolExecution {
-                        if self.currentRunCarveOutToolsOff,
-                            inv.toolName != CapabilityRequestContract.toolName
-                        {
+                        if self.currentRunConsentStubNames.contains(inv.toolName) {
                             return consentGateBlockedExecution(inv, callId: callId)
                         }
                         do {
@@ -6309,7 +6321,9 @@ final class ChatSession: ObservableObject {
                         // retrying tools). Serial ordering guarantees
                         // nothing executes in parallel with a blocked
                         // toggle.
-                        if AgentToolLoop.containsIntercept(calls) || self.currentRunCarveOutToolsOff {
+                        if AgentToolLoop.containsIntercept(calls)
+                            || !self.currentRunConsentStubNames.isEmpty
+                        {
                             var serialExecutions: [AgentLoopToolExecution] = []
                             for call in calls {
                                 guard self.isRunActive(runId) else { break }

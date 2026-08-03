@@ -314,4 +314,8 @@ struct ComposedContext: Sendable {
     /// toggle is off, the schema is the normal one, and the chat layer must
     /// block execution and render the enable card on the first tool call.
     var consentGatedToolsOff: Bool = false
+    /// Mirror of `ResolvedToolset.consentStubToolNames`: tool names in the
+    /// schema that are discovery stubs — blocked pre-dispatch into enable
+    /// cards, excluded from the execution scope.
+    var consentStubToolNames: Set<String> = []
 }

@@ -94,6 +94,21 @@ extension DormantCapability.Kind {
         }
     }
 
+    /// The tool name a discovery stub for this capability advertises (and
+    /// that the consent gate blocks). Nil for the master switch, which is
+    /// never itself a tool.
+    public var primaryToolName: String? {
+        switch self {
+        case .tools: return nil
+        case .webSearch: return "web_search"
+        case .image: return "image"
+        case .browserUse: return "browser_use"
+        case .computerUse: return "computer_use"
+        case .appleScript: return "applescript"
+        case .spawn: return "spawn_agent"
+        }
+    }
+
     /// Whether the chat session may auto-resend the blocked request the
     /// moment this capability is enabled. Capabilities that operate the
     /// user's machine (browser, screen, app automation) stay explicit:

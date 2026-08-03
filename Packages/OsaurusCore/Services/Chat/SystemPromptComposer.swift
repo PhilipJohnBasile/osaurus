@@ -312,7 +312,8 @@ public struct SystemPromptComposer: Sendable {
             contextDisable: toolset.contextDisable,
             enabledManifest: toolset.enabledManifest,
             soul: soulSection,
-            consentGatedToolsOff: toolset.consentGatedToolsOff
+            consentGatedToolsOff: toolset.consentGatedToolsOff,
+            consentStubToolNames: toolset.consentStubToolNames
         )
     }
 
@@ -614,6 +615,33 @@ public struct SystemPromptComposer: Sendable {
                 consentGatedToolsOff = false
             }
         }
+        // Which schema entries are stubs. Tools-off: the whole (stub-only)
+        // schema. Tools-on: a dormant capability's primary tool can ONLY be
+        // in the schema as the stub appended after the authoritative strips,
+        // so the dormant-primary ∩ schema intersection identifies them.
+        let consentStubToolNames: Set<String>
+        if consentGatedToolsOff {
+            consentStubToolNames = Set(resolvedTools.map { $0.function.name })
+        } else if !effectiveToolsOff {
+            let cache = ModelPickerItemCache.shared
+            let dormantPrimaries = Set(
+                DormantCapabilityResolver.resolve(
+                    snapshot: snapshot,
+                    inputs: .init(
+                        effectiveToolsOff: false,
+                        sizeClassDisablesTools: false,
+                        isDefaultAgent: snapshot.agentId == Agent.defaultId,
+                        hasReadyImageModel: cache.hasReadyImageModel,
+                        hasReadyAppleScriptModel: cache.hasReadyAppleScriptModel
+                    )
+                ).compactMap { $0.kind.primaryToolName }
+            )
+            consentStubToolNames = dormantPrimaries.intersection(
+                resolvedTools.map { $0.function.name }
+            )
+        } else {
+            consentStubToolNames = []
+        }
         trace?.mark("resolve_tools_done")
         let alwaysLoadedNames = resolveAlwaysLoadedNames(
             tools: resolvedTools,
@@ -641,7 +669,8 @@ public struct SystemPromptComposer: Sendable {
             effectiveToolsOff: effectiveToolsOff,
             capabilityPromptSectionsEnabled: true,
             prefersCompactPrompt: window.prefersCompactPrompt,
-            consentGatedToolsOff: consentGatedToolsOff
+            consentGatedToolsOff: consentGatedToolsOff,
+            consentStubToolNames: consentStubToolNames
         )
     }
 
@@ -3072,6 +3101,46 @@ public struct SystemPromptComposer: Sendable {
             where !explicitlyFull.contains(name) {
                 guard let full = byName[name] else { continue }
                 byName[name] = compactWorkspaceSpec(full)
+            }
+        }
+
+        // Per-capability discovery stubs, appended AFTER every authoritative
+        // strip so the gates above stay the arbiters of what is REAL. Each
+        // dormant capability's primary tool re-enters as a name+one-line stub
+        // (no parameter schema): the model's trained call reflex fires off
+        // the stub — "create a note in Notes" naturally calls `applescript`
+        // — and the chat layer blocks it pre-dispatch into the enable card.
+        // The `request_capability` path stays as a parallel affordance, but
+        // small models routinely ignore that prompt rule (observed live:
+        // plain-text refusals); the stub trigger is deterministic. Auto mode
+        // only, and the stub names are reported to the chat layer via
+        // `ResolvedToolset.consentStubToolNames`, which also excludes them
+        // from the run's execution scope.
+        if !isManual {
+            let cache = ModelPickerItemCache.shared
+            let dormant = DormantCapabilityResolver.resolve(
+                snapshot: snapshot,
+                inputs: .init(
+                    effectiveToolsOff: false,
+                    sizeClassDisablesTools: false,
+                    isDefaultAgent: snapshot.agentId == Agent.defaultId,
+                    hasReadyImageModel: cache.hasReadyImageModel,
+                    hasReadyAppleScriptModel: cache.hasReadyAppleScriptModel
+                )
+            )
+            for capability in dormant {
+                guard let toolName = capability.kind.primaryToolName,
+                    byName[toolName] == nil,
+                    let description = consentStubDescriptions[toolName]
+                else { continue }
+                byName[toolName] = Tool(
+                    type: "function",
+                    function: ToolFunction(
+                        name: toolName,
+                        description: description,
+                        parameters: nil
+                    )
+                )
             }
         }
 

@@ -88,4 +88,11 @@ struct ResolvedToolset: Sendable {
     /// global kill switch and the tiny-context strip, which stay at zero
     /// tools. See `SystemPromptComposer.toolsOffCarveOutApplies`.
     var consentGatedToolsOff: Bool = false
+
+    /// Names in `tools` that are consent DISCOVERY STUBS, not executable
+    /// specs: the chat layer blocks these before dispatch and renders the
+    /// enable card, and they are excluded from the run's execution scope.
+    /// The whole schema in a consent-gated tools-off session; the dormant
+    /// capabilities' primary tools in a tools-on session; empty otherwise.
+    var consentStubToolNames: Set<String> = []
 }
