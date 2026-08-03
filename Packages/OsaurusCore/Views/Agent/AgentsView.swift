@@ -3818,8 +3818,19 @@ struct AgentDetailView: View {
     private func subagentToggleBinding(_ flag: SubagentCapability.PerAgentFlag) -> Binding<Bool> {
         Binding(
             get: { subagentToggles[flag] ?? false },
-            set: {
-                subagentToggles[flag] = $0
+            set: { newValue in
+                // Same master cascade as `toolBackedSaveBinding`: enabling a
+                // subagent capability while Tools is off also enables the
+                // master, with the pulse as visible confirmation. Without
+                // this, the chat card's deep link (which lands EXACTLY on
+                // these rows) left users flipping a switch that stayed
+                // paused — the session kept consent-blocking their calls
+                // because the master never turned on (observed live).
+                if newValue, !toolsEnabled {
+                    toolsEnabled = true
+                    flashToolsToggle(scroll: false)
+                }
+                subagentToggles[flag] = newValue
                 debouncedSave()
             }
         )
