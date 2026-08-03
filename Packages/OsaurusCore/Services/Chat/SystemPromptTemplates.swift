@@ -802,7 +802,9 @@ public enum SystemPromptTemplates {
                 + "only correct response. The ids above are values for the `capability` "
                 + "argument — they are NOT tool names, so never call an id as a tool. "
                 + "After calling, add one short sentence about what you will do once it is "
-                + "enabled, then stop and wait for the user. When the request does not "
+                + "enabled, then stop and wait for the user. Only the USER can enable a "
+                + "capability, by clicking the card — you cannot; never say you will "
+                + "enable or turn on anything for them. When the request does not "
                 + "need any capability above, answer normally and never mention them."
         } else {
             recovery =

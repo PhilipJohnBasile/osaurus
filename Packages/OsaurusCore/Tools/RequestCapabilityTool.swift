@@ -25,7 +25,9 @@ public final class RequestCapabilityTool: OsaurusTool, @unchecked Sendable {
         + "request needs (see the Dormant capabilities list in your instructions). "
         + "The app shows the user an inline enable card. Call this INSTEAD of "
         + "saying you can't do something a dormant capability covers, then wait "
-        + "for the user — do not retry the task in the same turn."
+        + "for the user — do not retry the task in the same turn. You cannot "
+        + "enable capabilities yourself: only the user can, on the card. Never "
+        + "say you will enable it or turn it on for them."
 
     public var parameters: JSONValue? {
         let ids = DormantCapability.Kind.allCases.map { JSONValue.string($0.rawValue) }
@@ -145,7 +147,9 @@ public final class RequestCapabilityTool: OsaurusTool, @unchecked Sendable {
                 "The user has been shown an enable card for "
                 + "\(payload.capability.displayName). Tell them briefly what you "
                 + "will do once it is enabled, then stop and wait — do not retry "
-                + "the task or call this tool again for the same capability this turn."
+                + "the task or call this tool again for the same capability this "
+                + "turn. Only the user can enable it, on the card; never say you "
+                + "will enable it for them."
         )
     }
 

@@ -6055,7 +6055,9 @@ final class ChatSession: ObservableObject {
                                 + "was not run. The user has been shown a card that opens "
                                 + "the setting. Do not call any other tool now: reply with "
                                 + "one short sentence telling the user what you will do "
-                                + "once Tools is enabled, then stop and wait.",
+                                + "once Tools is enabled, then stop and wait. Only the user "
+                                + "can enable it, on the card; never say you will enable it "
+                                + "for them.",
                             tool: inv.toolName,
                             // `retryable: false` + `.unavailable` reads as a
                             // terminal desktop-subagent failure for
