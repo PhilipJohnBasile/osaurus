@@ -2333,7 +2333,38 @@
       }
     },
     "%@ is enabled" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist aktiviert"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@이(가) 켜져 있습니다"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: включено"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@已启用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@已啟用"
+          }
+        }
+      }
     },
     "%@ is missing" : {
       "localizations" : {
@@ -2474,7 +2505,38 @@
       }
     },
     "%@ is ready. Turn on Tools to use it." : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist bereit. Aktivieren Sie Tools, um es zu verwenden."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 기능이 준비되었습니다. 도구를 켜면 사용할 수 있습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: функция готова. Включите инструменты, чтобы использовать её."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@已就绪。开启工具即可使用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@已就緒。開啟工具即可使用。"
+          }
+        }
+      }
     },
     "%@ isn't an MLX model, so it can't be used in Osaurus. The local engine runs MLX-format models only." : {
       "localizations" : {
@@ -12715,7 +12777,38 @@
       }
     },
     "A quick setup step is required first." : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zuerst ist ein kurzer Einrichtungsschritt erforderlich."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "먼저 간단한 설정 단계가 필요합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сначала требуется быстрая настройка."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要先完成一个快速设置步骤。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要先完成一個快速設定步驟。"
+          }
+        }
+      }
     },
     "A quick tour" : {
       "localizations" : {
@@ -14302,7 +14395,38 @@
       }
     },
     "Accessibility is granted. This agent can now operate apps for you." : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Berechtigung für Bedienungshilfen erteilt. Dieser Agent kann jetzt Apps für Sie bedienen."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "접근성 권한이 부여되었습니다. 이제 이 에이전트가 앱을 대신 조작할 수 있습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Разрешение «Универсальный доступ» предоставлено. Теперь этот агент может управлять приложениями за вас."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已授予辅助功能权限。该智能体现在可以为您操作应用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已授予輔助功能權限。該智能體現在可以為您操作應用程式。"
+          }
+        }
+      }
     },
     "Accessibility Permission" : {
       "localizations" : {
@@ -33762,7 +33886,38 @@
       }
     },
     "Browser Use is available on custom agents. Create an agent with Browser Use enabled to do this." : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browser Use ist nur für eigene Agenten verfügbar. Erstellen Sie einen Agenten mit aktiviertem Browser Use."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "브라우저 사용은 사용자 지정 에이전트에서만 사용할 수 있습니다. 브라우저 사용을 켠 에이전트를 만들어 주세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browser Use доступен только для пользовательских агентов. Создайте агента с включённым Browser Use."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览器使用仅适用于自定义智能体。请创建一个已启用浏览器使用的智能体。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "瀏覽器使用僅適用於自訂智能體。請建立一個已啟用瀏覽器使用的智能體。"
+          }
+        }
+      }
     },
     "Browser Use is off by default and can only be enabled per custom agent — the built-in Default agent never gets browser access." : {
       "localizations" : {
@@ -45793,7 +45948,38 @@
       }
     },
     "Computer Use is available on custom agents. Create an agent with Computer Use enabled to do this." : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer Use ist nur für eigene Agenten verfügbar. Erstellen Sie einen Agenten mit aktiviertem Computer Use."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "컴퓨터 제어는 사용자 지정 에이전트에서만 사용할 수 있습니다. 컴퓨터 제어를 켠 에이전트를 만들어 주세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Использование компьютера доступно только для пользовательских агентов. Создайте агента с включённым использованием компьютера."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "电脑操控仅适用于自定义智能体。请创建一个已启用电脑操控的智能体。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電腦操作僅適用於自訂智能體。請建立一個已啟用電腦操作的智能體。"
+          }
+        }
+      }
     },
     "Computer Use is off by default. You enable it per agent — and only custom agents can use it (the Default agent can't)." : {
       "comment" : "A description of how Computer Use works and how to enable it.",
@@ -45832,10 +46018,72 @@
       }
     },
     "Computer Use is on for this agent, but macOS has not granted Osaurus the Accessibility permission yet. Runs will fail until it is granted." : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer Use ist für diesen Agenten aktiviert, aber macOS hat Osaurus die Berechtigung für Bedienungshilfen noch nicht erteilt. Ausführungen schlagen fehl, bis sie erteilt wird."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 에이전트에 컴퓨터 제어가 켜져 있지만 macOS에서 아직 Osaurus에 접근성 권한을 부여하지 않았습니다. 권한을 부여할 때까지 실행이 실패합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Использование компьютера включено для этого агента, но macOS ещё не предоставила Osaurus разрешение «Универсальный доступ». Запуски будут завершаться ошибкой, пока оно не будет предоставлено."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此智能体已开启电脑操控，但 macOS 尚未授予 Osaurus 辅助功能权限。在授予之前，运行将会失败。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此智能體已開啟電腦操作，但 macOS 尚未授予 Osaurus 輔助功能權限。在授予之前，執行將會失敗。"
+          }
+        }
+      }
     },
     "Computer Use is ready" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer Use ist bereit"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "컴퓨터 제어 준비 완료"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Использование компьютера готово"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "电脑操控已就绪"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電腦操作已就緒"
+          }
+        }
+      }
     },
     "Concurrency" : {
       "localizations" : {
@@ -65857,7 +66105,38 @@
       }
     },
     "Dormant Capabilities" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruhende Funktionen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "비활성 기능"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неактивные функции"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "休眠功能"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "休眠功能"
+          }
+        }
+      }
     },
     "Double-click" : {
       "shouldTranslate" : false
@@ -71178,7 +71457,38 @@
       }
     },
     "Enable in Settings" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In den Einstellungen aktivieren"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "설정에서 켜기"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Включить в настройках"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在设置中启用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在設定中啟用"
+          }
+        }
+      }
     },
     "Enable Long Polling" : {
       "extractionState" : "stale",
@@ -90415,7 +90725,38 @@
 
     },
     "I'll do this later" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Später erledigen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "나중에 하기"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сделаю позже"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "稍后再说"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "稍後再說"
+          }
+        }
+      }
     },
     "I've saved it" : {
       "extractionState" : "stale",
@@ -95698,10 +96039,72 @@
       }
     },
     "Install an AppleScript Model" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AppleScript-Modell installieren"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AppleScript 모델 설치"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Установить модель AppleScript"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装 AppleScript 模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安裝 AppleScript 模型"
+          }
+        }
+      }
     },
     "Install an Image Model" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bildmodell installieren"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이미지 모델 설치"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Установить модель изображений"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装图片生成模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安裝圖片生成模型"
+          }
+        }
+      }
     },
     "Install and run sandbox plugins" : {
       "localizations" : {
@@ -128238,7 +128641,38 @@
       }
     },
     "One more step for Computer Use" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch ein Schritt für Computer Use"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "컴퓨터 제어를 위한 마지막 단계"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ещё один шаг для использования компьютера"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "电脑操控还差一步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電腦操作還差一步"
+          }
+        }
+      }
     },
     "One or more Azure deployment names — comma or newline-separated. Stored as the provider's model list." : {
       "comment" : "Help text under the Azure deployments field in the credential sheet.",
@@ -129099,7 +129533,38 @@
       }
     },
     "Open Agent Settings" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agenten-Einstellungen öffnen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "에이전트 설정 열기"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открыть настройки агента"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开智能体设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟智能體設定"
+          }
+        }
+      }
     },
     "Open AI Chat" : {
       "localizations" : {
@@ -129313,7 +129778,38 @@
       }
     },
     "Open Chat Settings" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat-Einstellungen öffnen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "채팅 설정 열기"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открыть настройки чата"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开聊天设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟聊天設定"
+          }
+        }
+      }
     },
     "Open Computer Use" : {
       "localizations" : {
@@ -129384,7 +129880,38 @@
       }
     },
     "Open Computer Use Settings" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer-Use-Einstellungen öffnen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "컴퓨터 제어 설정 열기"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открыть настройки использования компьютера"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开电脑操控设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟電腦操作設定"
+          }
+        }
+      }
     },
     "Open configuration file" : {
       "localizations" : {
@@ -129695,7 +130222,38 @@
       }
     },
     "Open Image Settings" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bild-Einstellungen öffnen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이미지 설정 열기"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открыть настройки изображений"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开图片设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟圖片設定"
+          }
+        }
+      }
     },
     "Open Images" : {
       "comment" : "A button label that opens the Images settings.",
@@ -153010,7 +153568,38 @@
       }
     },
     "Ready when you are." : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bereit, wenn Sie es sind."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "준비되면 시작하세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Готово к запуску."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "随时可以开始。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隨時可以開始。"
+          }
+        }
+      }
     },
     "Real code, safely" : {
       "extractionState" : "stale",
@@ -164282,7 +164871,38 @@
       }
     },
     "Retry request" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anfrage wiederholen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "요청 다시 시도"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повторить запрос"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试请求"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重試請求"
+          }
+        }
+      }
     },
     "Retry Sandbox" : {
       "localizations" : {
@@ -201042,7 +201662,38 @@
       }
     },
     "This capability is ready to use." : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Funktion ist einsatzbereit."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 기능을 바로 사용할 수 있습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эта функция готова к использованию."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此功能已可使用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此功能已可使用。"
+          }
+        }
+      }
     },
     "This channel does not support posting into threads." : {
       "comment" : "Text displayed in a warning banner at the top of the screen when a channel does not support posting into threads.",
@@ -202103,7 +202754,38 @@
       }
     },
     "This needs %@" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hierfür wird %@ benötigt"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 기능이 필요합니다"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Требуется %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要%@"
+          }
+        }
+      }
     },
     "This only applies to this chat." : {
       "localizations" : {
@@ -208635,7 +209317,38 @@
       }
     },
     "Turn on Tools to let this agent act on requests like this." : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktivieren Sie Tools, damit dieser Agent solche Anfragen ausführen kann."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "도구를 켜면 이 에이전트가 이런 요청을 수행할 수 있습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Включите инструменты, чтобы этот агент мог выполнять такие запросы."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启工具后，该智能体才能执行此类请求。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟工具後，該智能體才能執行此類請求。"
+          }
+        }
+      }
     },
     "Turn this on per agent: open the agent's Subagents tab, enable Computer Use, and use the Share screen context option (on by default). Requires Accessibility." : {
       "comment" : "Note in Settings > Computer Use explaining that screen context is now enabled per agent.",
