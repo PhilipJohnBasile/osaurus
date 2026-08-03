@@ -14301,6 +14301,9 @@
         }
       }
     },
+    "Accessibility is granted. This agent can now operate apps for you." : {
+
+    },
     "Accessibility Permission" : {
       "localizations" : {
         "de" : {
@@ -45827,6 +45830,12 @@
           }
         }
       }
+    },
+    "Computer Use is on for this agent, but macOS has not granted Osaurus the Accessibility permission yet. Runs will fail until it is granted." : {
+
+    },
+    "Computer Use is ready" : {
+
     },
     "Concurrency" : {
       "localizations" : {
@@ -90405,6 +90414,9 @@
     "I want to change an Osaurus setting." : {
 
     },
+    "I'll do this later" : {
+
+    },
     "I've saved it" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -128224,6 +128236,9 @@
           }
         }
       }
+    },
+    "One more step for Computer Use" : {
+
     },
     "One or more Azure deployment names — comma or newline-separated. Stored as the provider's model list." : {
       "comment" : "Help text under the Azure deployments field in the credential sheet.",

@@ -791,9 +791,16 @@ final class SystemPermissionService: NSObject, ObservableObject, CLLocationManag
     }
 
     private func requestScreenRecordingPermission() {
-        // macOS doesn't allow programmatic screen recording permission requests.
-        // We can only open System Settings for the user to grant it manually.
-        // Attempting to use ScreenCaptureKit will trigger the system prompt.
+        // An app only APPEARS in System Settings > Screen Recording after it
+        // has requested capture access at least once — opening the pane for
+        // an app that never called the request API shows a list without
+        // Osaurus in it and no way to add it (observed live). Request first:
+        // registers this binary with TCC and shows the system prompt when
+        // undetermined (no-op when already decided), then open the pane so
+        // the user can flip the now-present row.
+        if !CGPreflightScreenCaptureAccess() {
+            CGRequestScreenCaptureAccess()
+        }
         openSystemSettings(for: .screenRecording)
     }
 
