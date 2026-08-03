@@ -727,6 +727,46 @@ public struct SystemPromptComposer: Sendable {
     /// `soulSection` is passed in (rather than re-read here) because the
     /// read needs to happen once per compose — `finalizeContext` calls
     /// `resolveSoul`, the preview path calls `loadSoulContent` directly.
+    /// Append the `## Dormant capabilities` section (shared by the minimal
+    /// custom-agent/sandbox harness and the rich default-agent path). Kept
+    /// out of line so both paths render the identical section from the same
+    /// inputs. No-ops when nothing is dormant.
+    @MainActor
+    private static func appendDormantCapabilitiesSection(
+        composer: inout SystemPromptComposer,
+        snapshot: AgentConfigSnapshot,
+        toolset: ResolvedToolset,
+        resolvedNames: Set<String>
+    ) {
+        let cache = ModelPickerItemCache.shared
+        let dormant = DormantCapabilityResolver.resolve(
+            snapshot: snapshot,
+            inputs: .init(
+                effectiveToolsOff: toolset.effectiveToolsOff,
+                sizeClassDisablesTools: toolset.sizeClass.disablesTools,
+                isDefaultAgent: snapshot.agentId == Agent.defaultId,
+                hasReadyImageModel: cache.hasReadyImageModel,
+                hasReadyAppleScriptModel: cache.hasReadyAppleScriptModel
+            )
+        )
+        guard
+            let section = SystemPromptTemplates.dormantCapabilitiesSection(
+                dormant,
+                requestToolAvailable: resolvedNames.contains(
+                    CapabilityRequestContract.toolName
+                ),
+                compact: toolset.prefersCompactPrompt
+            )
+        else { return }
+        composer.append(
+            .static(
+                id: "dormantCapabilities",
+                label: L("Dormant Capabilities"),
+                content: section
+            )
+        )
+    }
+
     @MainActor
     private static func appendGatedSections(
         composer: inout SystemPromptComposer,
@@ -826,6 +866,12 @@ public struct SystemPromptComposer: Sendable {
                     )
                 }
             }
+            appendDormantCapabilitiesSection(
+                composer: &composer,
+                snapshot: snapshot,
+                toolset: toolset,
+                resolvedNames: resolvedNames
+            )
             return
         }
 
@@ -1320,6 +1366,19 @@ public struct SystemPromptComposer: Sendable {
                 )
             }
         }
+
+        // Dormant capabilities: the truthful complement to the enabled
+        // manifest. Renders what Osaurus supports but this session has
+        // gated off (per-agent toggle, global switch, missing model), so
+        // the model guides the user to the enable path instead of denying
+        // a capability that is one toggle away. Session-constant inputs
+        // (settings snapshot + install state) keep it static/KV-safe.
+        appendDormantCapabilitiesSection(
+            composer: &composer,
+            snapshot: snapshot,
+            toolset: toolset,
+            resolvedNames: resolvedNames
+        )
 
         // Plugin-creator injection: inject the `## Building new tools` section
         // whenever plugin creation is enabled for this session.

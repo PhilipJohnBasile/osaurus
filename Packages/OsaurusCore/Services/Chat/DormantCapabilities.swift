@@ -16,6 +16,15 @@
 
 import Foundation
 
+/// Shared names for the capability-request bridge between the prompt
+/// (which tells the model to call it), the tool schema, and the chat
+/// layer (which intercepts the call and renders the enable card).
+public enum CapabilityRequestContract {
+    public static let toolName = "request_capability"
+    public static let capabilityArgument = "capability"
+    public static let reasonArgument = "reason"
+}
+
 /// One capability the app supports but the current session cannot call,
 /// with the machine-readable reason it is off. `blocker` reuses the
 /// settings-surface vocabulary so chat and settings explain the same

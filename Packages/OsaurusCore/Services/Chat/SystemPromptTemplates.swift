@@ -749,6 +749,96 @@ public enum SystemPromptTemplates {
         return currentGroupNeedsGuidance()
     }
 
+    // MARK: - Dormant Capabilities
+
+    /// Render the `## Dormant capabilities` section: capabilities Osaurus
+    /// supports that are gated off for this session, with the reason and
+    /// the recovery path. This is the truthful counterpart to the enabled
+    /// manifest — without it, a gated capability is simply absent from the
+    /// prompt and the model answers "I can't do that" for something one
+    /// toggle away (the #1 new-user discovery failure).
+    ///
+    /// `requestToolAvailable` selects the recovery instruction: when the
+    /// `request_capability` tool is in the schema the model is told to call
+    /// it (the chat layer renders an inline enable card); otherwise the
+    /// model is told to name the exact setting. Inputs are session-constant
+    /// (settings snapshot + install state), so the section is static and
+    /// KV-cache safe. Returns `nil` when nothing is dormant.
+    public static func dormantCapabilitiesSection(
+        _ dormant: [DormantCapability],
+        requestToolAvailable: Bool,
+        compact: Bool = false
+    ) -> String? {
+        guard !dormant.isEmpty else { return nil }
+
+        let lines = dormant.map { capability in
+            let kind = capability.kind
+            if compact {
+                return "- \(kind.rawValue): \(dormantFixPhrase(for: capability))"
+            }
+            return
+                "- `\(kind.rawValue)` (\(kind.displayName)) — \(kind.promptSummary). "
+                + "Off because: \(dormantFixPhrase(for: capability))."
+        }
+
+        let recovery: String
+        if requestToolAvailable {
+            recovery =
+                "When the user's request needs one of these, do NOT say you can't do it. "
+                + "Say that Osaurus supports it, then call `request_capability` with the "
+                + "capability id above — the app shows the user a one-click enable card. "
+                + "Only mention a dormant capability when the request actually needs it."
+        } else {
+            recovery =
+                "When the user's request needs one of these, do NOT say you can't do it. "
+                + "Say that Osaurus supports it and tell the user the exact recovery step "
+                + "listed above so they can enable it, then ask them to retry. "
+                + "Only mention a dormant capability when the request actually needs it."
+        }
+
+        return """
+            ## Dormant capabilities
+
+            Osaurus supports the following, but they are currently turned off for this session:
+            \(lines.joined(separator: "\n"))
+
+            \(recovery)
+            """
+    }
+
+    /// English, model-facing phrasing of a dormant capability's blocker and
+    /// how the user fixes it. Deliberately not localized (prompt text) and
+    /// deliberately concrete — the model relays this when no request tool
+    /// is available, so it must name a findable setting.
+    private static func dormantFixPhrase(for capability: DormantCapability) -> String {
+        switch capability.blocker {
+        case .toolsDisabled:
+            return "the agent's Tools switch is off (agent settings > Capabilities > Tools)"
+        case .globalToolsDisabled:
+            return "tools are disabled globally (Settings > Chat > Disable tools)"
+        case .contextLimit:
+            return
+                "the selected model's context window is too small for tools; "
+                + "switching to a larger model enables them"
+        case .notConfigured:
+            return
+                "its toggle is off in this agent's capability settings "
+                + "(agent settings > Capabilities > \(capability.kind.displayName))"
+        case .noImageModel:
+            return "no compatible image model is installed (Settings > Image Generation)"
+        case .noAppleScriptModel:
+            return "no AppleScript model is installed (Settings > Models)"
+        case .noConfiguredTargets:
+            return
+                "no spawnable agent or model is configured "
+                + "(agent settings > Capabilities > Subagents)"
+        case .unsupportedSurface:
+            return "it is only available on custom agents, not this built-in default agent"
+        default:
+            return capability.blocker.message
+        }
+    }
+
     // MARK: - Cross-cutting Engineering Discipline
 
     /// General code-style discipline. Injected when a file-authoring tool
