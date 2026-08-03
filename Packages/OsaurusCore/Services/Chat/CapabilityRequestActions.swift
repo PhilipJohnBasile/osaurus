@@ -106,8 +106,11 @@ public enum CapabilityRequestActions {
 
         case .appleScript:
             if !ModelPickerItemCache.shared.hasReadyAppleScriptModel {
+                // Curated AppleScript models live under Computer Use >
+                // Models (AppleScriptModelsView), not the general Models
+                // tab; `openSettings` arms the sub-tab request.
                 return .openSettings(
-                    tab: .models,
+                    tab: .computerUse,
                     buttonTitle: L("Install an AppleScript Model")
                 )
             }
@@ -161,6 +164,15 @@ public enum CapabilityRequestActions {
                 ManagementStateManager.shared.pendingCapabilityHighlight =
                     .init(agentId: agentId, kind: kind)
             }
+        }
+        // An AppleScript card that routed to the Computer Use panel is
+        // there for the model install: land directly on its Models
+        // sub-tab (the panel's existing one-shot sub-tab routing).
+        if tab == .computerUse, kind == .appleScript,
+            !ModelPickerItemCache.shared.hasReadyAppleScriptModel
+        {
+            ManagementStateManager.shared.computerUseSubTabRequest =
+                ComputerUseTab.models.rawValue
         }
         AppDelegate.shared?.showManagementWindow(initialTab: tab)
     }
