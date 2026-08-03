@@ -804,8 +804,12 @@ public enum SystemPromptTemplates {
                 + "After calling, add one short sentence about what you will do once it is "
                 + "enabled, then stop and wait for the user. Only the USER can enable a "
                 + "capability, by clicking the card — you cannot; never say you will "
-                + "enable or turn on anything for them. When the request does not "
-                + "need any capability above, answer normally and never mention them."
+                + "enable or turn on anything for them. This rule is ONLY for "
+                + "capabilities listed above: when a tool you already have fails "
+                + "(an error result), report that failure honestly — do NOT request "
+                + "a different capability from the list as a substitute. When the "
+                + "request does not need any capability above, answer normally and "
+                + "never mention them."
         } else {
             recovery =
                 "When the user's request needs one of these, do NOT say you can't do it. "
