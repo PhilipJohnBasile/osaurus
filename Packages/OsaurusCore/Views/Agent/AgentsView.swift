@@ -3181,7 +3181,7 @@ struct AgentDetailView: View {
                 icon: "chart.bar.xaxis",
                 isOn: toolBackedSaveBinding($renderChartEnabled),
                 pausedNote: toolsPausedNote,
-                onPausedNoteTap: flashToolsToggle
+                onPausedNoteTap: { flashToolsToggle() }
             )
             AgentAbilityCard(
                 title: "Speak Tool",
@@ -3190,7 +3190,7 @@ struct AgentDetailView: View {
                 icon: "speaker.wave.2",
                 isOn: toolBackedSaveBinding($speakEnabled),
                 pausedNote: toolsPausedNote,
-                onPausedNoteTap: flashToolsToggle
+                onPausedNoteTap: { flashToolsToggle() }
             )
 
             AgentAbilityGroupHeader(
@@ -3204,7 +3204,7 @@ struct AgentDetailView: View {
                 icon: "magnifyingglass",
                 isOn: toolBackedSaveBinding($searchMemoryEnabled),
                 pausedNote: toolsPausedNote,
-                onPausedNoteTap: flashToolsToggle
+                onPausedNoteTap: { flashToolsToggle() }
             )
 
             AgentAbilityGroupHeader(
@@ -3247,7 +3247,7 @@ struct AgentDetailView: View {
                     icon: "checkmark.seal",
                     isOn: toolBackedSaveBinding($knowledgeCuratorEnabled),
                     pausedNote: toolsPausedNote,
-                    onPausedNoteTap: flashToolsToggle
+                    onPausedNoteTap: { flashToolsToggle() }
                 )
             }
 
@@ -3262,7 +3262,7 @@ struct AgentDetailView: View {
                 icon: "globe",
                 isOn: toolBackedSaveBinding($webSearchEnabled),
                 pausedNote: toolsPausedNote,
-                onPausedNoteTap: flashToolsToggle
+                onPausedNoteTap: { flashToolsToggle() }
             )
 
             AgentAbilityGroupHeader(
@@ -3276,7 +3276,7 @@ struct AgentDetailView: View {
                 icon: "calendar.badge.clock",
                 isOn: toolBackedSaveBinding($selfSchedulingEnabled),
                 pausedNote: toolsPausedNote,
-                onPausedNoteTap: flashToolsToggle,
+                onPausedNoteTap: { flashToolsToggle() },
                 configureLabel: "Schedules & watchers",
                 onConfigure: { selectedTab = .builtIn(.automation) }
             )
@@ -3292,7 +3292,7 @@ struct AgentDetailView: View {
                 icon: "cylinder.split.1x2",
                 isOn: toolBackedSaveBinding($dbEnabled),
                 pausedNote: toolsPausedNote,
-                onPausedNoteTap: flashToolsToggle,
+                onPausedNoteTap: { flashToolsToggle() },
                 configureLabel: "Open Database",
                 onConfigure: { selectedTab = .builtIn(.database) }
             ) {
