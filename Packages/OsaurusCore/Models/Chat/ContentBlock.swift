@@ -63,6 +63,11 @@ enum ContentBlockKind: Equatable {
     case typingIndicator
     case groupSpacer
     case chart(spec: ChartSpec)
+    /// Inline enable card for a `request_capability` tool call: the model
+    /// asked the user to switch on a dormant capability. Rendered in place
+    /// of the generic tool row; the card resolves its live affordance
+    /// (enable / open settings / already enabled) at configure time.
+    case capabilityRequest(callId: String, payload: RequestCapabilityTool.Payload)
     /// GitHub-style diff card rendered in place of the generic tool-call row
     /// for `file_write` / `file_edit` edits inside the selected folder.
     case fileDiff(diff: FileDiff)
@@ -142,6 +147,9 @@ enum ContentBlockKind: Equatable {
         case let (.chart(lSpec), .chart(rSpec)):
             return lSpec == rSpec
 
+        case let (.capabilityRequest(lCall, lPayload), .capabilityRequest(rCall, rPayload)):
+            return lCall == rCall && lPayload == rPayload
+
         case let (.fileDiff(lDiff), .fileDiff(rDiff)):
             return lDiff == rDiff
 
@@ -185,8 +193,8 @@ struct ContentBlock: Identifiable, Equatable, Hashable {
         case let .header(role, _, _): return role
         case let .paragraph(_, _, _, role): return role
         case .toolCallGroup, .thinking, .activityGroup, .sharedArtifact, .pendingToolCall,
-            .generationStats, .typingIndicator, .groupSpacer, .chart, .assistantActions,
-            .emptyResponseNotice, .fileDiff, .compactionMarker:
+            .generationStats, .typingIndicator, .groupSpacer, .chart, .capabilityRequest,
+            .assistantActions, .emptyResponseNotice, .fileDiff, .compactionMarker:
             return .assistant
         case .userMessage: return .user
         }
@@ -427,6 +435,20 @@ struct ContentBlock: Identifiable, Equatable, Hashable {
             id: "chart-\(turnId.uuidString)",
             turnId: turnId,
             kind: .chart(spec: spec),
+            position: position
+        )
+    }
+
+    static func capabilityRequest(
+        turnId: UUID,
+        callId: String,
+        payload: RequestCapabilityTool.Payload,
+        position: BlockPosition
+    ) -> ContentBlock {
+        ContentBlock(
+            id: "capreq-\(turnId.uuidString)-\(callId)",
+            turnId: turnId,
+            kind: .capabilityRequest(callId: callId, payload: payload),
             position: position
         )
     }
@@ -710,6 +732,22 @@ extension ContentBlock {
                     {
                         flushRegularItems()
                         turnBlocks.append(.chart(turnId: turn.id, spec: spec.normalized, position: .middle))
+                    } else if call.function.name == CapabilityRequestContract.toolName,
+                        let result,
+                        let payload = RequestCapabilityTool.payload(from: result)
+                    {
+                        // Capability request renders as the inline enable
+                        // card instead of a generic tool row (failed calls
+                        // carry no marker and fall through to the row).
+                        flushRegularItems()
+                        turnBlocks.append(
+                            .capabilityRequest(
+                                turnId: turn.id,
+                                callId: call.id,
+                                payload: payload,
+                                position: .middle
+                            )
+                        )
                     } else if FileDiff.diffProducingToolNames.contains(call.function.name),
                         let result,
                         let diff = FileDiff.from(toolResult: result)

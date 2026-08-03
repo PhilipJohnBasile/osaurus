@@ -63,11 +63,23 @@ public final class RequestCapabilityTool: OsaurusTool, @unchecked Sendable {
     public struct Payload: Codable, Sendable, Equatable {
         public let capability: DormantCapability.Kind
         public let reason: String?
+        /// Agent the request was made against, stamped by the chat layer
+        /// at interception time (the tool has no session context). Drives
+        /// the card's enable action; optional for decode compatibility.
+        public var agentId: UUID?
 
-        public init(capability: DormantCapability.Kind, reason: String?) {
+        public init(capability: DormantCapability.Kind, reason: String?, agentId: UUID? = nil) {
             self.capability = capability
             self.reason = reason
+            self.agentId = agentId
         }
+    }
+
+    /// Re-encode a payload into the marker format (used by the chat layer
+    /// to stamp `agentId` onto the stored card result).
+    public static func marker(for payload: Payload) -> String? {
+        guard let data = try? JSONEncoder().encode(payload) else { return nil }
+        return markerStart + String(decoding: data, as: UTF8.self) + markerEnd
     }
 
     static let markerStart = "---CAPABILITY_REQUEST_START---\n"

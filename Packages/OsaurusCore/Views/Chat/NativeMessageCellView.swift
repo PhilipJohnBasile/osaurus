@@ -1628,6 +1628,7 @@ final class NativeMessageCellView: NSTableCellView {
     private var nativeStatsView: NativeStatsView?
     private var nativeAssistantActionsView: NativeAssistantActionsView?
     private var nativeEmptyNoticeView: NativeEmptyResponseNoticeView?
+    private var nativeCapabilityRequestView: NativeCapabilityRequestView?
 
     private var userBubbleCornerRadius: CGFloat = 0
     private var userBubbleWidthConstraint: NSLayoutConstraint?
@@ -1817,6 +1818,9 @@ final class NativeMessageCellView: NSTableCellView {
 
         case let .chart(spec):
             configureAsChart(block: block, spec: spec, context: context, sameKind: sameKind)
+
+        case let .capabilityRequest(_, payload):
+            configureAsCapabilityRequest(payload: payload, context: context, sameKind: sameKind)
 
         case let .fileDiff(diff):
             configureAsFileDiff(block: block, diff: diff, context: context, sameKind: sameKind)
@@ -2719,6 +2723,36 @@ final class NativeMessageCellView: NSTableCellView {
         )
     }
 
+    // MARK: - CapabilityRequest
+
+    private func configureAsCapabilityRequest(
+        payload: RequestCapabilityTool.Payload,
+        context: CellRenderingContext,
+        sameKind: Bool
+    ) {
+        if !sameKind || nativeCapabilityRequestView == nil {
+            removeAllContentViews()
+            let cv = NativeCapabilityRequestView()
+            cv.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(cv)
+            NSLayoutConstraint.activate([
+                cv.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+                cv.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16),
+                cv.widthAnchor.constraint(lessThanOrEqualToConstant: 420),
+                cv.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+                cv.heightAnchor.constraint(
+                    equalToConstant: NativeCapabilityRequestView.cardHeight),
+                cv.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -8),
+            ])
+            nativeCapabilityRequestView = cv
+        }
+        nativeCapabilityRequestView?.configure(
+            payload: payload,
+            agentId: payload.agentId ?? Agent.defaultId,
+            theme: context.theme
+        )
+    }
+
     // MARK: - SharedArtifact
 
     private func configureAsArtifact(
@@ -2938,6 +2972,7 @@ final class NativeMessageCellView: NSTableCellView {
         nativeStatsView?.removeFromSuperview(); nativeStatsView = nil
         nativeAssistantActionsView?.removeFromSuperview(); nativeAssistantActionsView = nil
         nativeEmptyNoticeView?.removeFromSuperview(); nativeEmptyNoticeView = nil
+        nativeCapabilityRequestView?.removeFromSuperview(); nativeCapabilityRequestView = nil
         // User messages carry outbound redactions (PII the user typed), so
         // the user text view has the same hover controller to tear down.
         userTextView?.tearDownForReuse()
@@ -3180,7 +3215,8 @@ private func cgColorsEqual(_ lhs: CGColor?, _ rhs: CGColor?) -> Bool {
 enum ContentBlockKindTag: Equatable {
     case header, paragraph, toolCallGroup, thinking, activityGroup, userMessage, pendingToolCall
     case generationStats, typingIndicator, groupSpacer, sharedArtifact, chart
-    case assistantActions, emptyResponseNotice, fileDiff, compactionMarker, other
+    case assistantActions, emptyResponseNotice, fileDiff, compactionMarker, capabilityRequest,
+        other
 }
 
 extension ContentBlockKind {
@@ -3202,6 +3238,7 @@ extension ContentBlockKind {
         case .assistantActions: return .assistantActions
         case .emptyResponseNotice: return .emptyResponseNotice
         case .compactionMarker: return .compactionMarker
+        case .capabilityRequest: return .capabilityRequest
         }
     }
 }
@@ -3256,6 +3293,10 @@ enum NativeCellHeightEstimator {
         case .emptyResponseNotice:
             // 4 top gap + 36 notice + 8 bottom gap
             return 48
+
+        case .capabilityRequest:
+            // 4 top gap + card height + 8 bottom gap
+            return NativeCapabilityRequestView.cardHeight + 12
 
         case .typingIndicator:
             // 4 top + ~22 content + 6 bottom (tight to header / thinking row above)

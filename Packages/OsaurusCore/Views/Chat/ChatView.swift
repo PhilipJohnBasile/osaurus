@@ -5774,6 +5774,19 @@ final class ChatSession: ObservableObject {
                             // a second artifact-sharing step.
                             toolCardOverrides[callId] = resultText
                             resultText = compactResult
+                        } else if inv.toolName == CapabilityRequestContract.toolName,
+                            var capPayload = RequestCapabilityTool.payload(from: resultText)
+                        {
+                            // Stamp the session's agent onto the stored card
+                            // payload (the tool has no session context), so
+                            // the enable action targets the right agent even
+                            // from scroll-back. The model gets a compact
+                            // wait-for-the-user confirmation; the full marker
+                            // feeds only the inline enable card.
+                            capPayload.agentId = self.agentId ?? Agent.defaultId
+                            toolCardOverrides[callId] =
+                                RequestCapabilityTool.marker(for: capPayload) ?? resultText
+                            resultText = RequestCapabilityTool.compactModelResult(for: capPayload)
                         } else if inv.toolName == "share_artifact" {
                             resultText = await self.processShareArtifactResult(
                                 toolResult: resultText,
