@@ -585,7 +585,8 @@ public struct SystemPromptComposer: Sendable {
             additionalToolNames: additionalToolNames,
             frozenAlwaysLoadedNames: frozenAlwaysLoadedNames,
             frozenToolSpecs: frozenToolSpecs,
-            spawnTargets: spawnTargets
+            spawnTargets: spawnTargets,
+            sizeClassDisablesTools: window.sizeClass.disablesTools
         )
         trace?.mark("resolve_tools_done")
         let alwaysLoadedNames = resolveAlwaysLoadedNames(
@@ -727,6 +728,18 @@ public struct SystemPromptComposer: Sendable {
     /// `soulSection` is passed in (rather than re-read here) because the
     /// read needs to happen once per compose — `finalizeContext` calls
     /// `resolveSoul`, the preview path calls `loadSoulContent` directly.
+    /// Pure decision for the tools-off consent carve-out: only the
+    /// per-agent Tools toggle qualifies. The global kill switch and the
+    /// small-context auto-disable keep the schema empty.
+    static func toolsOffCarveOutApplies(
+        snapshot: AgentConfigSnapshot,
+        sizeClassDisablesTools: Bool
+    ) -> Bool {
+        snapshot.toolsDisabled
+            && !snapshot.globalToolsDisabled
+            && !sizeClassDisablesTools
+    }
+
     /// Append the `## Dormant capabilities` section (shared by the minimal
     /// custom-agent/sandbox harness and the rich default-agent path). Kept
     /// out of line so both paths render the identical section from the same
@@ -2380,9 +2393,28 @@ public struct SystemPromptComposer: Sendable {
         additionalToolNames: LoadedTools = [],
         frozenAlwaysLoadedNames: LoadedTools? = nil,
         frozenToolSpecs: [Tool]? = nil,
-        spawnTargets: SpawnTargetAvailabilitySnapshot? = nil
+        spawnTargets: SpawnTargetAvailabilitySnapshot? = nil,
+        sizeClassDisablesTools: Bool = false
     ) -> [Tool] {
-        guard !toolsDisabled else { return [] }
+        guard !toolsDisabled else {
+            // Per-agent Tools toggle off: the schema carries exactly ONE
+            // tool — `request_capability` — so the model can hand the user
+            // an interactive enable card instead of a dead-end refusal.
+            // The tool executes nothing and grants nothing (pure consent
+            // UI), so this does not weaken the toggle. The two hard-off
+            // cases stay at zero tools: the global kill switch is an
+            // explicit "absolutely no tools" contract, and the tiny-context
+            // strip exists to reclaim the window.
+            if toolsOffCarveOutApplies(
+                snapshot: snapshot,
+                sizeClassDisablesTools: sizeClassDisablesTools
+            ) {
+                return ToolRegistry.shared.specs(
+                    forTools: [CapabilityRequestContract.toolName]
+                )
+            }
+            return []
+        }
 
         let isManual = snapshot.toolMode == .manual
 
