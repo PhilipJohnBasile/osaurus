@@ -6259,10 +6259,13 @@ final class ChatSession: ObservableObject {
                         // model order); `onBatchComplete` skips call ids that
                         // already have a tool turn.
                         // Consent-gated runs go through the serial path too:
-                        // the first call ends the run with the enable card,
-                        // and the remaining batch slots are treated as
-                        // never-executed — nothing may run in parallel with
-                        // a blocked toggle.
+                        // every call is blocked-and-recorded pre-dispatch
+                        // (the first one attaches the enable card, the loop
+                        // then continues so the model can explain; the
+                        // per-run blocked-call cap ends a run that keeps
+                        // retrying tools). Serial ordering guarantees
+                        // nothing executes in parallel with a blocked
+                        // toggle.
                         if AgentToolLoop.containsIntercept(calls) || self.currentRunCarveOutToolsOff {
                             var serialExecutions: [AgentLoopToolExecution] = []
                             for call in calls {

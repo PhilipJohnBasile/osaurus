@@ -463,9 +463,15 @@ struct AgentsView: View {
     /// contains the target.
     private func applyPendingAgentDetail() {
         guard let pendingId = managementState.pendingAgentDetailId else { return }
-        guard let agent = agentManager.agents.first(where: { $0.id == pendingId }),
-            !agent.isBuiltIn
-        else { return }
+        // Not loaded yet: leave the request armed for the list-change retry.
+        guard let agent = agentManager.agents.first(where: { $0.id == pendingId }) else { return }
+        // Built-in target: unservable (no detail), so clear instead of
+        // leaving the one-shot armed forever (defense in depth — the
+        // sender also refuses to arm it for built-ins).
+        guard !agent.isBuiltIn else {
+            managementState.pendingAgentDetailId = nil
+            return
+        }
         managementState.pendingAgentDetailId = nil
         guard selectedAgent?.id != agent.id else { return }
         withAnimation(Self.navTransition) {

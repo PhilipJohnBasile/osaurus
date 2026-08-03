@@ -112,7 +112,12 @@ public enum CapabilityRequestActions {
                 )
             }
             if caps.toolsEnabled && caps.appleScriptEnabled { return .alreadyEnabled }
-            return agentSettings
+            // The Default agent's AppleScript switch is global and lives in
+            // the Computer Use panel, not an agent detail.
+            return isCustom
+                ? agentSettings
+                : .openSettings(
+                    tab: .computerUse, buttonTitle: L("Open Computer Use Settings"))
 
         case .spawn:
             if caps.toolsEnabled && caps.spawnDelegationEnabled,
@@ -120,7 +125,10 @@ public enum CapabilityRequestActions {
             {
                 return .alreadyEnabled
             }
-            return agentSettings
+            // Default agent lands on the Agents tab (its spawn pool is
+            // global config there); `openSettings` skips the detail
+            // deep-link for built-ins.
+            return .openSettings(tab: .agents, buttonTitle: L("Open Agent Settings"))
         }
     }
 
@@ -140,7 +148,14 @@ public enum CapabilityRequestActions {
         // graph's subscriptions consumed the highlight before the new one
         // mounted (observed live: card click landed on the agent detail
         // with no tab switch and no glow).
-        if tab == .agents {
+        // Custom agents only: the agent-detail deep link and the toggle
+        // highlight are both consumed inside a custom agent's detail view.
+        // Arming them for the built-in Default agent (whose detail never
+        // opens) would leave the one-shot state set forever and misfire on
+        // a later, unrelated navigation.
+        if tab == .agents,
+            AgentManager.shared.agent(for: agentId).map({ !$0.isBuiltIn }) == true
+        {
             ManagementStateManager.shared.pendingAgentDetailId = agentId
             if let kind {
                 ManagementStateManager.shared.pendingCapabilityHighlight =
