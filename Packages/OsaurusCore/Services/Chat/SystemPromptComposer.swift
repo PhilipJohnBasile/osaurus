@@ -566,7 +566,7 @@ public struct SystemPromptComposer: Sendable {
         // fought its training; a full schema paid the whole prefill cost
         // users turn the toggle off to avoid. Stubs buy both properties.
         // The global kill switch and tiny-context strip remain hard-off.
-        let consentGatedToolsOff =
+        var consentGatedToolsOff =
             hardToolsOff
             && toolsOffCarveOutApplies(
                 snapshot: snapshot,
@@ -607,6 +607,16 @@ public struct SystemPromptComposer: Sendable {
         )
         if consentGatedToolsOff {
             resolvedTools = consentDiscoverySchema(from: resolvedTools)
+            if resolvedTools.isEmpty {
+                // No intent-bearing tool survived this agent's own
+                // per-capability gates (e.g. Web Search off too) — there is
+                // nothing for the model to reach for, and a consent session
+                // with an empty schema would ALSO suppress the dormant text
+                // guidance: the observed failure was a bare prompt with no
+                // card and no narration. Fall back to the plain tools-off
+                // compose, which renders the dormant section's text path.
+                consentGatedToolsOff = false
+            }
         }
         trace?.mark("resolve_tools_done")
         let alwaysLoadedNames = resolveAlwaysLoadedNames(
@@ -2197,7 +2207,7 @@ public struct SystemPromptComposer: Sendable {
         // fought its training; a full schema paid the whole prefill cost
         // users turn the toggle off to avoid. Stubs buy both properties.
         // The global kill switch and tiny-context strip remain hard-off.
-        let consentGatedToolsOff =
+        var consentGatedToolsOff =
             hardToolsOff
             && toolsOffCarveOutApplies(
                 snapshot: snapshot,
@@ -2229,6 +2239,8 @@ public struct SystemPromptComposer: Sendable {
         )
         if consentGatedToolsOff {
             tools = consentDiscoverySchema(from: tools)
+            // Mirror the main path's empty-stub fallback (see resolveToolset).
+            if tools.isEmpty { consentGatedToolsOff = false }
         }
         let alwaysLoadedNames = resolveAlwaysLoadedNames(
             tools: tools,
