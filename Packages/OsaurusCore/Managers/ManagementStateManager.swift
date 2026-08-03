@@ -92,12 +92,30 @@ public final class ManagementStateManager: ObservableObject {
     /// it reaches the Keychain when the user saves the provider.
     @Published public var pendingMCPProviderDraft: MCPProviderDraft?
 
+    /// One-shot request from the chat capability card: open the detail
+    /// for a specific local agent. Rides shared state (like
+    /// `pendingRemoteAgentDetailId`) instead of the construction-time
+    /// `deeplinkAgentId`, so it works on a REUSED management window
+    /// without a hosting-controller rebuild — the rebuild is what raced
+    /// the capability highlight (the dying graph consumed it).
+    /// `AgentsView` observes this and resets it to nil after applying.
+    @Published public var pendingAgentDetailId: UUID?
+
     /// One-shot request to scroll-to-and-glow a capability's toggle inside
     /// the agent detail editor — the inline capability-request card's
     /// settings deep link (chat → Agents tab → flash the exact switch).
-    /// The agent detail view observes this and resets it to nil after
-    /// applying.
-    @Published public var pendingCapabilityHighlight: DormantCapability.Kind?
+    /// Carries the target agent so only THAT agent's detail view consumes
+    /// it (another agent's still-mounted detail must ignore it). The
+    /// matching detail view resets it to nil after applying.
+    public struct CapabilityHighlightRequest: Equatable {
+        public let agentId: UUID
+        public let kind: DormantCapability.Kind
+        public init(agentId: UUID, kind: DormantCapability.Kind) {
+            self.agentId = agentId
+            self.kind = kind
+        }
+    }
+    @Published public var pendingCapabilityHighlight: CapabilityHighlightRequest?
 
     /// One-shot request to install a theme by content hash from a deeplink
     /// (`osaurus://themes-install?hash=<sha256>`). `ThemesView` observes

@@ -200,10 +200,15 @@ struct AgentsView: View {
             }
             consumeDeeplinkIfPossible()
             applyPendingRemoteAgentDetail()
+            applyPendingAgentDetail()
         }
         .onChange(of: agentManager.agents) { _, _ in
             // Agent list may load asynchronously after the view appears.
             consumeDeeplinkIfPossible()
+            applyPendingAgentDetail()
+        }
+        .onReceive(managementState.$pendingAgentDetailId) { _ in
+            applyPendingAgentDetail()
         }
         .onChange(of: remoteAgentManager.remoteAgents) { _, _ in
             // Paired remote agents can load after the view appears; retry the
@@ -445,6 +450,24 @@ struct AgentsView: View {
             !agent.isBuiltIn
         else { return }
         consumedDeeplinkAgentId = target
+        withAnimation(Self.navTransition) {
+            selectedRemoteAgentId = nil
+            selectedAgent = agent
+        }
+    }
+
+    /// Open a local agent's detail in response to the chat capability
+    /// card's deep link (`ManagementStateManager.pendingAgentDetailId`).
+    /// State-routed like `applyPendingRemoteAgentDetail` so it works on a
+    /// reused window; retried from onAppear/onChange until the agent list
+    /// contains the target.
+    private func applyPendingAgentDetail() {
+        guard let pendingId = managementState.pendingAgentDetailId else { return }
+        guard let agent = agentManager.agents.first(where: { $0.id == pendingId }),
+            !agent.isBuiltIn
+        else { return }
+        managementState.pendingAgentDetailId = nil
+        guard selectedAgent?.id != agent.id else { return }
         withAnimation(Self.navTransition) {
             selectedRemoteAgentId = nil
             selectedAgent = agent
@@ -3133,7 +3156,14 @@ struct AgentDetailView: View {
     /// other kinds still get the right agent detail opened (via the
     /// deeplink that set this) and clear the request so it can't go stale.
     private func consumePendingCapabilityHighlight() {
-        guard let kind = ManagementStateManager.shared.pendingCapabilityHighlight else { return }
+        guard let request = ManagementStateManager.shared.pendingCapabilityHighlight,
+            // Only THIS agent's detail may consume the request — another
+            // agent's still-mounted detail receiving the publish must
+            // leave it for the right view (the pending-agent-detail
+            // routing swaps details asynchronously).
+            request.agentId == agent.id
+        else { return }
+        let kind = request.kind
         ManagementStateManager.shared.pendingCapabilityHighlight = nil
         selectedTab = .builtIn(Self.abilityTab(for: kind))
         // Next runloop so the destination tab's ScrollViewReader is mounted

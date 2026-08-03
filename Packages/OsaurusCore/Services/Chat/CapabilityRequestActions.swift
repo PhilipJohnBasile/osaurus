@@ -134,12 +134,19 @@ public enum CapabilityRequestActions {
         agentId: UUID,
         highlighting kind: DormantCapability.Kind? = nil
     ) {
-        if let kind, tab == .agents {
-            ManagementStateManager.shared.pendingCapabilityHighlight = kind
+        // Both requests ride shared state, NOT construction-time deeplink
+        // args: a reused management window would otherwise rebuild its
+        // hosting controller to deliver `deeplinkAgentId`, and the dying
+        // graph's subscriptions consumed the highlight before the new one
+        // mounted (observed live: card click landed on the agent detail
+        // with no tab switch and no glow).
+        if tab == .agents {
+            ManagementStateManager.shared.pendingAgentDetailId = agentId
+            if let kind {
+                ManagementStateManager.shared.pendingCapabilityHighlight =
+                    .init(agentId: agentId, kind: kind)
+            }
         }
-        AppDelegate.shared?.showManagementWindow(
-            initialTab: tab,
-            deeplinkAgentId: tab == .agents ? agentId : nil
-        )
+        AppDelegate.shared?.showManagementWindow(initialTab: tab)
     }
 }
