@@ -311,7 +311,8 @@ public struct SystemPromptComposer: Sendable {
             staticPrefix: manifest.staticPrefixContent,
             contextDisable: toolset.contextDisable,
             enabledManifest: toolset.enabledManifest,
-            soul: soulSection
+            soul: soulSection,
+            consentGatedToolsOff: toolset.consentGatedToolsOff
         )
     }
 
@@ -549,12 +550,27 @@ public struct SystemPromptComposer: Sendable {
         // creator) cascades correctly without each gate having to know
         // about the size class itself.
         let window = ContextSizeResolver.resolve(modelId: snapshot.model)
-        let effectiveToolsOff = resolveEffectiveToolsOff(
+        let hardToolsOff = resolveEffectiveToolsOff(
             toolsDisabled: snapshot.toolsDisabled,
             globalToolsDisabled: snapshot.globalToolsDisabled,
             sizeClassDisablesTools: window.sizeClass.disablesTools,
             executionMode: executionMode
         )
+        // Consent-gated tools-off: when ONLY the per-agent Tools toggle is
+        // off, compose the NORMAL schema and prompt — the chat layer blocks
+        // the first tool call before dispatch and renders the enable card
+        // instead of executing. Asking the model to refuse-then-request via
+        // a meta-tool fought its training (no weather tool in schema → "I
+        // can't" is the trained answer); letting it call the real tool and
+        // gating execution works WITH the training and stays deterministic.
+        // The global kill switch and tiny-context strip remain hard-off.
+        let consentGatedToolsOff =
+            hardToolsOff
+            && toolsOffCarveOutApplies(
+                snapshot: snapshot,
+                sizeClassDisablesTools: window.sizeClass.disablesTools
+            )
+        let effectiveToolsOff = hardToolsOff && !consentGatedToolsOff
         let contextDisable = ContextDisableInfo.from(
             sizeClass: window.sizeClass,
             modelId: snapshot.model,
@@ -585,8 +601,7 @@ public struct SystemPromptComposer: Sendable {
             additionalToolNames: additionalToolNames,
             frozenAlwaysLoadedNames: frozenAlwaysLoadedNames,
             frozenToolSpecs: frozenToolSpecs,
-            spawnTargets: spawnTargets,
-            sizeClassDisablesTools: window.sizeClass.disablesTools
+            spawnTargets: spawnTargets
         )
         trace?.mark("resolve_tools_done")
         let alwaysLoadedNames = resolveAlwaysLoadedNames(
@@ -614,7 +629,8 @@ public struct SystemPromptComposer: Sendable {
             sizeClass: window.sizeClass,
             effectiveToolsOff: effectiveToolsOff,
             capabilityPromptSectionsEnabled: true,
-            prefersCompactPrompt: window.prefersCompactPrompt
+            prefersCompactPrompt: window.prefersCompactPrompt,
+            consentGatedToolsOff: consentGatedToolsOff
         )
     }
 
@@ -2125,12 +2141,27 @@ public struct SystemPromptComposer: Sendable {
         executionMode: ExecutionMode
     ) -> ResolvedToolset {
         let window = ContextSizeResolver.resolve(modelId: snapshot.model)
-        let effectiveToolsOff = resolveEffectiveToolsOff(
+        let hardToolsOff = resolveEffectiveToolsOff(
             toolsDisabled: snapshot.toolsDisabled,
             globalToolsDisabled: snapshot.globalToolsDisabled,
             sizeClassDisablesTools: window.sizeClass.disablesTools,
             executionMode: executionMode
         )
+        // Consent-gated tools-off: when ONLY the per-agent Tools toggle is
+        // off, compose the NORMAL schema and prompt — the chat layer blocks
+        // the first tool call before dispatch and renders the enable card
+        // instead of executing. Asking the model to refuse-then-request via
+        // a meta-tool fought its training (no weather tool in schema → "I
+        // can't" is the trained answer); letting it call the real tool and
+        // gating execution works WITH the training and stays deterministic.
+        // The global kill switch and tiny-context strip remain hard-off.
+        let consentGatedToolsOff =
+            hardToolsOff
+            && toolsOffCarveOutApplies(
+                snapshot: snapshot,
+                sizeClassDisablesTools: window.sizeClass.disablesTools
+            )
+        let effectiveToolsOff = hardToolsOff && !consentGatedToolsOff
         let contextDisable = ContextDisableInfo.from(
             sizeClass: window.sizeClass,
             modelId: snapshot.model,
@@ -2180,7 +2211,8 @@ public struct SystemPromptComposer: Sendable {
             sizeClass: window.sizeClass,
             effectiveToolsOff: effectiveToolsOff,
             capabilityPromptSectionsEnabled: true,
-            prefersCompactPrompt: window.prefersCompactPrompt
+            prefersCompactPrompt: window.prefersCompactPrompt,
+            consentGatedToolsOff: consentGatedToolsOff
         )
     }
 
@@ -2393,35 +2425,14 @@ public struct SystemPromptComposer: Sendable {
         additionalToolNames: LoadedTools = [],
         frozenAlwaysLoadedNames: LoadedTools? = nil,
         frozenToolSpecs: [Tool]? = nil,
-        spawnTargets: SpawnTargetAvailabilitySnapshot? = nil,
-        sizeClassDisablesTools: Bool = false
+        spawnTargets: SpawnTargetAvailabilitySnapshot? = nil
     ) -> [Tool] {
-        guard !toolsDisabled else {
-            // Per-agent Tools toggle off: the schema carries exactly ONE
-            // tool — `request_capability` — so the model can hand the user
-            // an interactive enable card instead of a dead-end refusal.
-            // The tool executes nothing and grants nothing (pure consent
-            // UI), so this does not weaken the toggle. The two hard-off
-            // cases stay at zero tools: the global kill switch is an
-            // explicit "absolutely no tools" contract, and the tiny-context
-            // strip exists to reclaim the window.
-            if toolsOffCarveOutApplies(
-                snapshot: snapshot,
-                sizeClassDisablesTools: sizeClassDisablesTools
-            ) {
-                // Enum narrowed to the master switch — the only thing
-                // dormant (and requestable) when Tools is off.
-                return ToolRegistry.shared.specs(
-                    forTools: [CapabilityRequestContract.toolName]
-                ).map {
-                    RequestCapabilityTool.constrainedSpec(
-                        $0,
-                        allowedIds: [DormantCapability.Kind.tools.rawValue]
-                    )
-                }
-            }
-            return []
-        }
+        // Chat sessions never reach here with only the per-agent toggle off:
+        // `resolveToolset` re-routes that case through the consent-gated
+        // path (normal schema, execution blocked pre-dispatch by the chat
+        // layer). A true here is the global kill switch, the tiny-context
+        // strip, or a non-chat surface (HTTP) — all hard-off, zero tools.
+        guard !toolsDisabled else { return [] }
 
         let isManual = snapshot.toolMode == .manual
 

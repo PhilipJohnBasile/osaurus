@@ -312,32 +312,6 @@ struct CapabilityRequestConstrainedSpecTests {
     }
 }
 
-@Suite("Fallback refusal detector")
-struct CapabilityRefusalDetectorTests {
-
-    @MainActor
-    @Test("typical small-model refusals trigger the fallback card")
-    func refusalsDetected() {
-        let refusals = [
-            "I'm sorry, but I can't check the weather because I don't have access to real-time data.",
-            "Unfortunately I am unable to look that up right now.",
-            "Weather lookups require tools, which are currently disabled. You can enable them in settings.",
-        ]
-        for text in refusals {
-            #expect(ChatSession.textSignalsCapabilityRefusal(text))
-        }
-    }
-
-    @MainActor
-    @Test("ordinary answers do not trigger it")
-    func ordinaryAnswersPass() {
-        #expect(!ChatSession.textSignalsCapabilityRefusal("Hello! How is your day going?"))
-        #expect(
-            !ChatSession.textSignalsCapabilityRefusal(
-                "A haiku about spring:\nblossoms drift softly\nover the quiet river\nmorning warms the air"))
-    }
-}
-
 @Suite("request_capability marker round-trip")
 struct CapabilityRequestMarkerTests {
 

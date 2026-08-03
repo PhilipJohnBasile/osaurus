@@ -291,14 +291,11 @@ final class ChatSession: ObservableObject {
     var pendingCapabilityRequest: PendingCapabilityRequest?
     private var capabilityResumeCancellables = Set<AnyCancellable>()
 
-    /// True while the current run composed with the tools-off consent
-    /// carve-out (schema == exactly `request_capability`). Drives the
-    /// deterministic fallback card when the model refuses in prose
-    /// instead of calling the tool.
+    /// True while the current run composed with the consent-gated
+    /// tools-off carve-out (normal schema, per-agent Tools toggle off).
+    /// Every tool call this run is blocked before dispatch and rendered
+    /// as the inline enable card instead of executing.
     private var currentRunCarveOutToolsOff = false
-    /// One fallback card per session — repeated refusals reference the
-    /// card already on screen instead of stacking new ones.
-    private var shownCapabilityFallbackCard = false
 
     /// Last typed draft preserved when a send is cancelled
     /// (Cancel-send button in review sheet, or Task cancel during
@@ -3675,48 +3672,6 @@ final class ChatSession: ObservableObject {
 
     // MARK: - Capability request + post-enable resume
 
-    /// Deterministic fallback: in a tools-off carve-out session, a run
-    /// that ends with the model refusing in prose (no `request_capability`
-    /// call — small models routinely ignore the prompt rule) still gets
-    /// the enable card, attached chat-locally beneath the reply. The model
-    /// is out of the critical path: the card renders, and enabling arms
-    /// the same post-enable resume as the tool path.
-    private func applyCapabilityFallbackCardIfNeeded() {
-        guard currentRunCarveOutToolsOff,
-            !shownCapabilityFallbackCard,
-            !stopRequested,
-            // The tool path already armed a card this run.
-            pendingCapabilityRequest == nil,
-            let turn = turns.last(where: { $0.role == .assistant }),
-            turn.toolCalls?.isEmpty ?? true,
-            Self.textSignalsCapabilityRefusal(turn.content)
-        else { return }
-        shownCapabilityFallbackCard = true
-        turn.capabilityPrompt = RequestCapabilityTool.Payload(
-            capability: .tools,
-            reason: nil,
-            agentId: agentId ?? Agent.defaultId
-        )
-        pendingCapabilityRequest = PendingCapabilityRequest(kind: .tools, turnId: turn.id)
-        isDirty = true
-    }
-
-    /// Loose refusal detector for the fallback card. Deliberately
-    /// generous: false positives only show a truthful "Tools is off"
-    /// card in a session where Tools IS off, while false negatives
-    /// degrade to today's dead end. Bounded to carve-out sessions and
-    /// once per session by the caller.
-    static func textSignalsCapabilityRefusal(_ text: String) -> Bool {
-        let lowered = text.lowercased()
-        let signals = [
-            "can't", "cannot", "can not", "unable", "not able",
-            "no access", "don't have", "do not have", "not available",
-            "disabled", "turned off", "enable", "tools", "real-time",
-            "real time", "up-to-date", "current information",
-        ]
-        return signals.contains { lowered.contains($0) }
-    }
-
     /// Resume the request that was blocked on a dormant capability, once
     /// that capability is actually callable. Deterministic by design — the
     /// chat layer, not the model, verifies the toggle flipped. Regenerating
@@ -3894,7 +3849,6 @@ final class ChatSession: ObservableObject {
         trimTrailingEmptyAssistantTurn()
         consolidateAssistantTurns()
         markUnfinishedToolCallsInterrupted()
-        applyCapabilityFallbackCardIfNeeded()
         rebuildVisibleBlocks()
         save()
         maybeGenerateAutoTitle()
@@ -5530,8 +5484,7 @@ final class ChatSession: ObservableObject {
                     // `toolSpecs` stays frozen, so an immutable snapshot would kill that feature.
                     let toolScope = ToolExecutionScope(exposed: toolSpecs)
                     self.currentRunCarveOutToolsOff =
-                        toolSpecs.count == 1
-                        && toolSpecs.first?.function.name == CapabilityRequestContract.toolName
+                        !isRemoteAgentTarget && context.consentGatedToolsOff
 
                     // Persist the always-loaded snapshot back onto the session
                     // so the next send freezes the schema against tools that
@@ -6013,11 +5966,63 @@ final class ChatSession: ObservableObject {
                     // Thrown errors become rejection envelopes flagged
                     // `isError`, which under the chat policy
                     // (`stopOnToolRejection`) ends the batch and the run.
+                    // Consent gate for tools-off sessions: the schema is the
+                    // normal one, but NOTHING executes while the per-agent
+                    // Tools toggle is off. The first tool call is blocked
+                    // here — before registry dispatch — and turned into the
+                    // inline enable card + a wait notice for the model. The
+                    // model's trained instinct (call the obvious tool) is
+                    // exactly what triggers the card; no prompt adherence or
+                    // text heuristics involved. Enabling arms the standard
+                    // post-enable resume, which re-runs the request with
+                    // execution live.
+                    @MainActor
+                    func consentGateBlockedExecution(
+                        _ inv: ServiceToolInvocation,
+                        callId: String
+                    ) -> AgentLoopToolExecution {
+                        let envelope = ToolEnvelope.failure(
+                            kind: .rejected,
+                            message:
+                                "Tools are turned off for this agent, so `\(inv.toolName)` "
+                                + "was not run. The user has been shown a card to enable "
+                                + "Tools — tell them briefly what you will do once it is "
+                                + "enabled, then stop and wait for their decision.",
+                            tool: inv.toolName,
+                            retryable: false
+                        )
+                        let owner =
+                            self.turns.last(where: { turn in
+                                turn.role == .assistant
+                                    && (turn.toolCalls?.contains { $0.id == callId } ?? false)
+                            }) ?? assistantTurn
+                        if owner.capabilityPrompt == nil {
+                            owner.capabilityPrompt = RequestCapabilityTool.Payload(
+                                capability: .tools,
+                                reason: nil,
+                                agentId: self.agentId ?? Agent.defaultId
+                            )
+                            self.pendingCapabilityRequest = PendingCapabilityRequest(
+                                kind: .tools,
+                                turnId: owner.id
+                            )
+                            self.isDirty = true
+                        }
+                        self.turns.append(recordToolTurn(envelope, callId: callId))
+                        self.rebuildVisibleBlocks()
+                        return AgentLoopToolExecution(result: envelope, endRun: true)
+                    }
+
                     @MainActor
                     func executeSingleToolCall(
                         _ inv: ServiceToolInvocation,
                         callId: String
                     ) async -> AgentLoopToolExecution {
+                        if self.currentRunCarveOutToolsOff,
+                            inv.toolName != CapabilityRequestContract.toolName
+                        {
+                            return consentGateBlockedExecution(inv, callId: callId)
+                        }
                         do {
                             // Never print a direct secret-set value to the
                             // process log. Execution below still receives the
@@ -6156,7 +6161,12 @@ final class ChatSession: ObservableObject {
                         // are appended inline here (serial execution order IS
                         // model order); `onBatchComplete` skips call ids that
                         // already have a tool turn.
-                        if AgentToolLoop.containsIntercept(calls) {
+                        // Consent-gated runs go through the serial path too:
+                        // the first call ends the run with the enable card,
+                        // and the remaining batch slots are treated as
+                        // never-executed — nothing may run in parallel with
+                        // a blocked toggle.
+                        if AgentToolLoop.containsIntercept(calls) || self.currentRunCarveOutToolsOff {
                             var serialExecutions: [AgentLoopToolExecution] = []
                             for call in calls {
                                 guard self.isRunActive(runId) else { break }

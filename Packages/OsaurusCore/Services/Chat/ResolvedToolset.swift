@@ -78,4 +78,14 @@ struct ResolvedToolset: Sendable {
     /// memory/tool disabling `.small`/`.tiny` carry. Session-constant →
     /// KV-cache safe.
     let prefersCompactPrompt: Bool
+
+    /// True when the per-agent Tools toggle is off but the request still
+    /// carries the NORMAL tool schema, with execution consent-gated by the
+    /// chat layer: the first tool call is blocked before dispatch and
+    /// rendered as an enable card instead. Models keep their trained
+    /// behavior (call the obvious tool), and the toggle keeps its security
+    /// meaning (nothing executes until the user consents). False for the
+    /// global kill switch and the tiny-context strip, which stay at zero
+    /// tools. See `SystemPromptComposer.toolsOffCarveOutApplies`.
+    var consentGatedToolsOff: Bool = false
 }

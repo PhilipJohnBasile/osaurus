@@ -310,4 +310,8 @@ struct ComposedContext: Sendable {
     /// rewrite the static prefix (the file's contract: edits apply next
     /// session).
     var soul: String?
+    /// Mirror of `ResolvedToolset.consentGatedToolsOff`: the per-agent Tools
+    /// toggle is off, the schema is the normal one, and the chat layer must
+    /// block execution and render the enable card on the first tool call.
+    var consentGatedToolsOff: Bool = false
 }
