@@ -886,6 +886,26 @@ public final class ToolRegistry: ObservableObject {
                     retryable: true
                 ).toJSONString()
             }
+            // A capability id mistaken for a tool name (observed live: a 9B
+            // model called `tools` with invented arguments instead of
+            // request_capability({"capability": "tools"})). Redirect with the
+            // exact call — but only when the consent tool is actually exposed
+            // to this request, so the hint can't leak or misdirect in
+            // sessions that don't carry it.
+            if DormantCapability.Kind(rawValue: name) != nil,
+                scope.permits(CapabilityRequestContract.toolName)
+            {
+                return ToolErrorEnvelope(
+                    kind: .toolNotFound,
+                    reason:
+                        "'\(name)' is a capability id, not a tool. To ask the user "
+                        + "to enable it, call "
+                        + "request_capability({\"capability\": \"\(name)\"}) "
+                        + "and then wait for them.",
+                    toolName: name,
+                    retryable: true
+                ).toJSONString()
+            }
             return ToolErrorEnvelope(
                 kind: .toolNotFound,
                 reason: "\(name) is not available in this conversation.",

@@ -188,6 +188,10 @@ struct DormantCapabilitiesSectionTests {
         #expect(withTool.contains("web_search"))
         #expect(withTool.contains("image"))
         #expect(withTool.contains(CapabilityRequestContract.toolName))
+        // The literal call example (arguments included) must be present —
+        // prose alone made a small model call the capability id as a tool.
+        #expect(withTool.contains("request_capability({\"capability\": \"web_search\"})"))
+        #expect(withTool.contains("NOT tool names"))
 
         // Without the tool in the schema, its name must NOT appear —
         // naming an uncallable tool is the recitation-loop trap

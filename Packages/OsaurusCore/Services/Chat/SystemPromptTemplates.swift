@@ -783,10 +783,21 @@ public enum SystemPromptTemplates {
 
         let recovery: String
         if requestToolAvailable {
+            // Spell out the literal invocation. Prose like "call
+            // request_capability with the id" makes small local models
+            // treat the id itself as a tool name (observed live: a 9B
+            // model called a nonexistent `tools` tool with invented
+            // arguments instead of request_capability({"capability":
+            // "tools"})). The ids are arguments, never tool names — say
+            // both explicitly, with the first dormant id as the example.
+            let exampleId = dormant[0].kind.rawValue
             recovery =
                 "When the user's request needs one of these, do NOT say you can't do it. "
-                + "Say that Osaurus supports it, then call `request_capability` with the "
-                + "capability id above — the app shows the user a one-click enable card. "
+                + "Say that Osaurus supports it, then call the `request_capability` tool, "
+                + "for example: request_capability({\"capability\": \"\(exampleId)\"}). "
+                + "The ids listed above are values for the `capability` argument — they are "
+                + "NOT tool names, so never call an id as a tool. The app then shows the "
+                + "user a one-click enable card; wait for them after calling. "
                 + "Only mention a dormant capability when the request actually needs it."
         } else {
             recovery =
