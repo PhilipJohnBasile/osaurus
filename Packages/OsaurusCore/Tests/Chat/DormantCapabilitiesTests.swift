@@ -209,6 +209,73 @@ struct DormantCapabilitiesSectionTests {
     }
 }
 
+@Suite("Tools-off consent carve-out")
+struct ToolsOffCarveOutTests {
+
+    private func snapshot(
+        toolsDisabled: Bool,
+        globalToolsDisabled: Bool = false
+    ) -> AgentConfigSnapshot {
+        AgentConfigSnapshot(
+            agentId: UUID(),
+            toolsDisabled: toolsDisabled,
+            globalToolsDisabled: globalToolsDisabled,
+            memoryDisabled: false,
+            autonomousConfig: nil,
+            toolMode: .auto,
+            model: "test-model",
+            manualToolNames: nil,
+            systemPrompt: "",
+            dbEnabled: false
+        )
+    }
+
+    @Test("per-agent toggle off keeps the single consent tool")
+    func perAgentToggleQualifies() {
+        #expect(
+            SystemPromptComposer.toolsOffCarveOutApplies(
+                snapshot: snapshot(toolsDisabled: true),
+                sizeClassDisablesTools: false
+            )
+        )
+    }
+
+    @Test("global kill switch and tiny-context strip stay at zero tools")
+    func hardOffCasesExcluded() {
+        #expect(
+            !SystemPromptComposer.toolsOffCarveOutApplies(
+                snapshot: snapshot(toolsDisabled: true, globalToolsDisabled: true),
+                sizeClassDisablesTools: false
+            )
+        )
+        #expect(
+            !SystemPromptComposer.toolsOffCarveOutApplies(
+                snapshot: snapshot(toolsDisabled: true),
+                sizeClassDisablesTools: true
+            )
+        )
+    }
+}
+
+@Suite("Post-enable resume policy")
+struct CapabilityAutoResumePolicyTests {
+
+    @Test("machine-operating capabilities never auto-resume")
+    func sensitiveKindsWait() {
+        #expect(!DormantCapability.Kind.browserUse.autoResumesAfterEnable)
+        #expect(!DormantCapability.Kind.computerUse.autoResumesAfterEnable)
+        #expect(!DormantCapability.Kind.appleScript.autoResumesAfterEnable)
+    }
+
+    @Test("tame capabilities auto-resume")
+    func tameKindsResume() {
+        #expect(DormantCapability.Kind.tools.autoResumesAfterEnable)
+        #expect(DormantCapability.Kind.webSearch.autoResumesAfterEnable)
+        #expect(DormantCapability.Kind.image.autoResumesAfterEnable)
+        #expect(DormantCapability.Kind.spawn.autoResumesAfterEnable)
+    }
+}
+
 @Suite("request_capability marker round-trip")
 struct CapabilityRequestMarkerTests {
 
