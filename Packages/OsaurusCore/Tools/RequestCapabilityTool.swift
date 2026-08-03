@@ -112,12 +112,25 @@ public final class RequestCapabilityTool: OsaurusTool, @unchecked Sendable {
     static let markerEnd = "\n---CAPABILITY_REQUEST_END---"
 
     /// Extract the card payload from a full tool result, or nil when the
-    /// result is not a capability-request marker.
+    /// result is not a capability-request marker. Accepts both the raw
+    /// marker block and the canonical envelope shape where the marker
+    /// lives inside `result.text` — the registry boundary
+    /// (`ToolRegistry.normalizeToolResult`) wraps every result into an
+    /// envelope, so the raw form only survives in stored card overrides.
+    /// Mirrors `RenderChartTool`'s dual-format parsing.
     public static func payload(from toolResult: String) -> Payload? {
-        guard let start = toolResult.range(of: markerStart),
-            let end = toolResult.range(of: markerEnd, range: start.upperBound..<toolResult.endIndex)
+        let source: String
+        if let envelope = ToolEnvelope.successPayload(toolResult) as? [String: Any],
+            let text = envelope["text"] as? String
+        {
+            source = text
+        } else {
+            source = toolResult
+        }
+        guard let start = source.range(of: markerStart),
+            let end = source.range(of: markerEnd, range: start.upperBound..<source.endIndex)
         else { return nil }
-        let json = String(toolResult[start.upperBound..<end.lowerBound])
+        let json = String(source[start.upperBound..<end.lowerBound])
         guard let data = json.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(Payload.self, from: data)
     }
@@ -177,6 +190,16 @@ public final class RequestCapabilityTool: OsaurusTool, @unchecked Sendable {
         let payload = Payload(capability: kind, reason: reason)
         let data = try JSONEncoder().encode(payload)
         let json = String(decoding: data, as: UTF8.self)
-        return Self.markerStart + json + Self.markerEnd
+        // Wrapped in the canonical success envelope (marker in `result.text`,
+        // like render_chart). Returning the raw marker instead does NOT
+        // survive the registry boundary: `normalizeToolResult` wraps any
+        // non-envelope output, JSON-escaping the marker's newlines inside
+        // `result.text`, and a plain substring scan then misses it. Emitting
+        // the canonical shape ourselves means `payload(from:)` always goes
+        // through the envelope decode, which restores the text byte-exact.
+        return ToolEnvelope.success(
+            tool: name,
+            text: Self.markerStart + json + Self.markerEnd
+        )
     }
 }

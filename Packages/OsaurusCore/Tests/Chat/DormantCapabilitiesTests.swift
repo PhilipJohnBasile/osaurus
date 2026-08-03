@@ -333,4 +333,32 @@ struct CapabilityRequestMarkerTests {
     func nonMarker() {
         #expect(RequestCapabilityTool.payload(from: "{\"ok\":true}") == nil)
     }
+
+    /// Regression: the registry boundary (`normalizeToolResult`) wraps any
+    /// non-envelope output into a success envelope, JSON-escaping the
+    /// marker's newlines inside `result.text`. A plain substring scan
+    /// missed the marker in that shape, so the interception fell through
+    /// and no card ever rendered (observed live, 2026-08-03). The parser
+    /// must accept the envelope-wrapped form.
+    @Test("registry-normalized result still parses")
+    func registryNormalizedParses() throws {
+        let payload = RequestCapabilityTool.Payload(
+            capability: .tools, reason: "Needed to look up the weather.")
+        let raw = try #require(RequestCapabilityTool.marker(for: payload))
+        let normalized = ToolRegistry.normalizeToolResult(
+            raw, tool: CapabilityRequestContract.toolName)
+        #expect(RequestCapabilityTool.payload(from: normalized) == payload)
+    }
+
+    /// The tool's own output is already the canonical envelope shape and
+    /// must parse directly (this is what postProcessToolResult sees).
+    @Test("execute output parses")
+    func executeOutputParses() async throws {
+        let result = try await RequestCapabilityTool().execute(
+            argumentsJSON: "{\"capability\": \"tools\", \"reason\": \"To check the weather.\"}"
+        )
+        let decoded = try #require(RequestCapabilityTool.payload(from: result))
+        #expect(decoded.capability == .tools)
+        #expect(decoded.reason == "To check the weather.")
+    }
 }
