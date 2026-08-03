@@ -94,7 +94,11 @@ struct SessionToolState: Sendable {
     /// state — the composed folder sections and git-tool availability
     /// both depend on which root is mounted, and a stale entry from the
     /// old root would silently keep composing against it.
-    static func fingerprint(executionMode: ExecutionMode, toolMode: ToolSelectionMode) -> String {
+    static func fingerprint(
+        executionMode: ExecutionMode,
+        toolMode: ToolSelectionMode,
+        capabilitiesTag: String = ""
+    ) -> String {
         let modeTag: String
         switch executionMode {
         case .hostFolder(let context):
@@ -103,7 +107,12 @@ struct SessionToolState: Sendable {
             modeTag = "sandbox"
         case .none: modeTag = "none"
         }
-        return "\(modeTag)/\(toolMode.rawValue)"
+        // The capabilities tag folds the agent's capability toggles into the
+        // freeze identity: enabling a capability mid-session (e.g. from the
+        // chat enable card) must invalidate the frozen schema, or the next
+        // run replays a tool list in which the newly enabled tool still does
+        // not exist — observed live as an infinite request-and-resume loop.
+        return "\(modeTag)/\(toolMode.rawValue)/\(capabilitiesTag)"
     }
 
     /// Stable, non-sensitive identity for a mounted folder: a short hash of

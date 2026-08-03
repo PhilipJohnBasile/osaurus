@@ -5381,9 +5381,20 @@ final class ChatSession: ObservableObject {
                     // last turn — otherwise stale dynamically-loaded tools
                     // would leak into the new mode's schema.
                     let liveToolMode = AgentManager.shared.effectiveToolSelectionMode(for: effectiveAgentId)
+                    // Capability toggles are part of the freeze identity: a
+                    // mid-session enable (chat card → settings) must bust the
+                    // frozen schema so the new tool actually appears.
+                    let liveCaps = AgentManager.shared.effectiveCapabilities(for: effectiveAgentId)
+                    let capsTag = [
+                        liveCaps.toolsEnabled, liveCaps.webSearchEnabled,
+                        liveCaps.imageEnabled, liveCaps.browserUseEnabled,
+                        liveCaps.computerUseEnabled, liveCaps.appleScriptEnabled,
+                        liveCaps.spawnDelegationEnabled, liveCaps.knowledgeEnabled,
+                    ].map { $0 ? "1" : "0" }.joined()
                     let liveFingerprint = SessionToolState.fingerprint(
                         executionMode: executionMode,
-                        toolMode: liveToolMode
+                        toolMode: liveToolMode,
+                        capabilitiesTag: capsTag
                     )
                     let cachedSession: SessionToolState?
                     if let sid = sessionId {
@@ -5926,23 +5937,55 @@ final class ChatSession: ObservableObject {
                             // from scroll-back. The model gets a compact
                             // wait-for-the-user confirmation; the full marker
                             // feeds only the inline enable card.
-                            capPayload.agentId = self.agentId ?? Agent.defaultId
-                            toolCardOverrides[callId] =
-                                RequestCapabilityTool.marker(for: capPayload) ?? resultText
-                            resultText = RequestCapabilityTool.compactModelResult(for: capPayload)
-                            // Arm the post-enable resume on the turn that
-                            // owns this call (same owner resolution as
-                            // recordToolTurn), so flipping the toggle can
-                            // regenerate exactly this exchange.
-                            let requestOwner =
-                                self.turns.last(where: { turn in
-                                    turn.role == .assistant
-                                        && (turn.toolCalls?.contains { $0.id == callId } ?? false)
-                                }) ?? assistantTurn
-                            self.pendingCapabilityRequest = PendingCapabilityRequest(
+                            let cardAgentId = self.agentId ?? Agent.defaultId
+                            capPayload.agentId = cardAgentId
+                            if case .alreadyEnabled = CapabilityRequestActions.resolve(
                                 kind: capPayload.capability,
-                                turnId: requestOwner.id
-                            )
+                                agentId: cardAgentId
+                            ) {
+                                // Requesting an ALREADY-callable capability
+                                // must never card or arm the resume: a stale
+                                // frozen schema made a model re-request an
+                                // enabled capability after auto-resume, and
+                                // the card + resume pair regenerated the run
+                                // in an infinite loop (observed live). Tell
+                                // the model the truth and stop the cycle.
+                                resultText = ToolEnvelope.failure(
+                                    kind: .invalidArgs,
+                                    message:
+                                        "\(capPayload.capability.rawValue) is already enabled — "
+                                        + "do not request it. If its tool is not in your current "
+                                        + "schema, ask the user to send the message again.",
+                                    tool: inv.toolName,
+                                    retryable: false
+                                )
+                            } else if self.pendingCapabilityRequest?.kind == capPayload.capability {
+                                // Duplicate request in the same run (models
+                                // sometimes re-call despite the instruction):
+                                // ONE card only — confirm without a second
+                                // marker so the transcript can't stack cards.
+                                resultText = RequestCapabilityTool.compactModelResult(
+                                    for: capPayload)
+                            } else {
+                                toolCardOverrides[callId] =
+                                    RequestCapabilityTool.marker(for: capPayload) ?? resultText
+                                resultText = RequestCapabilityTool.compactModelResult(
+                                    for: capPayload)
+                                // Arm the post-enable resume on the turn that
+                                // owns this call (same owner resolution as
+                                // recordToolTurn), so flipping the toggle can
+                                // regenerate exactly this exchange.
+                                let requestOwner =
+                                    self.turns.last(where: { turn in
+                                        turn.role == .assistant
+                                            && (turn.toolCalls?.contains { $0.id == callId }
+                                                ?? false)
+                                    }) ?? assistantTurn
+                                self.pendingCapabilityRequest = PendingCapabilityRequest(
+                                    kind: capPayload.capability,
+                                    turnId: requestOwner.id
+                                )
+                            }
                         } else if inv.toolName == "share_artifact" {
                             resultText = await self.processShareArtifactResult(
                                 toolResult: resultText,
