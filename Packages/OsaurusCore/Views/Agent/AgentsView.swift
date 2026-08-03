@@ -1133,6 +1133,11 @@ struct AgentDetailView: View {
     @State private var scrollToToolsNonce = 0
     @State private var toolsHighlightActive = false
     @State private var toolsHighlightGeneration = 0
+    /// Which capability card the flash currently targets. `.tools` for the
+    /// legacy paused-note taps; the chat card's deep link sets the kind it
+    /// asked for (Web Search on the Abilities tab, the five subagent kinds
+    /// on the Subagents tab) so the RIGHT toggle glows, not the master.
+    @State private var flashedAbilityKind: DormantCapability.Kind = .tools
     @State private var memoryEnabled: Bool = true
     /// Local mirror of `Agent.settings.dbEnabled` (spec §5.5). The
     /// Abilities overview binds a card to this; `debouncedSave`
@@ -1490,7 +1495,7 @@ struct AgentDetailView: View {
                 .animation(nil, value: selectedTab)
                 .onChange(of: scrollToToolsNonce) { _, _ in
                     withAnimation(.easeInOut(duration: 0.3)) {
-                        proxy.scrollTo(Self.toolsToggleScrollId, anchor: .center)
+                        proxy.scrollTo(Self.abilityScrollId(flashedAbilityKind), anchor: .center)
                     }
                 }
             }
@@ -3064,6 +3069,34 @@ struct AgentDetailView: View {
     /// Scroll anchor for the Tools master card in the Abilities overview.
     private static let toolsToggleScrollId = "abilities-tools-card"
 
+    /// Scroll anchor for any capability card the chat deep link can target.
+    /// `.tools` keeps its legacy id so existing anchors stay stable.
+    private static func abilityScrollId(_ kind: DormantCapability.Kind) -> String {
+        kind == .tools ? toolsToggleScrollId : "ability-card-\(kind.rawValue)"
+    }
+
+    /// Which detail tab hosts a capability kind's toggle.
+    private static func abilityTab(for kind: DormantCapability.Kind) -> DetailTab {
+        switch kind {
+        case .tools, .webSearch: return .abilities
+        case .image, .browserUse, .computerUse, .appleScript, .spawn: return .subagents
+        }
+    }
+
+    /// Dormant-capability kind for a subagent per-agent flag, used to give
+    /// each Subagents-tab row a flashable anchor.
+    private static func abilityKind(
+        for flag: SubagentCapability.PerAgentFlag
+    ) -> DormantCapability.Kind {
+        switch flag {
+        case .computerUse: return .computerUse
+        case .browserUse: return .browserUse
+        case .spawn: return .spawn
+        case .image: return .image
+        case .appleScript: return .appleScript
+        }
+    }
+
     /// `abilitySaveBinding` for tool-backed abilities. Turning ON while
     /// Tools is off also turns the master switch on — the user's intent is
     /// unambiguous (nobody enables an ability wanting it to stay paused),
@@ -3102,14 +3135,19 @@ struct AgentDetailView: View {
     private func consumePendingCapabilityHighlight() {
         guard let kind = ManagementStateManager.shared.pendingCapabilityHighlight else { return }
         ManagementStateManager.shared.pendingCapabilityHighlight = nil
-        guard kind == .tools else { return }
-        selectedTab = .builtIn(.abilities)
-        // Next runloop so the Abilities tab's ScrollViewReader is mounted
+        selectedTab = .builtIn(Self.abilityTab(for: kind))
+        // Next runloop so the destination tab's ScrollViewReader is mounted
         // before the scroll-to-nonce fires. Longer glow than an in-window
         // tap: the user is arriving from the chat card into a window they
         // may never have opened, and the extra seconds cover the window
         // opening, the tab landing, and finding the control.
-        DispatchQueue.main.async { flashToolsToggle(duration: 6.0) }
+        DispatchQueue.main.async { flashAbilityToggle(kind, duration: 6.0) }
+    }
+
+    /// Legacy entry point for the in-window paused-note taps: the Tools
+    /// master card is always their target.
+    private func flashToolsToggle(duration: TimeInterval = 2.2, scroll: Bool = true) {
+        flashAbilityToggle(.tools, duration: duration, scroll: scroll)
     }
 
     /// lands if no newer tap has bumped the generation, so a rapid second
@@ -3117,7 +3155,12 @@ struct AgentDetailView: View {
     /// holds; in-window taps use the short default, the chat-card deep
     /// link passes a longer one. `scroll: false` pulses in place without
     /// moving the scroll position (the sub-toggle cascade confirmation).
-    private func flashToolsToggle(duration: TimeInterval = 2.2, scroll: Bool = true) {
+    private func flashAbilityToggle(
+        _ kind: DormantCapability.Kind,
+        duration: TimeInterval = 2.2,
+        scroll: Bool = true
+    ) {
+        flashedAbilityKind = kind
         if scroll { scrollToToolsNonce += 1 }
         toolsHighlightGeneration += 1
         let generation = toolsHighlightGeneration
@@ -3150,7 +3193,7 @@ struct AgentDetailView: View {
             onConfigure: { selectedTab = .builtIn(.capabilities) }
         )
         .id(Self.toolsToggleScrollId)
-        .settingsSearchHighlight(toolsHighlightActive)
+        .settingsSearchHighlight(flashedAbilityKind == .tools && toolsHighlightActive)
         // The default agent has no per-agent memory flag: its memory is
         // governed globally (Settings > Enable memory), so a per-agent
         // toggle here would be a dead control.
@@ -3270,6 +3313,8 @@ struct AgentDetailView: View {
                 pausedNote: toolsPausedNote,
                 onPausedNoteTap: { flashToolsToggle() }
             )
+            .id(Self.abilityScrollId(.webSearch))
+            .settingsSearchHighlight(flashedAbilityKind == .webSearch && toolsHighlightActive)
 
             AgentAbilityGroupHeader(
                 label: "Autonomy",
@@ -3843,12 +3888,17 @@ struct AgentDetailView: View {
                 ForEach(perAgentFeatures, id: \.flag) { feature in
                     let isOn = subagentToggleBinding(feature.flag)
                     let readiness = subagentReadiness(for: feature.flag)
+                    let abilityKind = Self.abilityKind(for: feature.flag)
                     VStack(alignment: .leading, spacing: 6) {
                         subagentCapabilityCard(
                             title: feature.title,
                             subtitle: feature.subtitle,
                             isOn: isOn,
                             readiness: readiness
+                        )
+                        .id(Self.abilityScrollId(abilityKind))
+                        .settingsSearchHighlight(
+                            flashedAbilityKind == abilityKind && toolsHighlightActive
                         )
                         if isOn.wrappedValue {
                             subagentConfigPanel {
