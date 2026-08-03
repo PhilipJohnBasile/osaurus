@@ -94,6 +94,21 @@ extension DormantCapability.Kind {
         }
     }
 
+    /// Whether the chat session may auto-resend the blocked request the
+    /// moment this capability is enabled. Capabilities that operate the
+    /// user's machine (browser, screen, app automation) stay explicit:
+    /// the card offers a "Retry request" button instead, so "flip toggle →
+    /// agent starts driving the browser" can never happen as a side
+    /// effect of a settings change.
+    public var autoResumesAfterEnable: Bool {
+        switch self {
+        case .tools, .webSearch, .image, .spawn:
+            return true
+        case .browserUse, .computerUse, .appleScript:
+            return false
+        }
+    }
+
     /// One-line "what unlocks when this is on" for the prompt section.
     /// English-only on purpose: this is model-facing prompt text, not UI
     /// copy, and must stay byte-stable across locales for KV caching.

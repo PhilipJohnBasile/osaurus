@@ -279,6 +279,18 @@ final class ChatSession: ObservableObject {
     /// modal in ChatView.
     @Published var topUpRetryAlert = false
 
+    /// The live inline capability request (mirrors the insufficient-funds
+    /// retry shape): the assistant turn that called `request_capability`,
+    /// remembered so the session can resume the blocked request when the
+    /// toggle flips. Cleared once resumed, or as soon as the user moves on
+    /// with a newer message.
+    struct PendingCapabilityRequest: Equatable {
+        let kind: DormantCapability.Kind
+        let turnId: UUID
+    }
+    var pendingCapabilityRequest: PendingCapabilityRequest?
+    private var capabilityResumeCancellables = Set<AnyCancellable>()
+
     /// Last typed draft preserved when a send is cancelled
     /// (Cancel-send button in review sheet, or Task cancel during
     /// review). The chat view re-reads this in the cancel branch and
@@ -1059,6 +1071,30 @@ final class ChatSession: ObservableObject {
                     }
                 }
             }
+
+        // Post-enable resume for inline capability requests: the moment the
+        // requested toggle flips (card one-click OR the settings switch —
+        // both post `.agentUpdated`), auto-resend the blocked request for
+        // tame capabilities. Machine-operating kinds are excluded by
+        // policy (`autoResumesAfterEnable`) and wait for the card's
+        // explicit "Retry request" notification instead.
+        NotificationCenter.default.publisher(for: .agentUpdated)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.resumeCapabilityRequestIfReady(userInitiated: false)
+            }
+            .store(in: &capabilityResumeCancellables)
+        NotificationCenter.default.publisher(for: .capabilityRequestRetry)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] note in
+                guard let self,
+                    let raw = note.userInfo?["capability"] as? String,
+                    let kind = DormantCapability.Kind(rawValue: raw),
+                    kind == self.pendingCapabilityRequest?.kind
+                else { return }
+                self.resumeCapabilityRequestIfReady(userInitiated: true)
+            }
+            .store(in: &capabilityResumeCancellables)
 
         // Always reconcile on init: the cache may already be loaded with a
         // snapshot taken before remote providers finished connecting (or
@@ -3628,6 +3664,40 @@ final class ChatSession: ObservableObject {
         }
     }
 
+    // MARK: - Capability request + post-enable resume
+
+    /// Resume the request that was blocked on a dormant capability, once
+    /// that capability is actually callable. Deterministic by design — the
+    /// chat layer, not the model, verifies the toggle flipped. Regenerating
+    /// the requesting turn truncates the card + explanation and re-runs the
+    /// user's message with a fresh compose, which now carries the enabled
+    /// tool set.
+    ///
+    /// `userInitiated` is the card's "Retry request" click; it bypasses the
+    /// tame-only auto-resume policy but never the moved-on / still-enabled
+    /// guards.
+    func resumeCapabilityRequestIfReady(userInitiated: Bool) {
+        guard let pending = pendingCapabilityRequest, !isStreaming else { return }
+        // The user has sent something newer — nothing safe to truncate.
+        guard let index = turns.firstIndex(where: { $0.id == pending.turnId }) else {
+            pendingCapabilityRequest = nil
+            return
+        }
+        if turns[index...].contains(where: { $0.role == .user }) {
+            pendingCapabilityRequest = nil
+            return
+        }
+        guard
+            case .alreadyEnabled = CapabilityRequestActions.resolve(
+                kind: pending.kind,
+                agentId: agentId ?? Agent.defaultId
+            )
+        else { return }
+        guard userInitiated || pending.kind.autoResumesAfterEnable else { return }
+        pendingCapabilityRequest = nil
+        regenerate(turnId: pending.turnId)
+    }
+
     // MARK: - Insufficient funds + post-top-up retry
 
     /// When a send fails because the router account is out of credits, surface
@@ -3784,6 +3854,13 @@ final class ChatSession: ObservableObject {
             wasCancelled: stopRequested,
             hadError: lastStreamError != nil
         )
+        // A capability-card Enable clicked while this run was still
+        // streaming its explanation posted `.agentUpdated` into the
+        // isStreaming guard; re-check now that the run is over so the
+        // resume isn't lost.
+        DispatchQueue.main.async { [weak self] in
+            self?.resumeCapabilityRequestIfReady(userInitiated: false)
+        }
     }
 
     /// Outcome of the auto-title eligibility check for one clean run
@@ -5787,6 +5864,19 @@ final class ChatSession: ObservableObject {
                             toolCardOverrides[callId] =
                                 RequestCapabilityTool.marker(for: capPayload) ?? resultText
                             resultText = RequestCapabilityTool.compactModelResult(for: capPayload)
+                            // Arm the post-enable resume on the turn that
+                            // owns this call (same owner resolution as
+                            // recordToolTurn), so flipping the toggle can
+                            // regenerate exactly this exchange.
+                            let requestOwner =
+                                self.turns.last(where: { turn in
+                                    turn.role == .assistant
+                                        && (turn.toolCalls?.contains { $0.id == callId } ?? false)
+                                }) ?? assistantTurn
+                            self.pendingCapabilityRequest = PendingCapabilityRequest(
+                                kind: capPayload.capability,
+                                turnId: requestOwner.id
+                            )
                         } else if inv.toolName == "share_artifact" {
                             resultText = await self.processShareArtifactResult(
                                 toolResult: resultText,

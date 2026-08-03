@@ -130,10 +130,19 @@ final class NativeCapabilityRequestView: NSView {
         case .alreadyEnabled:
             titleLabel.stringValue = String(
                 format: L("%@ is enabled"), kind.displayName)
-            detailLabel.stringValue = didEnable
-                ? L("Send your request again to use it.")
-                : L("This capability is ready to use.")
-            actionButton.isHidden = true
+            if kind.autoResumesAfterEnable {
+                detailLabel.stringValue = didEnable
+                    ? L("Send your request again to use it.")
+                    : L("This capability is ready to use.")
+                actionButton.isHidden = true
+            } else {
+                // Machine-operating capabilities never auto-resume; the
+                // explicit go-ahead lives on this button (the session
+                // ignores the retry if the conversation has moved on).
+                detailLabel.stringValue = L("Ready when you are.")
+                actionButton.isHidden = false
+                actionButton.title = L("Retry request")
+            }
 
         case .enable:
             titleLabel.stringValue = String(
@@ -160,6 +169,18 @@ final class NativeCapabilityRequestView: NSView {
     }
 
     @objc private func actionTapped() {
+        if didEnable || resolvedAction == .alreadyEnabled {
+            // "Retry request" for a machine-operating capability.
+            NotificationCenter.default.post(
+                name: .capabilityRequestRetry,
+                object: nil,
+                userInfo: [
+                    "agentId": agentId.uuidString,
+                    "capability": kind.rawValue,
+                ]
+            )
+            return
+        }
         switch resolvedAction {
         case .enable:
             if CapabilityRequestActions.enable(kind: kind, agentId: agentId) {

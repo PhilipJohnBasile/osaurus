@@ -12,6 +12,16 @@
 
 import Foundation
 
+extension Notification.Name {
+    /// Posted by an inline capability card's "Retry request" button after a
+    /// machine-operating capability (browser/computer/AppleScript) was
+    /// enabled — the explicit user go-ahead the auto-resume path
+    /// deliberately withholds for those kinds. userInfo: `agentId`
+    /// (uuidString), `capability` (DormantCapability.Kind rawValue).
+    public static let capabilityRequestRetry = Notification.Name(
+        "osaurus.capabilityRequestRetry")
+}
+
 @MainActor
 public enum CapabilityRequestActions {
 
