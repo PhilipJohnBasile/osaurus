@@ -5988,8 +5988,16 @@ final class ChatSession: ObservableObject {
                         callId: String
                     ) -> AgentLoopToolExecution {
                         consentBlockedCallCount += 1
+                        // Kind matters: `.rejected`/`.userDenied` trip the
+                        // chat policy's `stopOnToolRejection` and end the run
+                        // BEFORE the model's follow-up step — the card then
+                        // shows with no explanatory text (observed live).
+                        // `.unavailable` keeps honest error semantics (the
+                        // model cannot mistake the block for a result) while
+                        // `shouldStopAfterToolOutcome` grants the correction
+                        // step the instruction below relies on.
                         let envelope = ToolEnvelope.failure(
-                            kind: .rejected,
+                            kind: .unavailable,
                             message:
                                 "Tools are turned off for this agent, so `\(inv.toolName)` "
                                 + "was not run. The user has been shown a card that opens "
@@ -5997,7 +6005,13 @@ final class ChatSession: ObservableObject {
                                 + "one short sentence telling the user what you will do "
                                 + "once Tools is enabled, then stop and wait.",
                             tool: inv.toolName,
-                            retryable: false
+                            // `retryable: false` + `.unavailable` reads as a
+                            // terminal desktop-subagent failure for
+                            // computer_use/applescript and would stop the run
+                            // (isTerminalDesktopSubagentFailure). True keeps
+                            // the correction step on every tool; the message
+                            // forbids the retry and dedupe catches replays.
+                            retryable: true
                         )
                         let owner =
                             self.turns.last(where: { turn in
