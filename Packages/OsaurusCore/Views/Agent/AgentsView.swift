@@ -1161,6 +1161,9 @@ struct AgentDetailView: View {
     /// asked for (Web Search on the Abilities tab, the five subagent kinds
     /// on the Subagents tab) so the RIGHT toggle glows, not the master.
     @State private var flashedAbilityKind: DormantCapability.Kind = .tools
+    /// Presents the Accessibility permission chain when Computer Use is
+    /// switched on without the macOS grant in place.
+    @State private var showComputerUsePermissionPrompt = false
     @State private var memoryEnabled: Bool = true
     /// Local mirror of `Agent.settings.dbEnabled` (spec §5.5). The
     /// Abilities overview binds a card to this; `debouncedSave`
@@ -1829,6 +1832,10 @@ struct AgentDetailView: View {
                 ManagementStateManager.shared.$pendingCapabilityHighlight
             ) { _ in
                 consumePendingCapabilityHighlight()
+            }
+            .sheet(isPresented: $showComputerUsePermissionPrompt) {
+                ComputerUsePermissionPromptSheet()
+                    .environment(\.theme, themeManager.currentTheme)
             }
             .sheet(isPresented: $showCreateSchedule) {
                 ScheduleEditorSheet(
@@ -3829,6 +3836,17 @@ struct AgentDetailView: View {
                 if newValue, !toolsEnabled {
                     toolsEnabled = true
                     flashToolsToggle(scroll: false)
+                }
+                // Prerequisite chain: Computer Use needs the macOS
+                // Accessibility grant, which no Osaurus toggle can flip.
+                // Surface it NOW, in place, instead of letting the first
+                // run fail on it (observed live). Guidance, not a gate:
+                // the toggle stays on either way, and the row's readiness
+                // note covers a dismissed-without-granting exit.
+                if newValue, flag == .computerUse,
+                    SystemPermissionService.shared.permissionStates[.accessibility] != true
+                {
+                    showComputerUsePermissionPrompt = true
                 }
                 subagentToggles[flag] = newValue
                 debouncedSave()

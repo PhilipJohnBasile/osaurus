@@ -804,7 +804,9 @@ struct ComputerUseSettingsView: View {
 /// `isOptional` softens the unmet state (a neutral "Optional" tag instead of
 /// an alarming "Not Granted"), and `subtitleOverride` lets the caller supply
 /// Computer-Use-specific copy in place of the generic plugin description.
-private struct ComputerUsePermissionRow: View {
+/// Internal (not private): `ComputerUsePermissionPromptSheet` below reuses
+/// it for the enable-time permission chain in the agent editor.
+struct ComputerUsePermissionRow: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @ObservedObject private var permissionService = SystemPermissionService.shared
     let permission: SystemPermission
@@ -895,6 +897,100 @@ private struct ComputerUsePermissionRow: View {
             fill: filled ? theme.accentColor : theme.tertiaryBackground,
             stroke: filled ? .clear : theme.inputBorder
         )
+    }
+}
+
+// MARK: - Enable-time permission prompt
+
+/// Sheet shown by the agent editor when Computer Use is switched on while
+/// macOS hasn't granted Accessibility yet. Keeps the user on the tab they
+/// were on and reuses the live permission rows, so Grant, bounce to System
+/// Settings, return, and watch the row flip to Granted all happen in place
+/// (the service refreshes on a 2-second poll while the sheet is up).
+/// Deliberately guidance, not a gate: the toggle stays on either way, and
+/// the Subagents row's readiness note covers a dismissed-without-granting
+/// exit.
+struct ComputerUsePermissionPromptSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var themeManager = ThemeManager.shared
+    @ObservedObject private var permissionService = SystemPermissionService.shared
+
+    private var theme: ThemeProtocol { themeManager.currentTheme }
+
+    private var isAccessibilityGranted: Bool {
+        permissionService.permissionStates[.accessibility] ?? false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 10) {
+                Image(
+                    systemName: isAccessibilityGranted
+                        ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                )
+                .font(.system(size: 20, weight: .medium))
+                .foregroundColor(isAccessibilityGranted ? theme.successColor : theme.warningColor)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(
+                        isAccessibilityGranted
+                            ? "Computer Use is ready" : "One more step for Computer Use",
+                        bundle: .module
+                    )
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(theme.primaryText)
+
+                    Text(
+                        isAccessibilityGranted
+                            ? "Accessibility is granted. This agent can now operate apps for you."
+                            : "Computer Use is on for this agent, but macOS has not granted Osaurus the Accessibility permission yet. Runs will fail until it is granted.",
+                        bundle: .module
+                    )
+                    .font(.system(size: 12))
+                    .foregroundColor(theme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            ComputerUsePermissionRow(
+                permission: .accessibility,
+                subtitleOverride: L(
+                    "Lets agents read on-screen elements and click, type, and scroll for you."
+                )
+            )
+            ComputerUsePermissionRow(
+                permission: .screenRecording,
+                isOptional: true,
+                subtitleOverride: L(
+                    "Only needed if an agent reads the screen visually (screenshots). The standard mode works without it."
+                )
+            )
+
+            HStack {
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Text(
+                        isAccessibilityGranted ? "Done" : "I'll do this later",
+                        bundle: .module
+                    )
+                    .font(.system(size: 12, weight: .medium))
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 480)
+        .background(theme.primaryBackground)
+        .environment(\.theme, theme)
+        .onAppear {
+            permissionService.refreshAllPermissions()
+            permissionService.startPeriodicRefresh(interval: 2.0)
+        }
+        .onDisappear {
+            permissionService.stopPeriodicRefresh()
+        }
     }
 }
 
