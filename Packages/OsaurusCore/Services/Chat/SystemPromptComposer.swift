@@ -786,15 +786,54 @@ public struct SystemPromptComposer: Sendable {
         SubagentCapabilityRegistry.spawnAgentToolName,
     ]
 
-    /// Consent-gated discovery schema: forced compact stubs (name + one
-    /// line, no parameter schema) of the intent roster above. Enough for
-    /// the model's trained call reflex to fire — the call is blocked
-    /// before dispatch anyway, so argument fidelity is irrelevant — at a
-    /// small fraction of the full schema's prefill cost.
+    /// Hand-written one-line stub descriptions for the consent roster.
+    /// These stubs are never executed, so the copy's ONLY job is routing
+    /// the model to the right tool name — purpose-written disambiguation
+    /// beats the truncated real descriptions (a 9B model live-picked
+    /// `image` for "look at my screen" because the real `computer_use`
+    /// description buried "screen" mid-sentence and nothing said `image`
+    /// can't see anything). Model-facing prompt text: English-only,
+    /// byte-stable for KV caching.
+    static let consentStubDescriptions: [String: String] = [
+        "web_search":
+            "Search the web for current information: news, weather, prices, facts.",
+        "image":
+            "Create a new picture from a text description. Cannot see, read, or "
+            + "describe the user's screen.",
+        ComputerUseTool.toolName:
+            "Look at the user's screen and operate their Mac apps for them.",
+        BrowserUseTool.toolName:
+            "Open websites in a real browser and act on them for the user.",
+        AppleScriptTool.toolName:
+            "Automate Mac apps (Notes, Mail, Finder, and others) with AppleScript.",
+        SubagentCapabilityRegistry.spawnAgentToolName:
+            "Delegate a subtask to another configured agent.",
+    ]
+
+    /// Consent-gated discovery schema: name + one disambiguation line, no
+    /// parameter schema (the encoder normalizes nil to an empty object).
+    /// Enough for the model's trained call reflex to fire — the call is
+    /// blocked before dispatch anyway, so argument fidelity is irrelevant
+    /// — at a small fraction of the full schema's prefill cost. Filtered
+    /// against the registry so a build variant missing a tool never
+    /// advertises a phantom name.
     @MainActor
     static func consentDiscoverySchema() -> [Tool] {
-        ToolRegistry.shared.specs(forTools: consentIntentToolNames)
-            .map(forcedCompactBootstrapSpec)
+        let registered = Set(
+            ToolRegistry.shared.specs(forTools: consentIntentToolNames)
+                .map { $0.function.name }
+        )
+        return consentIntentToolNames.compactMap { name in
+            guard registered.contains(name) else { return nil }
+            return Tool(
+                type: "function",
+                function: ToolFunction(
+                    name: name,
+                    description: consentStubDescriptions[name],
+                    parameters: nil
+                )
+            )
+        }
     }
 
     /// Append the `## Dormant capabilities` section (shared by the minimal

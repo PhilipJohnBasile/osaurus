@@ -129098,6 +129098,9 @@
         }
       }
     },
+    "Open Agent Settings" : {
+
+    },
     "Open AI Chat" : {
       "localizations" : {
         "de" : {
@@ -129379,6 +129382,9 @@
           }
         }
       }
+    },
+    "Open Computer Use Settings" : {
+
     },
     "Open configuration file" : {
       "localizations" : {

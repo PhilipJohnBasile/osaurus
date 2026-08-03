@@ -301,6 +301,15 @@ struct ConsentDiscoverySchemaTests {
         ] {
             #expect(!names.contains(excluded), "\(excluded) must not be stubbed")
         }
+        // Every roster entry must carry its hand-written disambiguation
+        // line — a nil-description stub reintroduces the wrong-tool picks
+        // the copy exists to prevent.
+        for name in names {
+            #expect(
+                SystemPromptComposer.consentStubDescriptions[name] != nil,
+                "missing stub description for \(name)"
+            )
+        }
     }
 
     @MainActor
