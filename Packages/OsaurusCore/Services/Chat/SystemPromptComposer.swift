@@ -2409,9 +2409,16 @@ public struct SystemPromptComposer: Sendable {
                 snapshot: snapshot,
                 sizeClassDisablesTools: sizeClassDisablesTools
             ) {
+                // Enum narrowed to the master switch — the only thing
+                // dormant (and requestable) when Tools is off.
                 return ToolRegistry.shared.specs(
                     forTools: [CapabilityRequestContract.toolName]
-                )
+                ).map {
+                    RequestCapabilityTool.constrainedSpec(
+                        $0,
+                        allowedIds: [DormantCapability.Kind.tools.rawValue]
+                    )
+                }
             }
             return []
         }
@@ -2592,12 +2599,20 @@ public struct SystemPromptComposer: Sendable {
                 // above, so the empty-dormant case must strip explicitly.
                 byName.removeValue(forKey: CapabilityRequestContract.toolName)
             } else {
-                // Replace the compact bootstrap skeleton with the full spec
-                // so the model sees the capability-id enum values.
+                // Replace the compact bootstrap skeleton with the full
+                // spec, with the capability-id enum narrowed to the ids
+                // that are actually dormant — advertising the full kind
+                // list invites a model to request a capability the prompt
+                // never mentioned.
                 add(
                     ToolRegistry.shared.specs(
                         forTools: [CapabilityRequestContract.toolName]
-                    ),
+                    ).map {
+                        RequestCapabilityTool.constrainedSpec(
+                            $0,
+                            allowedIds: dormant.map { $0.kind.rawValue }
+                        )
+                    },
                     replacingExisting: true
                 )
             }

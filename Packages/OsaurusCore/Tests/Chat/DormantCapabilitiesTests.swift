@@ -280,6 +280,38 @@ struct CapabilityAutoResumePolicyTests {
     }
 }
 
+@Suite("request_capability constrained spec")
+struct CapabilityRequestConstrainedSpecTests {
+
+    @Test("capability enum narrows to the session's dormant ids")
+    func enumNarrows() throws {
+        let tool = RequestCapabilityTool()
+        let base = Tool(
+            type: "function",
+            function: ToolFunction(
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters
+            )
+        )
+        let narrowed = RequestCapabilityTool.constrainedSpec(base, allowedIds: ["tools"])
+        guard
+            case .object(let schema)? = narrowed.function.parameters,
+            case .object(let properties)? = schema["properties"],
+            case .object(let capability)? = properties["capability"],
+            case .array(let ids)? = capability["enum"]
+        else {
+            Issue.record("narrowed spec lost its parameter structure")
+            return
+        }
+        #expect(ids == [.string("tools")])
+        // Empty allow-list must fall back to the base spec, never an
+        // empty enum (which would make the tool uncallable).
+        let unchanged = RequestCapabilityTool.constrainedSpec(base, allowedIds: [])
+        #expect(unchanged.function.parameters == base.function.parameters)
+    }
+}
+
 @Suite("request_capability marker round-trip")
 struct CapabilityRequestMarkerTests {
 

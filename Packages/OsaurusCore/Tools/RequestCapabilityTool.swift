@@ -55,6 +55,32 @@ public final class RequestCapabilityTool: OsaurusTool, @unchecked Sendable {
 
     public init() {}
 
+    /// Rewrite the spec's `capability` enum to the session's ACTUAL
+    /// dormant ids. The registry's canned spec lists every kind; leaving
+    /// non-dormant ids in the schema invites a model to request a
+    /// capability the prompt never listed (e.g. `web_search` when only
+    /// the master `tools` switch is off). The dormant set is
+    /// session-constant, so the narrowed spec is KV-cache safe.
+    static func constrainedSpec(_ base: Tool, allowedIds: [String]) -> Tool {
+        guard !allowedIds.isEmpty,
+            case .object(var schema)? = base.function.parameters,
+            case .object(var properties)? = schema["properties"],
+            case .object(var capability)? =
+                properties[CapabilityRequestContract.capabilityArgument]
+        else { return base }
+        capability["enum"] = .array(allowedIds.map { .string($0) })
+        properties[CapabilityRequestContract.capabilityArgument] = .object(capability)
+        schema["properties"] = .object(properties)
+        return Tool(
+            type: base.type,
+            function: ToolFunction(
+                name: base.function.name,
+                description: base.function.description,
+                parameters: .object(schema)
+            )
+        )
+    }
+
     // MARK: - Marker contract
 
     /// Payload round-tripped from the tool result to the chat card. The
