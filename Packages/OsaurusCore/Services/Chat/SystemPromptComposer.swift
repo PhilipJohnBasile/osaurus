@@ -2532,6 +2532,51 @@ public struct SystemPromptComposer: Sendable {
             }
         }
 
+        // `request_capability`: in the schema exactly when something is
+        // dormant, so the model can hand the user a one-click enable card
+        // instead of refusing (see the Dormant capabilities prompt
+        // section, which is gated on the same resolver — prompt and schema
+        // cannot disagree). Deliberately NOT behind its own settings
+        // toggle: a discovery affordance behind a toggle would recreate
+        // the problem it solves. Auto mode only (manual stays strictly
+        // user-curated), and never when tools are off entirely — that
+        // path keeps the "tools off → empty schema" invariant and falls
+        // back to prompt-text guidance. The dormant set is
+        // session-constant, so tool presence is KV-cache stable.
+        if !isManual {
+            let cache = ModelPickerItemCache.shared
+            let dormant = DormantCapabilityResolver.resolve(
+                snapshot: snapshot,
+                inputs: .init(
+                    effectiveToolsOff: false,
+                    sizeClassDisablesTools: false,
+                    isDefaultAgent: snapshot.agentId == Agent.defaultId,
+                    hasReadyImageModel: cache.hasReadyImageModel,
+                    hasReadyAppleScriptModel: cache.hasReadyAppleScriptModel
+                )
+            )
+            if dormant.isEmpty {
+                // Registered built-ins enter the always-loaded baseline
+                // above, so the empty-dormant case must strip explicitly.
+                byName.removeValue(forKey: CapabilityRequestContract.toolName)
+            } else {
+                // Replace the compact bootstrap skeleton with the full spec
+                // so the model sees the capability-id enum values.
+                add(
+                    ToolRegistry.shared.specs(
+                        forTools: [CapabilityRequestContract.toolName]
+                    ),
+                    replacingExisting: true
+                )
+            }
+        } else {
+            // Manual mode stays strictly user-curated; the baseline copy is
+            // removed unless the user explicitly selected the tool.
+            if snapshot.manualToolNames?.contains(CapabilityRequestContract.toolName) != true {
+                byName.removeValue(forKey: CapabilityRequestContract.toolName)
+            }
+        }
+
         // Authoritative per-agent subagent gates, driven by ONE loop over the
         // capability registry (no per-kind branches here) so adding a kind needs
         // no edit to this strip. Each capability's `gate` decides the rule:
@@ -2863,6 +2908,10 @@ public struct SystemPromptComposer: Sendable {
             // These unconditionally available baseline tools are part of the
             // stable schema. Query wording never adds or removes tools.
             allowed.formUnion(["get_current_time", "sandbox_process"])
+            // Survives the allowlist whenever the dormant-set gate above
+            // added it (no-op otherwise) — custom agents are exactly where
+            // capability toggles are most often off.
+            allowed.insert(CapabilityRequestContract.toolName)
             byName = byName.filter { allowed.contains($0.key) }
 
             // The implementation keeps its full argument compatibility, while

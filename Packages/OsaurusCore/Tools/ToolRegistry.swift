@@ -234,6 +234,11 @@ public final class ToolRegistry: ObservableObject {
             WebSearchTool(),
             // Inline data visualization rendered as a chart card.
             RenderChartTool(),
+            // Dormant-capability request: the model asks the user to enable
+            // a gated capability; ChatView intercepts the marker result and
+            // renders an inline enable card. Enters the schema only via the
+            // composer's dormant-set gate.
+            RequestCapabilityTool(),
             // Current date/time. Local models have no clock in-context, so a
             // plain "what is the time?" (a common first-message smoke test)
             // otherwise makes them guess. Always loaded; no side effects.
