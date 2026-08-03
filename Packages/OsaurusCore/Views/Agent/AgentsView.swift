@@ -3100,13 +3100,18 @@ struct AgentDetailView: View {
         guard kind == .tools else { return }
         selectedTab = .builtIn(.abilities)
         // Next runloop so the Abilities tab's ScrollViewReader is mounted
-        // before the scroll-to-nonce fires.
-        DispatchQueue.main.async { flashToolsToggle() }
+        // before the scroll-to-nonce fires. Longer glow than an in-window
+        // tap: the user is arriving from the chat card into a window they
+        // may never have opened, and the extra seconds cover the window
+        // opening, the tab landing, and finding the control.
+        DispatchQueue.main.async { flashToolsToggle(duration: 6.0) }
     }
 
     /// lands if no newer tap has bumped the generation, so a rapid second
-    /// tap can't cut its own glow short.
-    private func flashToolsToggle() {
+    /// tap can't cut its own glow short. `duration` is how long the glow
+    /// holds; in-window taps use the short default, the chat-card deep
+    /// link passes a longer one.
+    private func flashToolsToggle(duration: TimeInterval = 2.2) {
         scrollToToolsNonce += 1
         toolsHighlightGeneration += 1
         let generation = toolsHighlightGeneration
@@ -3115,7 +3120,7 @@ struct AgentDetailView: View {
             guard generation == toolsHighlightGeneration else { return }
             toolsHighlightActive = true
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
             guard generation == toolsHighlightGeneration else { return }
             toolsHighlightActive = false
         }
