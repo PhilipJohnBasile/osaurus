@@ -3672,34 +3672,55 @@ final class ChatSession: ObservableObject {
 
     // MARK: - Capability request + post-enable resume
 
-    /// Card subtitle for a consent-gated block: name the capability the
+    /// Capability a blocked tool belongs to, or nil for unmapped tools.
+    static func capabilityKind(forTool toolName: String) -> DormantCapability.Kind? {
+        switch toolName {
+        case "web_search", "search_and_extract": return .webSearch
+        case "image": return .image
+        case "browser_use": return .browserUse
+        case "computer_use": return .computerUse
+        case "applescript": return .appleScript
+        case "spawn_agent", "spawn_model", "spawn_batch": return .spawn
+        default: return nil
+        }
+    }
+
+    /// Which card a consent-gated block should render: the switch the user
+    /// must actually flip. When the blocked tool's own capability toggle is
+    /// already ON, only the master blocks it, so the card is `.tools` and
+    /// the master glows. When the capability toggle is OFF too, the card is
+    /// that capability: its row glows, and the settings cascade turns the
+    /// master on with the same flip.
+    static func consentCardKind(
+        forBlockedTool toolName: String,
+        agentId: UUID
+    ) -> DormantCapability.Kind {
+        guard let kind = capabilityKind(forTool: toolName) else { return .tools }
+        let caps = AgentManager.shared.effectiveCapabilities(for: agentId)
+        let capabilityToggleOn: Bool
+        switch kind {
+        case .tools: capabilityToggleOn = false
+        case .webSearch: capabilityToggleOn = caps.webSearchEnabled
+        case .image: capabilityToggleOn = caps.imageEnabled
+        case .browserUse: capabilityToggleOn = caps.browserUseEnabled
+        case .computerUse: capabilityToggleOn = caps.computerUseEnabled
+        case .appleScript: capabilityToggleOn = caps.appleScriptEnabled
+        case .spawn: capabilityToggleOn = caps.spawnDelegationEnabled
+        }
+        return capabilityToggleOn ? .tools : kind
+    }
+
+    /// Card subtitle for a `.tools` consent card: name the capability the
     /// blocked tool belongs to, so the user understands why the MASTER
     /// toggle is the one glowing (that capability's own toggle is already
-    /// on — a stub only exists for enabled capabilities).
+    /// on).
     static func consentCardReason(forBlockedTool toolName: String) -> String {
-        let capability: String?
-        switch toolName {
-        case "web_search", "search_and_extract":
-            capability = DormantCapability.Kind.webSearch.displayName
-        case "image":
-            capability = DormantCapability.Kind.image.displayName
-        case "browser_use":
-            capability = DormantCapability.Kind.browserUse.displayName
-        case "computer_use":
-            capability = DormantCapability.Kind.computerUse.displayName
-        case "applescript":
-            capability = DormantCapability.Kind.appleScript.displayName
-        case "spawn_agent", "spawn_model", "spawn_batch":
-            capability = DormantCapability.Kind.spawn.displayName
-        default:
-            capability = nil
-        }
-        guard let capability else {
+        guard let kind = capabilityKind(forTool: toolName) else {
             return L("Turn on Tools to let this agent act on requests like this.")
         }
         return String(
             format: L("%@ is ready. Turn on Tools to use it."),
-            capability
+            kind.displayName
         )
     }
 
@@ -6050,17 +6071,24 @@ final class ChatSession: ObservableObject {
                                     && (turn.toolCalls?.contains { $0.id == callId } ?? false)
                             }) ?? assistantTurn
                         if owner.capabilityPrompt == nil, self.pendingCapabilityRequest == nil {
+                            let cardAgentId = self.agentId ?? Agent.defaultId
+                            let cardKind = Self.consentCardKind(
+                                forBlockedTool: inv.toolName,
+                                agentId: cardAgentId
+                            )
                             owner.capabilityPrompt = RequestCapabilityTool.Payload(
-                                capability: .tools,
-                                // The blocked tool tells the user WHY the
-                                // master toggle matters for this request —
-                                // the stub's presence proves the capability's
-                                // own toggle is already on.
-                                reason: Self.consentCardReason(forBlockedTool: inv.toolName),
-                                agentId: self.agentId ?? Agent.defaultId
+                                capability: cardKind,
+                                // For a `.tools` card, name the blocked
+                                // capability so the user understands why the
+                                // master toggle glows; capability cards
+                                // carry their meaning in the title.
+                                reason: cardKind == .tools
+                                    ? Self.consentCardReason(forBlockedTool: inv.toolName)
+                                    : nil,
+                                agentId: cardAgentId
                             )
                             self.pendingCapabilityRequest = PendingCapabilityRequest(
-                                kind: .tools,
+                                kind: cardKind,
                                 turnId: owner.id
                             )
                             self.isDirty = true

@@ -283,33 +283,33 @@ struct CapabilityAutoResumePolicyTests {
 @Suite("Consent discovery schema")
 struct ConsentDiscoverySchemaTests {
 
-    private func tool(_ name: String) -> Tool {
-        Tool(
-            type: "function",
-            function: ToolFunction(
-                name: name,
-                description: "A tool description that is long enough to be compacted away.",
-                parameters: .object([
-                    "type": .string("object"),
-                    "properties": .object([
-                        "query": .object(["type": .string("string")])
-                    ]),
-                ])
-            )
-        )
+    @Test("intent roster covers every card kind and excludes plumbing")
+    func rosterContents() {
+        let names = Set(SystemPromptComposer.consentIntentToolNames)
+        // Every blocked-tool → card-kind mapping must have a stub, or the
+        // capability is undiscoverable in tools-off sessions.
+        for expected in [
+            "web_search", "image", "computer_use", "browser_use",
+            "applescript", "spawn_agent",
+        ] {
+            #expect(names.contains(expected), "missing stub for \(expected)")
+        }
+        // Plumbing must never mint enable cards.
+        for excluded in [
+            "todo", "complete", "clarify", "share_artifact", "capabilities",
+            "get_current_time", CapabilityRequestContract.toolName,
+        ] {
+            #expect(!names.contains(excluded), "\(excluded) must not be stubbed")
+        }
     }
 
-    @Test("keeps intent-bearing tools as stubs, drops plumbing")
-    func filtersAndStubs() {
-        let schema = SystemPromptComposer.consentDiscoverySchema(from: [
-            tool("web_search"),
-            tool("todo"),
-            tool("complete"),
-            tool("share_artifact"),
-            tool("get_current_time"),
-            tool(CapabilityRequestContract.toolName),
-        ])
-        #expect(schema.map { $0.function.name } == ["web_search"])
+    @MainActor
+    @Test("blocked tools map to their capability kind")
+    func blockedToolKindMapping() {
+        #expect(ChatSession.capabilityKind(forTool: "web_search") == .webSearch)
+        #expect(ChatSession.capabilityKind(forTool: "computer_use") == .computerUse)
+        #expect(ChatSession.capabilityKind(forTool: "spawn_batch") == .spawn)
+        #expect(ChatSession.capabilityKind(forTool: "file_read") == nil)
     }
 }
 

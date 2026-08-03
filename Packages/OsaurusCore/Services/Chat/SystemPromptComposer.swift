@@ -599,22 +599,18 @@ public struct SystemPromptComposer: Sendable {
         var resolvedTools = resolveTools(
             snapshot: snapshot,
             executionMode: executionMode,
-            toolsDisabled: effectiveToolsOff && !consentGatedToolsOff,
+            toolsDisabled: effectiveToolsOff,
             additionalToolNames: additionalToolNames,
             frozenAlwaysLoadedNames: frozenAlwaysLoadedNames,
             frozenToolSpecs: frozenToolSpecs,
             spawnTargets: spawnTargets
         )
         if consentGatedToolsOff {
-            resolvedTools = consentDiscoverySchema(from: resolvedTools)
+            resolvedTools = consentDiscoverySchema()
             if resolvedTools.isEmpty {
-                // No intent-bearing tool survived this agent's own
-                // per-capability gates (e.g. Web Search off too) — there is
-                // nothing for the model to reach for, and a consent session
-                // with an empty schema would ALSO suppress the dormant text
-                // guidance: the observed failure was a bare prompt with no
-                // card and no narration. Fall back to the plain tools-off
-                // compose, which renders the dormant section's text path.
+                // Registry anomaly backstop only (the fixed roster is
+                // toggle-independent): fall back to the plain tools-off
+                // compose so the dormant text guidance still renders.
                 consentGatedToolsOff = false
             }
         }
@@ -771,33 +767,33 @@ public struct SystemPromptComposer: Sendable {
             && !sizeClassDisablesTools
     }
 
-    /// Tools that carry no discovery signal for a consent-gated tools-off
-    /// session: chat-layer loop plumbing, meta/capability tooling, and
-    /// display-only outputs. Offering these as stubs would only mint
-    /// pointless enable cards ("what time is it" must not prompt a
-    /// settings trip — the time is already injected into the prompt).
-    static let consentDiscoveryExcludedNames: Set<String> =
-        agentLoopToolNames.union([
-            "share_artifact",
-            "capabilities",
-            "capabilities_discover",
-            "capabilities_load",
-            CapabilityRequestContract.toolName,
-            "get_current_time",
-            "render_chart",
-            "speak",
-            "search_memory",
-        ])
+    /// Intent-bearing tools stubbed into a consent-gated tools-off session,
+    /// DELIBERATELY independent of the agent's per-capability toggles: the
+    /// stubs advertise what Osaurus supports, and the enable card (plus the
+    /// sub-toggle → master cascade in settings) handles however many
+    /// switches are actually off. Filtering by the agent's gates left
+    /// double-off configurations (Tools off + Computer Use off + a screen
+    /// question) with an empty schema and no card at all (observed live).
+    /// Plumbing (loop tools, share_artifact, capabilities, time, display
+    /// tools) is intentionally absent — "what time is it" must never mint
+    /// a settings card; the time is already injected into the prompt.
+    static let consentIntentToolNames: [String] = [
+        "web_search",
+        "image",
+        ComputerUseTool.toolName,
+        BrowserUseTool.toolName,
+        AppleScriptTool.toolName,
+        SubagentCapabilityRegistry.spawnAgentToolName,
+    ]
 
-    /// Reduce a full resolved toolset to the consent-gated discovery
-    /// schema: intent-bearing tools only, each as a forced compact stub
-    /// (name + one-line description, no parameter schema). Enough for the
-    /// model's trained call reflex to fire — the call is blocked before
-    /// dispatch anyway, so argument fidelity is irrelevant — at a small
-    /// fraction of the full schema's prefill cost.
-    static func consentDiscoverySchema(from tools: [Tool]) -> [Tool] {
-        tools
-            .filter { !consentDiscoveryExcludedNames.contains($0.function.name) }
+    /// Consent-gated discovery schema: forced compact stubs (name + one
+    /// line, no parameter schema) of the intent roster above. Enough for
+    /// the model's trained call reflex to fire — the call is blocked
+    /// before dispatch anyway, so argument fidelity is irrelevant — at a
+    /// small fraction of the full schema's prefill cost.
+    @MainActor
+    static func consentDiscoverySchema() -> [Tool] {
+        ToolRegistry.shared.specs(forTools: consentIntentToolNames)
             .map(forcedCompactBootstrapSpec)
     }
 
@@ -2234,12 +2230,12 @@ public struct SystemPromptComposer: Sendable {
         var tools = resolveTools(
             snapshot: snapshot,
             executionMode: executionMode,
-            toolsDisabled: effectiveToolsOff && !consentGatedToolsOff,
+            toolsDisabled: effectiveToolsOff,
             spawnTargets: spawnTargets
         )
         if consentGatedToolsOff {
-            tools = consentDiscoverySchema(from: tools)
-            // Mirror the main path's empty-stub fallback (see resolveToolset).
+            tools = consentDiscoverySchema()
+            // Mirror the main path's registry-anomaly backstop.
             if tools.isEmpty { consentGatedToolsOff = false }
         }
         let alwaysLoadedNames = resolveAlwaysLoadedNames(

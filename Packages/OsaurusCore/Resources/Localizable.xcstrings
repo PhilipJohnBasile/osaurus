@@ -2473,6 +2473,9 @@
         }
       }
     },
+    "%@ is ready. Turn on Tools to use it." : {
+
+    },
     "%@ isn't an MLX model, so it can't be used in Osaurus. The local engine runs MLX-format models only." : {
       "localizations" : {
         "de" : {
@@ -208609,6 +208612,9 @@
           }
         }
       }
+    },
+    "Turn on Tools to let this agent act on requests like this." : {
+
     },
     "Turn this on per agent: open the agent's Subagents tab, enable Computer Use, and use the Share screen context option (on by default). Requires Accessibility." : {
       "comment" : "Note in Settings > Computer Use explaining that screen context is now enabled per agent.",
