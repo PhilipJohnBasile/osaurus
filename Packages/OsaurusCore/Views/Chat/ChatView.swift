@@ -3755,15 +3755,19 @@ final class ChatSession: ObservableObject {
         guard userInitiated || pending.kind.autoResumesAfterEnable else { return }
         pendingCapabilityRequest = nil
         // The settings errand is complete and the conversation is about to
-        // continue: bring the chat window above the settings window so the
-        // resume is actually SEEN (with settings covering chat, enabling a
-        // toggle otherwise appears to do nothing). Deliberately only here —
-        // never on a bare toggle flip — so partial setup (permission sheet,
-        // spawn targets, enabling several capabilities in one visit) is
-        // never interrupted. The settings window stays open behind.
-        if let chatWindow = WindowManager.shared.window(for: .chat) {
-            chatWindow.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+        // continue: bring THIS session's chat window above the settings
+        // window so the resume is actually SEEN (with settings covering
+        // chat, enabling a toggle otherwise appears to do nothing).
+        // Deliberately only here — never on a bare toggle flip — so partial
+        // setup (permission sheet, spawn targets, enabling several
+        // capabilities in one visit) is never interrupted. The settings
+        // window stays open behind. Chat windows are per-session and live
+        // in ChatWindowManager, NOT under WindowManager's `.chat` id (a
+        // lookup there returns nil and silently no-ops — observed live).
+        if let sessionId,
+            let windowInfo = ChatWindowManager.shared.findWindow(bySessionId: sessionId)
+        {
+            ChatWindowManager.shared.showWindow(id: windowInfo.id)
         }
         regenerate(turnId: pending.turnId)
     }
