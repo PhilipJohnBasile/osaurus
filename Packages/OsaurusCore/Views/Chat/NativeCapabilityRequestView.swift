@@ -30,7 +30,10 @@ final class NativeCapabilityRequestView: NSView {
     /// settings changes — the block's Equatable payload is unchanged).
     private var lastPayload: RequestCapabilityTool.Payload?
     private var lastTheme: (any ThemeProtocol)?
-    private var agentUpdatedObserver: NSObjectProtocol?
+    // `nonisolated(unsafe)`: deinit is nonisolated and must remove the
+    // block observer; NotificationCenter add/remove are thread-safe and
+    // the token is written once from the MainActor before any read.
+    private nonisolated(unsafe) var agentUpdatedObserver: NSObjectProtocol?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
