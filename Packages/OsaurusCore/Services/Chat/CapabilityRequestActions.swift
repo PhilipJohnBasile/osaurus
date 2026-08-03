@@ -28,16 +28,19 @@ public enum CapabilityRequestActions {
     /// What the card should offer for one request, resolved against LIVE
     /// state at render time (settings may have changed since the model
     /// asked).
+    ///
+    /// The card never mutates settings itself — every actionable case
+    /// deep-links into the settings window with the relevant control
+    /// highlighted. Deliberate product choice: the trip through settings
+    /// teaches users where their agent's capabilities live, and the
+    /// post-enable resume brings them straight back to a continued
+    /// conversation.
     public enum Action: Equatable {
-        /// Capability is already callable — the user (or another card)
-        /// enabled it after the request was made.
+        /// Capability is already callable — the user enabled it after the
+        /// request was made.
         case alreadyEnabled
-        /// One toggle away on a custom agent: the card offers one-click
-        /// enable.
-        case enable
-        /// Multi-step or not agent-local (missing model, global switch,
-        /// Default-agent config): the card deep-links to the exact
-        /// settings surface.
+        /// The card deep-links to the settings surface owning the fix
+        /// (toggle, model install, target selection).
         case openSettings(tab: ManagementTab, buttonTitle: String)
         /// Nothing actionable (e.g. Browser Use on the built-in Default
         /// agent): the card explains and suggests the path.
@@ -51,17 +54,20 @@ public enum CapabilityRequestActions {
         let agent = manager.agent(for: agentId)
         let isCustom = agent.map { !$0.isBuiltIn } ?? false
 
+        let agentSettings = Action.openSettings(
+            tab: .agents, buttonTitle: L("Enable in Settings"))
+
         switch kind {
         case .tools:
             if caps.toolsEnabled { return .alreadyEnabled }
             return isCustom
-                ? .enable
+                ? agentSettings
                 : .openSettings(tab: .chat, buttonTitle: L("Open Chat Settings"))
 
         case .webSearch:
             if caps.toolsEnabled && caps.webSearchEnabled { return .alreadyEnabled }
             return isCustom
-                ? .enable
+                ? agentSettings
                 : .openSettings(tab: .search, buttonTitle: L("Open Search Settings"))
 
         case .image:
@@ -73,7 +79,7 @@ public enum CapabilityRequestActions {
             }
             if caps.toolsEnabled && caps.imageEnabled { return .alreadyEnabled }
             return isCustom
-                ? .enable
+                ? agentSettings
                 : .openSettings(tab: .imageGeneration, buttonTitle: L("Open Image Settings"))
 
         case .browserUse:
@@ -85,7 +91,7 @@ public enum CapabilityRequestActions {
                     )
                 )
             }
-            return .enable
+            return agentSettings
 
         case .computerUse:
             if caps.toolsEnabled && caps.computerUseEnabled { return .alreadyEnabled }
@@ -96,7 +102,7 @@ public enum CapabilityRequestActions {
                     )
                 )
             }
-            return .enable
+            return agentSettings
 
         case .appleScript:
             if !ModelPickerItemCache.shared.hasReadyAppleScriptModel {
@@ -106,9 +112,7 @@ public enum CapabilityRequestActions {
                 )
             }
             if caps.toolsEnabled && caps.appleScriptEnabled { return .alreadyEnabled }
-            return isCustom
-                ? .enable
-                : .openSettings(tab: .agents, buttonTitle: L("Open Agent Settings"))
+            return agentSettings
 
         case .spawn:
             if caps.toolsEnabled && caps.spawnDelegationEnabled,
@@ -116,45 +120,8 @@ public enum CapabilityRequestActions {
             {
                 return .alreadyEnabled
             }
-            // Spawn always needs target selection alongside the toggle, so
-            // route to settings rather than half-enabling it.
-            return .openSettings(tab: .agents, buttonTitle: L("Open Agent Settings"))
+            return agentSettings
         }
-    }
-
-    /// Perform the one-click enable for `.enable`. Returns true when the
-    /// toggle was applied; false when the agent could not be mutated
-    /// (deleted, built-in) — the card falls back to opening settings.
-    @discardableResult
-    public static func enable(kind: DormantCapability.Kind, agentId: UUID) -> Bool {
-        guard var agent = AgentManager.shared.agent(for: agentId), !agent.isBuiltIn else {
-            return false
-        }
-        switch kind {
-        case .tools:
-            agent.toolsEnabled = true
-        case .webSearch:
-            agent.toolsEnabled = true
-            agent.settings.webSearchEnabled = true
-        case .image:
-            agent.toolsEnabled = true
-            agent.settings.imageEnabled = true
-        case .browserUse:
-            agent.toolsEnabled = true
-            agent.settings.browserUseEnabled = true
-        case .computerUse:
-            agent.toolsEnabled = true
-            agent.settings.computerUseEnabled = true
-        case .appleScript:
-            agent.toolsEnabled = true
-            agent.settings.appleScriptEnabled = true
-        case .spawn:
-            // Handled via settings (needs target selection); never
-            // one-click. Kept exhaustive so a new kind forces a decision.
-            return false
-        }
-        AgentManager.shared.update(agent)
-        return true
     }
 
     /// Open the Management window on `tab`, deep-linked to this agent

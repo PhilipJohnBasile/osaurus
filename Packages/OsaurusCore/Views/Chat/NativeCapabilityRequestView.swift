@@ -25,7 +25,6 @@ final class NativeCapabilityRequestView: NSView {
     private var kind: DormantCapability.Kind = .tools
     private var agentId: UUID = Agent.defaultId
     private var resolvedAction: CapabilityRequestActions.Action = .alreadyEnabled
-    private var didEnable = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -90,9 +89,7 @@ final class NativeCapabilityRequestView: NSView {
         // Re-resolve on every configure so scroll-back reflects the LIVE
         // state — a card enabled last week renders as already-enabled, not
         // as a stale offer.
-        if !didEnable {
-            resolvedAction = CapabilityRequestActions.resolve(kind: kind, agentId: agentId)
-        }
+        resolvedAction = CapabilityRequestActions.resolve(kind: kind, agentId: agentId)
 
         layer?.backgroundColor = NSColor(theme.accentColor).withAlphaComponent(0.06).cgColor
 
@@ -110,7 +107,7 @@ final class NativeCapabilityRequestView: NSView {
         detailLabel.font = NSFont.systemFont(ofSize: CGFloat(theme.captionSize) - 1)
         detailLabel.textColor = NSColor(theme.tertiaryText)
 
-        apply(action: didEnable ? .alreadyEnabled : resolvedAction, reason: payload.reason)
+        apply(action: resolvedAction, reason: payload.reason)
     }
 
     private var symbolName: String {
@@ -131,9 +128,7 @@ final class NativeCapabilityRequestView: NSView {
             titleLabel.stringValue = String(
                 format: L("%@ is enabled"), kind.displayName)
             if kind.autoResumesAfterEnable {
-                detailLabel.stringValue = didEnable
-                    ? L("Send your request again to use it.")
-                    : L("This capability is ready to use.")
+                detailLabel.stringValue = L("This capability is ready to use.")
                 actionButton.isHidden = true
             } else {
                 // Machine-operating capabilities never auto-resume; the
@@ -143,14 +138,6 @@ final class NativeCapabilityRequestView: NSView {
                 actionButton.isHidden = false
                 actionButton.title = L("Retry request")
             }
-
-        case .enable:
-            titleLabel.stringValue = String(
-                format: L("This needs %@"), kind.displayName)
-            detailLabel.stringValue =
-                reason ?? L("Enable it for this agent to continue.")
-            actionButton.isHidden = false
-            actionButton.title = L("Enable")
 
         case .openSettings(_, let buttonTitle):
             titleLabel.stringValue = String(
@@ -169,7 +156,8 @@ final class NativeCapabilityRequestView: NSView {
     }
 
     @objc private func actionTapped() {
-        if didEnable || resolvedAction == .alreadyEnabled {
+        switch resolvedAction {
+        case .alreadyEnabled:
             // "Retry request" for a machine-operating capability.
             NotificationCenter.default.post(
                 name: .capabilityRequestRetry,
@@ -179,23 +167,10 @@ final class NativeCapabilityRequestView: NSView {
                     "capability": kind.rawValue,
                 ]
             )
-            return
-        }
-        switch resolvedAction {
-        case .enable:
-            if CapabilityRequestActions.enable(kind: kind, agentId: agentId) {
-                didEnable = true
-                apply(action: .alreadyEnabled, reason: nil)
-            } else {
-                // Agent vanished or is built-in after all — fall back to
-                // the settings surface instead of a dead button.
-                CapabilityRequestActions.openSettings(
-                    tab: .agents, agentId: agentId, highlighting: kind)
-            }
         case .openSettings(let tab, _):
             CapabilityRequestActions.openSettings(
                 tab: tab, agentId: agentId, highlighting: kind)
-        case .alreadyEnabled, .explainOnly:
+        case .explainOnly:
             break
         }
     }

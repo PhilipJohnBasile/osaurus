@@ -5681,6 +5681,12 @@ final class ChatSession: ObservableObject {
                     // This prevents a large display artifact from being re-prefilled
                     // through the model on the next agent-loop iteration.
                     var toolCardOverrides: [String: String] = [:]
+                    // Blocked-by-consent calls this run. The first one
+                    // attaches the enable card; the loop then CONTINUES so
+                    // the model can tell the user what it will do once
+                    // enabled. The cap ends the run if the model keeps
+                    // retrying tools instead of speaking.
+                    var consentBlockedCallCount = 0
 
                     // Build the matching tool-result turn for a call. Every
                     // assistant `tool_use` MUST be paired with a tool turn
@@ -5981,13 +5987,15 @@ final class ChatSession: ObservableObject {
                         _ inv: ServiceToolInvocation,
                         callId: String
                     ) -> AgentLoopToolExecution {
+                        consentBlockedCallCount += 1
                         let envelope = ToolEnvelope.failure(
                             kind: .rejected,
                             message:
                                 "Tools are turned off for this agent, so `\(inv.toolName)` "
-                                + "was not run. The user has been shown a card to enable "
-                                + "Tools — tell them briefly what you will do once it is "
-                                + "enabled, then stop and wait for their decision.",
+                                + "was not run. The user has been shown a card that opens "
+                                + "the setting. Do not call any other tool now: reply with "
+                                + "one short sentence telling the user what you will do "
+                                + "once Tools is enabled, then stop and wait.",
                             tool: inv.toolName,
                             retryable: false
                         )
@@ -5996,7 +6004,7 @@ final class ChatSession: ObservableObject {
                                 turn.role == .assistant
                                     && (turn.toolCalls?.contains { $0.id == callId } ?? false)
                             }) ?? assistantTurn
-                        if owner.capabilityPrompt == nil {
+                        if owner.capabilityPrompt == nil, self.pendingCapabilityRequest == nil {
                             owner.capabilityPrompt = RequestCapabilityTool.Payload(
                                 capability: .tools,
                                 reason: nil,
@@ -6007,10 +6015,20 @@ final class ChatSession: ObservableObject {
                                 turnId: owner.id
                             )
                             self.isDirty = true
+                            self.rebuildVisibleBlocks()
                         }
-                        self.turns.append(recordToolTurn(envelope, callId: callId))
-                        self.rebuildVisibleBlocks()
-                        return AgentLoopToolExecution(result: envelope, endRun: true)
+                        // Turn recording is the loop's job on the non-endRun
+                        // path (serial append / onBatchComplete) — appending
+                        // here too would double the tool turn. The endRun
+                        // backstop (model keeps retrying tools instead of
+                        // answering) skips the loop's recording, so it pairs
+                        // the tool_use itself like complete/clarify do.
+                        let endRun = consentBlockedCallCount >= 3
+                        if endRun {
+                            self.turns.append(recordToolTurn(envelope, callId: callId))
+                            self.rebuildVisibleBlocks()
+                        }
+                        return AgentLoopToolExecution(result: envelope, endRun: endRun)
                     }
 
                     @MainActor
