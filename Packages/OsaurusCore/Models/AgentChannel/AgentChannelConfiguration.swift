@@ -12,6 +12,7 @@ enum AgentChannelKind: String, Codable, CaseIterable, Sendable {
     case slack
     case telegram
     case imessage
+    case whatsapp
     case customHTTP = "custom_http"
 }
 
@@ -580,6 +581,7 @@ struct AgentChannelConnection: Codable, Equatable, Identifiable, Sendable {
     static let nativeSlackConnectionId = "slack"
     static let nativeTelegramConnectionId = "telegram"
     static let nativeIMessageConnectionId = "imessage"
+    static let nativeWhatsAppConnectionId = "whatsapp"
 
     var id: String
     var name: String

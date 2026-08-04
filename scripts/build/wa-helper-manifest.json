@@ -1,0 +1,12 @@
+{
+  "artifact": "osaurus-wa",
+  "version": "0.1.0",
+  "upstreamRepository": "https://github.com/osaurus-ai/osaurus",
+  "license": "MIT",
+  "archiveURL": "https://github.com/osaurus-ai/osaurus/releases/download/wa-helper-v0.1.0/osaurus-wa-macos.zip",
+  "archiveSHA256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "executableName": "osaurus-wa",
+  "executableSHA256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "executableRequiredArchitectures": ["arm64"],
+  "note": "Digests are unpinned until the first osaurus-wa release is published. Until then the WhatsApp channel only spawns a dev-built helper via OSAURUS_WA_PATH (DEBUG builds). Build locally with `make wa-helper`."
+}

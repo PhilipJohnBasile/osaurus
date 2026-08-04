@@ -1469,6 +1469,10 @@ public struct SystemPromptComposer: Sendable {
         if !imessage.readableChatIds.isEmpty || !imessage.writableChatIds.isEmpty {
             return true
         }
+        let whatsapp = WhatsAppConnectionService.shared.configuration()
+        if !whatsapp.readableChatIds.isEmpty || !whatsapp.writableChatIds.isEmpty {
+            return true
+        }
         return false
     }
 

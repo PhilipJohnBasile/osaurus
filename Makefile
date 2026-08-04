@@ -10,7 +10,7 @@ WORKSPACE := osaurus.xcworkspace
 DERIVED := build/DerivedData
 XCODEBUILD_FLAGS ?=
 
-.PHONY: help cli app install-cli serve status test ci-test computer-use-evidence clean bench-setup bench-ingest bench-ingest-chunks bench-run bench evals-prep evals evals-verbose evals-report evals-all evals-all-verbose evals-all-report evals-deterministic evals-capture-screen evals-loop evals-matrix evals-diff evals-contribute evals-compat evals-pr-report evals-pr-report-baseline evals-watcher-report evals-scoreboard
+.PHONY: help cli app install-cli serve status test ci-test computer-use-evidence clean wa-helper wa-helper-release bench-setup bench-ingest bench-ingest-chunks bench-run bench evals-prep evals evals-verbose evals-report evals-all evals-all-verbose evals-all-report evals-deterministic evals-capture-screen evals-loop evals-matrix evals-diff evals-contribute evals-compat evals-pr-report evals-pr-report-baseline evals-watcher-report evals-scoreboard
 
 help:
 	@echo "Targets:"
@@ -45,6 +45,8 @@ help:
 	@echo "  evals-test     Run the OsaurusEvals harness unit tests (deterministic, token-free)"
 	@echo "  ci-test        Reproduce the CI test-core job locally (xcodebuild + xcbeautify)"
 	@echo "  computer-use-evidence Run local Computer Use proof lane into build/computer-use-evidence/"
+	@echo "  wa-helper      Build the WhatsApp bridge helper (osaurus-wa) into build/ (needs Go)"
+	@echo "  wa-helper-release  Package build/osaurus-wa-macos.zip and print pin digests"
 	@echo "  clean          Remove DerivedData build output"
 
 cli:
@@ -84,6 +86,36 @@ serve: install-cli
 
 status:
 	osaurus status
+
+# WhatsApp Web bridge helper (whatsmeow). Dev lane: build locally and point
+# the app at it with OSAURUS_WA_PATH (DEBUG builds only), mirroring the imsg
+# helper's OSAURUS_IMSG_PATH override. Release distribution uses a pinned
+# download manifest instead (scripts/build/wa-helper-manifest.json).
+wa-helper:
+	@command -v go >/dev/null 2>&1 || { \
+		echo "Go toolchain not found. Install with: brew install go"; \
+		exit 1; \
+	}
+	@echo "Building osaurus-wa (WhatsApp bridge helper)…"
+	@mkdir -p build
+	cd helpers/osaurus-wa && go build -trimpath -o ../../build/osaurus-wa .
+	@echo "Built build/osaurus-wa ($$(build/osaurus-wa version))"
+
+# Reproducible release archive for the pinned-helper download lane. Produces
+# build/osaurus-wa-macos.zip plus the SHA-256 digests to copy into
+# scripts/build/wa-helper-manifest.json and WhatsAppRuntimeAssets.swift when
+# rotating pins (see docs/CHANNEL_RELEASE_RUNBOOK_WHATSAPP.md).
+wa-helper-release: wa-helper
+	@echo "Packaging osaurus-wa release archive…"
+	@rm -f build/osaurus-wa-macos.zip
+	cd build && /usr/bin/ditto -c -k osaurus-wa osaurus-wa-macos.zip
+	@echo ""
+	@echo "executableSHA256: $$(shasum -a 256 build/osaurus-wa | cut -d' ' -f1)"
+	@echo "archiveSHA256:    $$(shasum -a 256 build/osaurus-wa-macos.zip | cut -d' ' -f1)"
+	@echo ""
+	@echo "Upload build/osaurus-wa-macos.zip to the wa-helper-v$$(build/osaurus-wa version) release tag,"
+	@echo "then pin both digests in scripts/build/wa-helper-manifest.json and"
+	@echo "Packages/OsaurusCore/Services/WhatsApp/WhatsAppRuntimeAssets.swift."
 
 test:
 	@echo "Running OsaurusCore tests…"

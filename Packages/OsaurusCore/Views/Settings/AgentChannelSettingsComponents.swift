@@ -21,6 +21,7 @@ extension AgentChannelKind {
         case .slack: "Slack"
         case .telegram: "Telegram"
         case .imessage: "iMessage"
+        case .whatsapp: "WhatsApp"
         case .customHTTP: "Custom HTTP"
         }
     }
@@ -31,6 +32,7 @@ extension AgentChannelKind {
         case .slack: "number"
         case .telegram: "paperplane.fill"
         case .imessage: "message.fill"
+        case .whatsapp: "phone.bubble.fill"
         case .customHTTP: "curlybraces"
         }
     }
@@ -43,6 +45,7 @@ extension AgentChannelKind {
         case .slack: [Color(hex: "611F69"), Color(hex: "4A154B")]
         case .telegram: [Color(hex: "2AABEE"), Color(hex: "1E96C8")]
         case .imessage: [Color(hex: "34C759"), Color(hex: "248A3D")]
+        case .whatsapp: [Color(hex: "25D366"), Color(hex: "128C7E")]
         case .customHTTP: [Color(hex: "64748B"), Color(hex: "475569")]
         }
     }

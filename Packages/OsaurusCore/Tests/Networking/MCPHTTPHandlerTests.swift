@@ -36,6 +36,7 @@ struct MCPHTTPHandlerTests {
         "agent_channel_imessage_send_effect",
         "agent_channel_imessage_create_poll",
         "agent_channel_imessage_manage_group",
+        "agent_channel_whatsapp_send_attachment",
         "agent_channel_publish",
     ]
 

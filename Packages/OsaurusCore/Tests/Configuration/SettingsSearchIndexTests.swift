@@ -122,6 +122,9 @@ struct SettingsSearchIndexTests {
         let telegramHits = SettingsSearchIndex.search("telegram bot token")
         #expect(telegramHits.contains { $0.id == "agentChannels.telegram" && $0.tab == .agentChannels })
 
+        let whatsappHits = SettingsSearchIndex.search("whatsapp qr code")
+        #expect(whatsappHits.contains { $0.id == "agentChannels.whatsapp" && $0.tab == .agentChannels })
+
         let killSwitchHits = SettingsSearchIndex.search("kill switch")
         #expect(killSwitchHits.contains { $0.id == "agentChannels.globalWrites" && $0.tab == .agentChannels })
     }

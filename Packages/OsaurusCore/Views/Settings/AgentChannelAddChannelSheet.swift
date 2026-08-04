@@ -34,6 +34,8 @@ struct AgentChannelAddChannelSheet: View {
                 TelegramSettingsView(onBack: goBack)
             case .imessage:
                 IMessageSettingsView(onBack: goBack)
+            case .whatsapp:
+                WhatsAppSettingsView(onBack: goBack)
             case .customHTTP:
                 AgentChannelCustomConnectionSheet(
                     connection: nil,

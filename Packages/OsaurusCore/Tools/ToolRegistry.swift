@@ -371,6 +371,8 @@ public final class ToolRegistry: ObservableObject {
         AgentChannelIMessageSendEffectTool(),
         AgentChannelIMessageCreatePollTool(),
         AgentChannelIMessageManageGroupTool(),
+        // WhatsApp-only media send; same family-wide external deny list.
+        AgentChannelWhatsAppSendAttachmentTool(),
         // Proactive, binding-scoped publish. Joins the family deny list
         // below automatically, so it can never run from external surfaces.
         AgentChannelPublishTool(),
@@ -396,6 +398,7 @@ public final class ToolRegistry: ObservableObject {
         "agent_channel_imessage_send_effect",
         "agent_channel_imessage_create_poll",
         "agent_channel_imessage_manage_group",
+        "agent_channel_whatsapp_send_attachment",
         "agent_channel_publish",
     ]
 
