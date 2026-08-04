@@ -18,6 +18,8 @@ enum WhatsAppRPCMethod {
     static let status = "status"
     static let loginStart = "login.start"
     static let loginCancel = "login.cancel"
+    static let loginPasskeyResponse = "login.passkey_response"
+    static let loginPasskeyConfirm = "login.passkey_confirm"
     static let logout = "logout"
     static let listChats = "chats.list"
     static let send = "send"
@@ -165,6 +167,13 @@ struct WhatsAppNormalizedInboundEvent: Equatable, Sendable {
 enum WhatsAppPairingEvent: Equatable, Sendable {
     /// A fresh QR code string to render (codes rotate roughly every 20s).
     case qr(code: String)
+    /// WhatsApp's passkey linking gate fired after the scan: the account
+    /// needs a WebAuthn assertion. The payload is the JSON-encoded request
+    /// options; answer with `submitPasskeyResponse(_:)`.
+    case passkeyChallenge(publicKeyJSON: String)
+    /// The passkey exchange produced a verification code the user must
+    /// match against their phone; answer with `confirmPasskeyCode()`.
+    case passkeyCode(code: String)
     case success(selfNumber: String?)
     case timeout
     case failed(String)
@@ -297,6 +306,21 @@ final class WhatsAppConnectionService: @unchecked Sendable {
                 if let code = params["code"] as? String, !code.isEmpty {
                     continuation.yield(.qr(code: code))
                 }
+            case WhatsAppRPCNotification.passkey:
+                // Non-terminal: the pairing session stays open while the
+                // user completes the WebAuthn round-trip.
+                switch params["stage"] as? String {
+                case "challenge":
+                    if let publicKey = params["public_key_json"] as? String, !publicKey.isEmpty {
+                        continuation.yield(.passkeyChallenge(publicKeyJSON: publicKey))
+                    }
+                case "confirm":
+                    if let code = params["code"] as? String, !code.isEmpty {
+                        continuation.yield(.passkeyCode(code: code))
+                    }
+                default:
+                    break
+                }
             case WhatsAppRPCNotification.login:
                 switch params["status"] as? String {
                 case "success":
@@ -328,6 +352,34 @@ final class WhatsAppConnectionService: @unchecked Sendable {
             throw error
         }
         return stream
+    }
+
+    /// Forward the WebAuthn assertion JSON (from `cred.toJSON()` in a
+    /// web.whatsapp.com browser tab) to the helper during a passkey-gated
+    /// pairing. The pairing stream then continues with either a
+    /// `.passkeyCode` event or a terminal result.
+    func submitPasskeyResponse(_ responseJSON: String) async throws {
+        let trimmed = responseJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw WhatsAppConnectionServiceError.helper(
+                "Paste the passkey response JSON from the browser first."
+            )
+        }
+        _ = try await callHelper(
+            method: WhatsAppRPCMethod.loginPasskeyResponse,
+            params: ["response_json": trimmed],
+            timeout: 45
+        )
+    }
+
+    /// Confirm that the on-screen passkey code matches the one on the phone,
+    /// finishing the passkey pairing exchange.
+    func confirmPasskeyCode() async throws {
+        _ = try await callHelper(
+            method: WhatsAppRPCMethod.loginPasskeyConfirm,
+            params: [:],
+            timeout: 45
+        )
     }
 
     func cancelPairing() async {

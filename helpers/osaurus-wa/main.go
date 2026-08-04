@@ -18,12 +18,14 @@ import (
 	"path/filepath"
 )
 
-const helperVersion = "0.1.0"
+const helperVersion = "0.2.0"
 
 var rpcMethods = []string{
 	"status",
 	"login.start",
 	"login.cancel",
+	"login.passkey_response",
+	"login.passkey_confirm",
 	"logout",
 	"chats.list",
 	"send",

@@ -1,9 +1,33 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
+
+// The passkey response RPC must reject malformed input up front (-32602)
+// before anything reaches the wire: missing param, non-JSON payload, and
+// assertions missing required WebAuthn fields.
+func TestHandlePasskeyResponseValidation(t *testing.T) {
+	b := &bridge{}
+	cases := map[string]string{
+		"missing params":       ``,
+		"missing response":     `{}`,
+		"payload not json":     `{"response_json":"not json"}`,
+		"incomplete assertion": `{"response_json":"{\"id\":\"\",\"rawId\":\"\",\"response\":{}}"}`,
+	}
+	for name, params := range cases {
+		var raw json.RawMessage
+		if params != "" {
+			raw = json.RawMessage(params)
+		}
+		result, rpcErr := b.handlePasskeyResponse(raw)
+		if result != nil || rpcErr == nil || rpcErr.Code != -32602 {
+			t.Errorf("%s: expected -32602 refusal, got result=%v err=%+v", name, result, rpcErr)
+		}
+	}
+}
 
 // Helper-written media paths must never traverse or hide: no separators,
 // no leading dots, bounded length.

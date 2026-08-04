@@ -68,6 +68,12 @@ struct WhatsAppSettingsView: View {
     @State private var pairingQRCode: String?
     @State private var pairingTask: Task<Void, Never>?
 
+    // Passkey linking gate state (WhatsApp's WebAuthn check after the scan).
+    @State private var passkeyChallengeJSON: String?
+    @State private var passkeyConfirmCode: String?
+    @State private var passkeyResponseText = ""
+    @State private var passkeyBusy = false
+
     private var theme: ThemeProtocol { themeManager.currentTheme }
 
     private struct DiscoveredChat: Identifiable, Equatable {
@@ -447,7 +453,11 @@ struct WhatsAppSettingsView: View {
 
     private var pairingCard: some View {
         VStack(spacing: 10) {
-            if let code = pairingQRCode, let image = Self.qrImage(for: code, side: 220) {
+            if let code = passkeyConfirmCode {
+                passkeyConfirmContent(code: code)
+            } else if passkeyChallengeJSON != nil {
+                passkeyChallengeContent
+            } else if let code = pairingQRCode, let image = Self.qrImage(for: code, side: 220) {
                 Image(nsImage: image)
                     .interpolation(.none)
                     .resizable()
@@ -485,6 +495,139 @@ struct WhatsAppSettingsView: View {
         )
     }
 
+    // MARK: - Passkey linking gate
+
+    /// The WebAuthn assertion must be produced by the account's own passkey
+    /// bound to the web.whatsapp.com origin, which a third-party app cannot
+    /// request directly. The user runs one command in a web.whatsapp.com
+    /// browser tab (approving the passkey prompt there) and pastes the JSON
+    /// back — the same flow other WhatsApp bridges use for this gate.
+    private var passkeyChallengeContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(L("This account is protected by a passkey"), systemImage: "person.badge.key.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(theme.primaryText)
+            Text(
+                "WhatsApp requires a passkey check to link a new device. In a browser, open web.whatsapp.com, open the developer console (Cmd-Opt-J or F12), run the copied command, approve the passkey prompt, then paste the JSON line it prints below.",
+                bundle: .module
+            )
+            .font(.system(size: 10))
+            .foregroundColor(theme.tertiaryText)
+            .fixedSize(horizontal: false, vertical: true)
+
+            AgentChannelSheetActionButton(
+                title: L("Copy Browser Command"),
+                busyTitle: L("..."),
+                isBusy: false,
+                action: copyPasskeyCommand
+            )
+
+            TextEditor(text: $passkeyResponseText)
+                .font(.system(size: 10, design: .monospaced))
+                .frame(height: 64)
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(theme.tertiaryBackground.opacity(0.6))
+                )
+
+            AgentChannelSheetActionButton(
+                title: L("Submit Passkey Response"),
+                busyTitle: L("Submitting..."),
+                isBusy: passkeyBusy,
+                isPrimary: true,
+                action: submitPasskeyResponse
+            )
+            .disabled(
+                passkeyResponseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func passkeyConfirmContent(code: String) -> some View {
+        VStack(spacing: 8) {
+            Label(L("Check your phone"), systemImage: "iphone.badge.play")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(theme.primaryText)
+            Text(code)
+                .font(.system(size: 22, weight: .bold, design: .monospaced))
+                .foregroundColor(theme.primaryText)
+            Text(
+                "Confirm this code matches the one WhatsApp shows on your phone, then continue.",
+                bundle: .module
+            )
+            .font(.system(size: 10))
+            .foregroundColor(theme.tertiaryText)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            AgentChannelSheetActionButton(
+                title: L("The Codes Match — Continue"),
+                busyTitle: L("Confirming..."),
+                isBusy: passkeyBusy,
+                isPrimary: true,
+                action: confirmPasskeyCode
+            )
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func copyPasskeyCommand() {
+        guard let optionsJSON = passkeyChallengeJSON else { return }
+        let command = """
+            const opts = PublicKeyCredential.parseRequestOptionsFromJSON(\(optionsJSON));
+            const cred = await navigator.credentials.get({ publicKey: opts });
+            console.log(JSON.stringify(cred.toJSON()));
+            """
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+        showStatus(L("Browser command copied. Run it in a web.whatsapp.com console tab."), isError: false)
+    }
+
+    private func submitPasskeyResponse() {
+        guard !passkeyBusy else { return }
+        passkeyBusy = true
+        let response = passkeyResponseText
+        Task {
+            do {
+                try await WhatsAppConnectionService.shared.submitPasskeyResponse(response)
+                await MainActor.run {
+                    passkeyBusy = false
+                    showStatus(L("Passkey response accepted — finishing the link..."), isError: false)
+                }
+            } catch {
+                await MainActor.run {
+                    passkeyBusy = false
+                    showStatus(error.localizedDescription, isError: true)
+                }
+            }
+        }
+    }
+
+    private func confirmPasskeyCode() {
+        guard !passkeyBusy else { return }
+        passkeyBusy = true
+        Task {
+            do {
+                try await WhatsAppConnectionService.shared.confirmPasskeyCode()
+                await MainActor.run { passkeyBusy = false }
+            } catch {
+                await MainActor.run {
+                    passkeyBusy = false
+                    showStatus(error.localizedDescription, isError: true)
+                }
+            }
+        }
+    }
+
+    private func resetPasskeyState() {
+        passkeyChallengeJSON = nil
+        passkeyConfirmCode = nil
+        passkeyResponseText = ""
+        passkeyBusy = false
+    }
+
     /// Render one rotating pairing code as a QR image via CoreImage.
     private static func qrImage(for code: String, side: CGFloat) -> NSImage? {
         guard let data = code.data(using: .utf8),
@@ -505,6 +648,7 @@ struct WhatsAppSettingsView: View {
         guard !isPairing else { return }
         isPairing = true
         pairingQRCode = nil
+        resetPasskeyState()
         clearStatus()
         pairingTask = Task {
             do {
@@ -515,9 +659,17 @@ struct WhatsAppSettingsView: View {
                         switch event {
                         case .qr(let code):
                             pairingQRCode = code
+                        case .passkeyChallenge(let publicKeyJSON):
+                            pairingQRCode = nil
+                            passkeyChallengeJSON = publicKeyJSON
+                            passkeyConfirmCode = nil
+                        case .passkeyCode(let code):
+                            pairingQRCode = nil
+                            passkeyConfirmCode = code
                         case .success(let selfNumber):
                             isPairing = false
                             pairingQRCode = nil
+                            resetPasskeyState()
                             AgentChannelCredentialAvailability.shared.invalidate(.whatsapp)
                             if let selfNumber, !selfNumber.isEmpty {
                                 showStatus(
@@ -532,6 +684,7 @@ struct WhatsAppSettingsView: View {
                         case .timeout:
                             isPairing = false
                             pairingQRCode = nil
+                            resetPasskeyState()
                             showStatus(
                                 L("Pairing timed out before the QR code was scanned. Start again when ready."),
                                 isError: true
@@ -539,6 +692,7 @@ struct WhatsAppSettingsView: View {
                         case .failed(let message):
                             isPairing = false
                             pairingQRCode = nil
+                            resetPasskeyState()
                             showStatus(message, isError: true)
                         }
                     }
@@ -547,6 +701,7 @@ struct WhatsAppSettingsView: View {
                 await MainActor.run {
                     isPairing = false
                     pairingQRCode = nil
+                    resetPasskeyState()
                     showStatus(error.localizedDescription, isError: true)
                 }
             }
@@ -555,6 +710,7 @@ struct WhatsAppSettingsView: View {
                 if isPairing {
                     isPairing = false
                     pairingQRCode = nil
+                    resetPasskeyState()
                 }
             }
         }
@@ -566,6 +722,7 @@ struct WhatsAppSettingsView: View {
         pairingTask = nil
         isPairing = false
         pairingQRCode = nil
+        resetPasskeyState()
         Task { await WhatsAppConnectionService.shared.cancelPairing() }
     }
 

@@ -100,7 +100,9 @@ struct WhatsAppRPCFramingTests {
     /// rename must fail this lock instead of degrading to "method not found".
     @Test func dispatchedMethodNamesMatchHelperSurface() {
         let advertised: Set<String> = [
-            "status", "login.start", "login.cancel", "logout", "chats.list",
+            "status", "login.start", "login.cancel",
+            "login.passkey_response", "login.passkey_confirm",
+            "logout", "chats.list",
             "send", "send.attachment", "message.edit", "message.revoke",
             "react", "typing", "read", "watch.subscribe",
         ]
@@ -108,6 +110,8 @@ struct WhatsAppRPCFramingTests {
             WhatsAppRPCMethod.status,
             WhatsAppRPCMethod.loginStart,
             WhatsAppRPCMethod.loginCancel,
+            WhatsAppRPCMethod.loginPasskeyResponse,
+            WhatsAppRPCMethod.loginPasskeyConfirm,
             WhatsAppRPCMethod.logout,
             WhatsAppRPCMethod.listChats,
             WhatsAppRPCMethod.send,
@@ -121,6 +125,50 @@ struct WhatsAppRPCFramingTests {
         ]
         for method in dispatched {
             #expect(advertised.contains(method), "\(method) is not an osaurus-wa RPC method")
+        }
+    }
+
+    /// WhatsApp's passkey linking gate: `passkey` notifications are
+    /// non-terminal pairing events (the stream must stay open through the
+    /// WebAuthn round-trip), and the response/confirm wrappers dispatch to
+    /// the helper's passkey methods with the pasted JSON trimmed.
+    @Test func pairingStreamsPasskeyStagesWithoutTerminating() async throws {
+        let transport = FakeWhatsAppTransport()
+        let service = WhatsAppConnectionService(transport: transport)
+        transport.setResponse(for: "login.start", result: ["started": true])
+
+        let stream = try await service.startPairing()
+        transport.emitNotification(method: "qr", params: ["code": "2@abc", "timeout_ms": 60000])
+        transport.emitNotification(
+            method: "passkey",
+            params: ["stage": "challenge", "public_key_json": "{\"rpId\":\"whatsapp.com\"}"]
+        )
+        transport.emitNotification(method: "passkey", params: ["stage": "confirm", "code": "ABCD-EFGH"])
+        transport.emitNotification(
+            method: "login", params: ["status": "success", "self_number": "+15550001111"]
+        )
+
+        var events: [WhatsAppPairingEvent] = []
+        for await event in stream { events.append(event) }
+        #expect(
+            events == [
+                .qr(code: "2@abc"),
+                .passkeyChallenge(publicKeyJSON: "{\"rpId\":\"whatsapp.com\"}"),
+                .passkeyCode(code: "ABCD-EFGH"),
+                .success(selfNumber: "+15550001111"),
+            ]
+        )
+
+        try await service.submitPasskeyResponse(" {\"id\":\"x\"} \n")
+        let responseCalls = transport.calls(for: "login.passkey_response")
+        #expect(responseCalls.count == 1)
+        #expect(responseCalls.first?["response_json"] as? String == "{\"id\":\"x\"}")
+
+        try await service.confirmPasskeyCode()
+        #expect(transport.calls(for: "login.passkey_confirm").count == 1)
+
+        await #expect(throws: WhatsAppConnectionServiceError.self) {
+            try await service.submitPasskeyResponse("   ")
         }
     }
 

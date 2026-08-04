@@ -146,6 +146,9 @@ enum WhatsAppRPCNotification {
     static let message = "message"
     /// Rotating QR pairing code (`code`, `timeout_ms`) during `login.start`.
     static let qr = "qr"
+    /// Passkey linking gate progress during `login.start`
+    /// (`stage`: challenge / confirm). Non-terminal.
+    static let passkey = "passkey"
     /// Terminal pairing result (`status`: success / timeout / error).
     static let login = "login"
     /// Connection state changes (`state`: connected / disconnected).

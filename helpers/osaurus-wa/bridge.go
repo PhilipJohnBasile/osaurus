@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -31,10 +32,20 @@ type bridge struct {
 
 	mu            sync.Mutex
 	watching      bool
-	loginCancel   context.CancelFunc
 	downloadMedia bool
 	maxMediaBytes int64
 	mediaDir      string
+
+	// QR-pairing session state (guarded by mu). The bridge owns login event
+	// handling instead of whatsmeow's GetQRChannel because the passkey
+	// linking flow (WhatsApp's SHORTCAKE gate) emits non-terminal events and
+	// can outlive the QR rotation window; GetQRChannel disconnects as soon
+	// as the code pool drains, which would kill a passkey dance in flight.
+	loginActive  bool
+	loginHandler uint32
+	loginQRStop  chan struct{}
+	loginTimer   *time.Timer
+	passkeyDance bool
 }
 
 func newBridge(storeDir string) (*bridge, error) {
@@ -63,13 +74,7 @@ func newBridge(storeDir string) (*bridge, error) {
 }
 
 func (b *bridge) close() {
-	b.mu.Lock()
-	cancel := b.loginCancel
-	b.loginCancel = nil
-	b.mu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
+	b.finishLogin(nil)
 	if b.client != nil {
 		b.client.Disconnect()
 	}
@@ -151,6 +156,10 @@ func (b *bridge) handle(method string, params json.RawMessage) (map[string]any, 
 		return b.handleLoginStart()
 	case "login.cancel":
 		return b.handleLoginCancel()
+	case "login.passkey_response":
+		return b.handlePasskeyResponse(params)
+	case "login.passkey_confirm":
+		return b.handlePasskeyConfirm()
 	case "logout":
 		return b.handleLogout()
 	case "chats.list":
@@ -191,78 +200,259 @@ func (b *bridge) handleStatus() (map[string]any, *rpcError) {
 
 // handleLoginStart begins QR pairing. Returns immediately; QR codes stream
 // as `qr` notifications (~20s rotation) until a terminal `login`
-// notification (success / timeout / error).
+// notification (success / timeout / error). Accounts behind WhatsApp's
+// passkey linking gate additionally stream `passkey` notifications
+// (stage: challenge / confirm) that the app answers via
+// `login.passkey_response` and `login.passkey_confirm`.
 func (b *bridge) handleLoginStart() (map[string]any, *rpcError) {
 	if b.client.Store.ID != nil {
 		return map[string]any{"already_linked": true, "self_jid": b.selfJID()}, nil
 	}
 	b.mu.Lock()
-	if b.loginCancel != nil {
+	if b.loginActive {
 		b.mu.Unlock()
 		return map[string]any{"started": true, "already_pairing": true}, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	b.loginCancel = cancel
+	b.loginActive = true
+	b.passkeyDance = false
+	b.loginQRStop = make(chan struct{})
 	b.mu.Unlock()
 
-	qrChan, err := b.client.GetQRChannel(ctx)
-	if err != nil {
-		b.clearLogin()
-		return nil, &rpcError{Code: -32003, Message: "qr channel: " + err.Error()}
-	}
+	b.loginHandler = b.client.AddEventHandler(b.handleLoginEvent)
 	if err := b.client.Connect(); err != nil {
-		b.clearLogin()
+		b.finishLogin(nil)
+		b.client.Disconnect()
 		return nil, &rpcError{Code: -32002, Message: "connect failed: " + err.Error()}
 	}
-	go func() {
-		defer b.clearLogin()
-		for evt := range qrChan {
-			switch evt.Event {
-			case "code":
-				b.writer.notify("qr", map[string]any{
-					"code":       evt.Code,
-					"timeout_ms": evt.Timeout.Milliseconds(),
-				})
-			case "success":
-				b.writer.notify("login", map[string]any{
-					"status":      "success",
-					"self_jid":    b.selfJID(),
-					"self_number": b.selfNumber(),
-				})
-				return
-			case "timeout":
-				b.client.Disconnect()
-				b.writer.notify("login", map[string]any{"status": "timeout"})
-				return
-			default:
-				b.client.Disconnect()
-				b.writer.notify("login", map[string]any{
-					"status": "error",
-					"detail": evt.Event,
-				})
-				return
-			}
-		}
-	}()
+	// Overall watchdog. Generous because the passkey flow includes a manual
+	// browser round-trip; per-code QR rotation is timed separately below.
+	b.loginTimer = time.AfterFunc(10*time.Minute, func() {
+		b.finishLogin(map[string]any{"status": "timeout"})
+	})
 	return map[string]any{"started": true}, nil
 }
 
-func (b *bridge) clearLogin() {
+// finishLogin tears down the pairing session exactly once. A non-nil payload
+// is emitted as the terminal `login` notification; pass nil for silent
+// cleanup (cancel / process shutdown). Non-success terminals disconnect the
+// socket so a dead pairing never lingers.
+func (b *bridge) finishLogin(payload map[string]any) {
 	b.mu.Lock()
-	cancel := b.loginCancel
-	b.loginCancel = nil
+	if !b.loginActive {
+		b.mu.Unlock()
+		return
+	}
+	b.loginActive = false
+	stop := b.loginQRStop
+	b.loginQRStop = nil
+	timer := b.loginTimer
+	b.loginTimer = nil
+	handler := b.loginHandler
+	b.loginHandler = 0
 	b.mu.Unlock()
-	if cancel != nil {
-		cancel()
+
+	if stop != nil {
+		close(stop)
+	}
+	if timer != nil {
+		timer.Stop()
+	}
+	if handler != 0 {
+		// Removing from inside an event handler would deadlock the
+		// dispatcher, so always detach in the background.
+		go b.client.RemoveEventHandler(handler)
+	}
+	if payload != nil {
+		if payload["status"] != "success" {
+			b.client.Disconnect()
+		}
+		b.writer.notify("login", payload)
 	}
 }
 
+// handleLoginEvent drives one pairing session from raw whatsmeow events
+// (registered only while a login is active).
+func (b *bridge) handleLoginEvent(rawEvt any) {
+	b.mu.Lock()
+	active := b.loginActive
+	b.mu.Unlock()
+	if !active {
+		return
+	}
+	switch evt := rawEvt.(type) {
+	case *events.QR:
+		go b.emitLoginQRs(slices.Clone(evt.Codes))
+	case *events.PairSuccess:
+		b.finishLogin(map[string]any{
+			"status":      "success",
+			"self_jid":    evt.ID.String(),
+			"self_number": "+" + evt.ID.User,
+		})
+	case *events.PairError:
+		b.finishLogin(map[string]any{
+			"status": "error",
+			"detail": "pairing failed: " + evt.Error.Error(),
+		})
+	case *events.PairPasskeyRequest:
+		// WhatsApp's passkey gate: the account requires a WebAuthn assertion
+		// before linking completes. QR rotation is over (the phone already
+		// scanned); keep the socket alive and hand the challenge to the app.
+		b.mu.Lock()
+		b.passkeyDance = true
+		stop := b.loginQRStop
+		b.loginQRStop = nil
+		b.mu.Unlock()
+		if stop != nil {
+			close(stop)
+		}
+		publicKeyJSON, err := json.Marshal(evt.PublicKey)
+		if err != nil {
+			b.finishLogin(map[string]any{
+				"status": "error",
+				"detail": "passkey challenge could not be encoded: " + err.Error(),
+			})
+			return
+		}
+		b.writer.notify("passkey", map[string]any{
+			"stage":           "challenge",
+			"public_key_json": string(publicKeyJSON),
+		})
+	case *events.PairPasskeyConfirmation:
+		if evt.SkipHandoffUX {
+			// Relink continuity was proven cryptographically; whatsmeow says
+			// the code display can be skipped, so confirm automatically.
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				if err := b.client.SendPasskeyConfirmation(ctx); err != nil {
+					b.finishLogin(map[string]any{
+						"status": "error",
+						"detail": "passkey confirmation failed: " + err.Error(),
+					})
+				}
+			}()
+			return
+		}
+		b.writer.notify("passkey", map[string]any{
+			"stage": "confirm",
+			"code":  evt.Code,
+		})
+	case *events.PairPasskeyError:
+		b.finishLogin(map[string]any{
+			"status": "error",
+			"detail": "passkey pairing failed: " + evt.Error.Error(),
+		})
+	case *events.QRScannedWithoutMultidevice:
+		b.finishLogin(map[string]any{
+			"status": "error",
+			"detail": "the QR code was scanned by a phone without multidevice enabled",
+		})
+	case *events.ClientOutdated:
+		b.finishLogin(map[string]any{
+			"status": "error",
+			"detail": "err-client-outdated: WhatsApp rejected this helper version; update the osaurus-wa helper",
+		})
+	case *events.Disconnected:
+		b.finishLogin(map[string]any{"status": "timeout"})
+	case *events.ConnectFailure:
+		b.finishLogin(map[string]any{
+			"status": "error",
+			"detail": fmt.Sprintf("connect failure: %s", evt.Reason),
+		})
+	case *events.TemporaryBan:
+		b.finishLogin(map[string]any{
+			"status": "error",
+			"detail": "temporarily banned: " + evt.String(),
+		})
+	case *events.Connected:
+		// Only fires as a pairing terminal when the socket authenticates as
+		// an already-linked device (fresh links go through PairSuccess).
+		if b.client.Store.ID != nil {
+			b.finishLogin(map[string]any{
+				"status":      "success",
+				"self_jid":    b.selfJID(),
+				"self_number": b.selfNumber(),
+			})
+		}
+	}
+}
+
+// emitLoginQRs streams the code pool as `qr` notifications, first code 60s
+// then 20s each, mirroring whatsmeow's own rotation. Draining the pool
+// without a scan times the login out — unless a passkey dance took over
+// (which closes loginQRStop and owns the session lifetime from then on).
+func (b *bridge) emitLoginQRs(codes []string) {
+	for i, code := range codes {
+		b.mu.Lock()
+		stop := b.loginQRStop
+		b.mu.Unlock()
+		if stop == nil {
+			return
+		}
+		timeout := 20 * time.Second
+		if i == 0 {
+			timeout = 60 * time.Second
+		}
+		b.writer.notify("qr", map[string]any{
+			"code":       code,
+			"timeout_ms": timeout.Milliseconds(),
+		})
+		select {
+		case <-time.After(timeout):
+		case <-stop:
+			return
+		}
+	}
+	b.finishLogin(map[string]any{"status": "timeout"})
+}
+
 func (b *bridge) handleLoginCancel() (map[string]any, *rpcError) {
-	b.clearLogin()
+	b.finishLogin(nil)
 	if b.client.Store.ID == nil {
 		b.client.Disconnect()
 	}
 	return map[string]any{"cancelled": true}, nil
+}
+
+type passkeyResponseParams struct {
+	ResponseJSON string `json:"response_json"`
+}
+
+// handlePasskeyResponse forwards the WebAuthn assertion (the JSON produced
+// by `navigator.credentials.get(...)` → `cred.toJSON()` in a
+// web.whatsapp.com browser tab) to the server.
+func (b *bridge) handlePasskeyResponse(params json.RawMessage) (map[string]any, *rpcError) {
+	var p passkeyResponseParams
+	if err := json.Unmarshal(params, &p); err != nil || strings.TrimSpace(p.ResponseJSON) == "" {
+		return nil, &rpcError{Code: -32602, Message: "invalid params: response_json (string) is required"}
+	}
+	var resp types.WebAuthnResponse
+	if err := json.Unmarshal([]byte(p.ResponseJSON), &resp); err != nil {
+		return nil, &rpcError{Code: -32602, Message: "invalid passkey response json: " + err.Error()}
+	}
+	if resp.ID == "" || len(resp.RawID) == 0 || len(resp.Response.Signature) == 0 {
+		return nil, &rpcError{
+			Code:    -32602,
+			Message: "incomplete passkey response json: id, rawId, and response.signature are required",
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := b.client.SendPasskeyResponse(ctx, &resp); err != nil {
+		return nil, &rpcError{Code: -32004, Message: "send passkey response: " + err.Error()}
+	}
+	return map[string]any{"submitted": true}, nil
+}
+
+// handlePasskeyConfirm reports that the user verified the on-screen code
+// matches their phone, finishing the passkey pairing exchange.
+func (b *bridge) handlePasskeyConfirm() (map[string]any, *rpcError) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := b.client.SendPasskeyConfirmation(ctx); err != nil {
+		return nil, &rpcError{Code: -32004, Message: "send passkey confirmation: " + err.Error()}
+	}
+	return map[string]any{"confirmed": true}, nil
 }
 
 func (b *bridge) handleLogout() (map[string]any, *rpcError) {

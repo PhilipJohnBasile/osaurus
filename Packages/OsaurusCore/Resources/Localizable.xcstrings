@@ -130,62 +130,6 @@
         }
       }
     },
-    "+15551234567 or 1203630XXXX@g.us — one per line" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "+15551234567 oder 1203630XXXX@g.us — eine pro Zeile"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "+15551234567 또는 1203630XXXX@g.us — 한 줄에 하나씩"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "+15551234567 или 1203630XXXX@g.us — по одному в строке"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "+15551234567 或 1203630XXXX@g.us — 每行一个"
-          }
-        }
-      }
-    },
-    "+15551234567 — one per line" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "+15551234567 — eine pro Zeile"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "+15551234567 — 한 줄에 하나씩"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "+15551234567 — по одному в строке"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "+15551234567 — 每行一个"
-          }
-        }
-      }
-    },
     "-1001234567890 — one per line" : {
       "localizations" : {
         "de" : {
@@ -254,1812 +198,313 @@
         }
       }
     },
-    "A WhatsApp account is linked on this Mac." : {
+    "Browser command copied. Run it in a web.whatsapp.com console tab." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Auf diesem Mac ist ein WhatsApp-Konto verknüpft."
+            "value" : "Browser-Befehl kopiert. Führe ihn in einem web.whatsapp.com-Konsolen-Tab aus."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "이 Mac에 WhatsApp 계정이 연결되어 있습니다."
+            "value" : "브라우저 명령이 복사되었습니다. web.whatsapp.com 콘솔 탭에서 실행하세요."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "На этом Mac привязан аккаунт WhatsApp."
+            "value" : "Команда для браузера скопирована. Выполните её в консоли вкладки web.whatsapp.com."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此 Mac 上已关联一个 WhatsApp 账号。"
+            "value" : "浏览器命令已复制。请在 web.whatsapp.com 的控制台标签页中运行。"
           }
         }
       }
     },
-    "Account linked" : {
+    "Check your phone" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Konto verknüpft"
+            "value" : "Prüfe dein Telefon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "계정 연결됨"
+            "value" : "휴대폰을 확인하세요"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Аккаунт привязан"
+            "value" : "Проверьте телефон"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "账号已关联"
+            "value" : "请查看你的手机"
           }
         }
       }
     },
-    "Account unlinked. Receiving and sending stay off until you link again." : {
+    "Confirm this code matches the one WhatsApp shows on your phone, then continue." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Konto getrennt. Empfangen und Senden bleiben aus, bis du es erneut verknüpfst."
+            "value" : "Bestätige, dass dieser Code mit dem übereinstimmt, den WhatsApp auf deinem Telefon anzeigt, und fahre dann fort."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "계정 연결이 해제되었습니다. 다시 연결할 때까지 수신과 전송은 꺼진 상태로 유지됩니다."
+            "value" : "이 코드가 휴대폰의 WhatsApp에 표시된 코드와 일치하는지 확인한 후 계속하세요."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Аккаунт отвязан. Приём и отправка остаются выключенными, пока вы не привяжете его снова."
+            "value" : "Убедитесь, что этот код совпадает с кодом в WhatsApp на вашем телефоне, затем продолжите."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "账号已解除关联。在重新关联之前，接收和发送保持关闭。"
+            "value" : "确认此代码与手机上 WhatsApp 显示的代码一致，然后继续。"
           }
         }
       }
     },
-    "Allow Sending on WhatsApp" : {
+    "Confirming..." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Senden über WhatsApp erlauben"
+            "value" : "Wird bestätigt..."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "WhatsApp 전송 허용"
+            "value" : "확인 중..."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Разрешить отправку в WhatsApp"
+            "value" : "Подтверждение..."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "允许通过 WhatsApp 发送"
+            "value" : "正在确认..."
           }
         }
       }
     },
-    "Allowed Attachment Folders" : {
+    "Copy Browser Command" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Erlaubte Anhangordner"
+            "value" : "Browser-Befehl kopieren"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "허용된 첨부 파일 폴더"
+            "value" : "브라우저 명령 복사"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Разрешённые папки вложений"
+            "value" : "Скопировать команду для браузера"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "允许的附件文件夹"
+            "value" : "复制浏览器命令"
           }
         }
       }
     },
-    "Apple Music" : {
-      "comment" : "Onboarding plugin picker display name for the Apple Music tool.",
-      "shouldTranslate" : false
-    },
-    "Apple Notes" : {
-      "comment" : "Onboarding plugin picker display name for the Apple Notes tool.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Apple Notizen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Apple Notes"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Apple 메모"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Заметки Apple"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Apple 备忘录"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Apple 備忘錄"
-          }
-        }
-      }
-    },
-    "Attachments" : {
+    "Passkey response accepted — finishing the link..." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Anhänge"
+            "value" : "Passkey-Antwort akzeptiert — Verknüpfung wird abgeschlossen..."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "첨부 파일"
+            "value" : "패스키 응답이 수락되었습니다 — 연결을 마무리하는 중..."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Вложения"
+            "value" : "Ответ ключа доступа принят — завершаем привязку..."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "附件"
+            "value" : "通行密钥响应已接受 — 正在完成关联..."
           }
         }
       }
     },
-    "Build PowerPoint decks." : {
-      "comment" : "Onboarding plugin picker blurb for PPTX.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "PowerPoint-Präsentationen erstellen."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Build PowerPoint decks."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "PowerPoint 프레젠테이션을 만듭니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Создаёт презентации PowerPoint."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "制作 PowerPoint 演示文稿。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "製作 PowerPoint 簡報。"
-          }
-        }
-      }
-    },
-    "Cancel Pairing" : {
+    "Submit Passkey Response" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kopplung abbrechen"
+            "value" : "Passkey-Antwort senden"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "페어링 취소"
+            "value" : "패스키 응답 제출"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Отменить сопряжение"
+            "value" : "Отправить ответ ключа доступа"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "取消配对"
+            "value" : "提交通行密钥响应"
           }
         }
       }
     },
-    "Choose an agent to reply, or add a rule for incoming WhatsApp messages." : {
+    "Submitting..." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wähle einen Agenten für Antworten oder füge eine Regel für eingehende WhatsApp-Nachrichten hinzu."
+            "value" : "Wird gesendet..."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "답장할 에이전트를 선택하거나 수신 WhatsApp 메시지에 대한 규칙을 추가하세요."
+            "value" : "제출 중..."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Выберите агента для ответа или добавьте правило для входящих сообщений WhatsApp."
+            "value" : "Отправка..."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择一个负责回复的智能体，或为传入的 WhatsApp 消息添加规则。"
+            "value" : "正在提交..."
           }
         }
       }
     },
-    "Confirm Receive Messages is on and the account is linked." : {
+    "The Codes Match — Continue" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stelle sicher, dass „Nachrichten empfangen“ aktiviert und das Konto verknüpft ist."
+            "value" : "Codes stimmen überein — Weiter"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "메시지 수신이 켜져 있고 계정이 연결되어 있는지 확인하세요."
+            "value" : "코드 일치 — 계속"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Убедитесь, что включён приём сообщений и аккаунт привязан."
+            "value" : "Коды совпадают — продолжить"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "确认已开启“接收消息”且账号已关联。"
+            "value" : "代码一致 — 继续"
           }
         }
       }
     },
-    "Confirm the receive transport above shows as running." : {
+    "This account is protected by a passkey" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stelle sicher, dass der Empfangstransport oben als laufend angezeigt wird."
+            "value" : "Dieses Konto ist durch einen Passkey geschützt"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "위의 수신 전송이 실행 중으로 표시되는지 확인하세요."
+            "value" : "이 계정은 패스키로 보호되어 있습니다"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Убедитесь, что транспорт приёма выше отображается как работающий."
+            "value" : "Этот аккаунт защищён ключом доступа"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "确认上方的接收传输显示为正在运行。"
+            "value" : "此账号受通行密钥保护"
           }
         }
       }
     },
-    "Control playback and search your library." : {
-      "comment" : "Onboarding plugin picker blurb for Apple Music.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Wiedergabe steuern und die Mediathek durchsuchen."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Control playback and search your library."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "재생을 제어하고 보관함을 검색합니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Управляет воспроизведением и ищет в медиатеке."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "控制播放并搜索你的资料库。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "控制播放並搜尋您的資料庫。"
-          }
-        }
-      }
-    },
-    "Convert, resize, and optimize images." : {
-      "comment" : "Onboarding plugin picker blurb for Images.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Bilder konvertieren, skalieren und optimieren."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Convert, resize, and optimize images."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "이미지를 변환하고, 크기를 조절하고, 최적화합니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Конвертирует, изменяет размер и оптимизирует изображения."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "转换、调整大小和优化图像。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "轉換、調整大小和最佳化影像。"
-          }
-        }
-      }
-    },
-    "Default recent-message count for WhatsApp reads. Clamped to 1-100." : {
+    "WhatsApp requires a passkey check to link a new device. In a browser, open web.whatsapp.com, open the developer console (Cmd-Opt-J or F12), run the copied command, approve the passkey prompt, then paste the JSON line it prints below." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Standardanzahl der letzten Nachrichten beim Lesen über WhatsApp. Begrenzt auf 1–100."
+            "value" : "WhatsApp verlangt eine Passkey-Prüfung, um ein neues Gerät zu verknüpfen. Öffne im Browser web.whatsapp.com, öffne die Entwicklerkonsole (Cmd-Opt-J oder F12), führe den kopierten Befehl aus, bestätige die Passkey-Abfrage und füge dann die ausgegebene JSON-Zeile unten ein."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "WhatsApp 읽기 시 기본 최근 메시지 수입니다. 1-100으로 제한됩니다."
+            "value" : "WhatsApp는 새 기기를 연결할 때 패스키 확인을 요구합니다. 브라우저에서 web.whatsapp.com을 열고 개발자 콘솔(Cmd-Opt-J 또는 F12)을 연 뒤, 복사한 명령을 실행하고 패스키 프롬프트를 승인한 다음, 출력된 JSON 한 줄을 아래에 붙여넣으세요."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Количество последних сообщений по умолчанию при чтении WhatsApp. Ограничено 1–100."
+            "value" : "WhatsApp требует проверку ключа доступа для привязки нового устройства. Откройте в браузере web.whatsapp.com, откройте консоль разработчика (Cmd-Opt-J или F12), выполните скопированную команду, подтвердите запрос ключа доступа, затем вставьте выведенную строку JSON ниже."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "WhatsApp 读取时默认的最近消息数量。限制在 1-100。"
+            "value" : "WhatsApp 要求通过通行密钥验证才能关联新设备。请在浏览器中打开 web.whatsapp.com，打开开发者控制台（Cmd-Opt-J 或 F12），运行复制的命令，通过通行密钥验证，然后将输出的 JSON 行粘贴到下方。"
           }
         }
       }
-    },
-    "Enable WhatsApp sending before automatic channel replies." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aktiviere das Senden über WhatsApp, bevor automatische Kanalantworten möglich sind."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "자동 채널 답장을 사용하려면 먼저 WhatsApp 전송을 활성화하세요."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Включите отправку WhatsApp, прежде чем включать автоматические ответы канала."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启用自动频道回复前，请先启用 WhatsApp 发送。"
-          }
-        }
-      }
-    },
-    "Every readable WhatsApp chat must also be writable when automatic replies are enabled." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bei aktivierten automatischen Antworten muss jeder lesbare WhatsApp-Chat auch beschreibbar sein."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "자동 답장이 활성화된 경우 읽기 가능한 모든 WhatsApp 채팅은 쓰기도 가능해야 합니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "При включённых автоматических ответах каждый доступный для чтения чат WhatsApp должен быть также доступен для записи."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启用自动回复时，每个可读的 WhatsApp 聊天也必须可写。"
-          }
-        }
-      }
-    },
-    "Find places and get directions." : {
-      "comment" : "Onboarding plugin picker blurb for Maps.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Orte finden und Routen abrufen."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Find places and get directions."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "장소를 찾고 길안내를 받습니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Находит места и прокладывает маршруты."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "查找地点并获取路线。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "尋找地點並取得路線。"
-          }
-        }
-      }
-    },
-    "Guided setup — QR-linked WhatsApp Web bridge, allowlisted chats only" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geführte Einrichtung — per QR verknüpfte WhatsApp-Web-Bridge, nur freigegebene Chats"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "가이드 설정 — QR로 연결된 WhatsApp Web 브리지, 허용 목록에 있는 채팅만"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Пошаговая настройка — мост WhatsApp Web по QR-коду, только чаты из списка разрешённых"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "引导式设置 — 通过二维码关联的 WhatsApp Web 桥接，仅限允许列表中的聊天"
-          }
-        }
-      }
-    },
-    "Handle Attachments" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Anhänge verarbeiten"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "첨부 파일 처리"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Обрабатывать вложения"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "处理附件"
-          }
-        }
-      }
-    },
-    "Integrity check failed — reinstall a verified copy." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Integritätsprüfung fehlgeschlagen — installiere eine verifizierte Kopie neu."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "무결성 검사에 실패했습니다. 검증된 사본을 다시 설치하세요."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Проверка целостности не пройдена — переустановите проверенную копию."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完整性检查失败 — 请重新安装经过验证的副本。"
-          }
-        }
-      }
-    },
-    "Integrity-verified helper (osaurus-wa)" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Integritätsgeprüfter Helfer (osaurus-wa)"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "무결성 검증 도우미(osaurus-wa)"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Проверенный помощник (osaurus-wa)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完整性已验证的辅助程序（osaurus-wa）"
-          }
-        }
-      }
-    },
-    "Link with QR" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mit QR verknüpfen"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "QR로 연결"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Привязать по QR"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通过二维码关联"
-          }
-        }
-      }
-    },
-    "Link your WhatsApp account" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verknüpfe dein WhatsApp-Konto"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 계정을 연결하세요"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Привяжите свой аккаунт WhatsApp"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关联你的 WhatsApp 账号"
-          }
-        }
-      }
-    },
-    "Linked as %@." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verknüpft als %@."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@(으)로 연결되었습니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Привязан как %@."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已关联为 %@。"
-          }
-        }
-      }
-    },
-    "Load from WhatsApp" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aus WhatsApp laden"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp에서 불러오기"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Загрузить из WhatsApp"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从 WhatsApp 加载"
-          }
-        }
-      }
-    },
-    "Load known WhatsApp chats" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bekannte WhatsApp-Chats laden"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "알려진 WhatsApp 채팅 불러오기"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Загрузить известные чаты WhatsApp"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加载已知的 WhatsApp 聊天"
-          }
-        }
-      }
-    },
-    "Loaded known WhatsApp chats." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bekannte WhatsApp-Chats geladen."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "알려진 WhatsApp 채팅을 불러왔습니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Известные чаты WhatsApp загружены."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已加载已知的 WhatsApp 聊天。"
-          }
-        }
-      }
-    },
-    "Look up people and phone numbers." : {
-      "comment" : "Onboarding plugin picker blurb for Contacts.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Personen und Telefonnummern nachschlagen."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Look up people and phone numbers."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "사람과 전화번호를 찾아봅니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Ищет людей и номера телефонов."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "查找联系人和电话号码。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "查詢聯絡人和電話號碼。"
-          }
-        }
-      }
-    },
-    "Mail" : {
-      "comment" : "Onboarding plugin picker display name for the Apple Mail tool.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Mail"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Mail"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Mail"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Почта"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "邮件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "郵件"
-          }
-        }
-      }
-    },
-    "Max Attachment Size (MB)" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Maximale Anhanggröße (MB)"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "최대 첨부 파일 크기(MB)"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Максимальный размер вложения (МБ)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "附件大小上限（MB）"
-          }
-        }
-      }
-    },
-    "No account linked" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kein Konto verknüpft"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "연결된 계정 없음"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Аккаунт не привязан"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未关联账号"
-          }
-        }
-      }
-    },
-    "No chats came back. Verify the helper is installed and the account is linked." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine Chats erhalten. Prüfe, ob der Helfer installiert und das Konto verknüpft ist."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "채팅을 가져오지 못했습니다. 도우미가 설치되어 있고 계정이 연결되어 있는지 확인하세요."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Чаты не получены. Убедитесь, что помощник установлен и аккаунт привязан."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未返回任何聊天。请确认辅助程序已安装且账号已关联。"
-          }
-        }
-      }
-    },
-    "No matching WhatsApp chats" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine passenden WhatsApp-Chats"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "일치하는 WhatsApp 채팅 없음"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Нет подходящих чатов WhatsApp"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有匹配的 WhatsApp 聊天"
-          }
-        }
-      }
-    },
-    "No WhatsApp message arrived within 90 seconds." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Innerhalb von 90 Sekunden ist keine WhatsApp-Nachricht eingegangen."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "90초 안에 WhatsApp 메시지가 도착하지 않았습니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Сообщение WhatsApp не поступило в течение 90 секунд."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "90 秒内未收到 WhatsApp 消息。"
-          }
-        }
-      }
-    },
-    "Only messages from these numbers trigger inbound handling; required for receive." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nur Nachrichten von diesen Nummern lösen die Eingangsverarbeitung aus; für den Empfang erforderlich."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이 번호에서 온 메시지만 수신 처리를 트리거합니다. 수신에 필요합니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Только сообщения с этих номеров запускают обработку входящих; требуется для приёма."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "只有来自这些号码的消息才会触发传入处理；接收功能必需。"
-          }
-        }
-      }
-    },
-    "Pairing timed out before the QR code was scanned. Start again when ready." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die Kopplung ist abgelaufen, bevor der QR-Code gescannt wurde. Starte erneut, wenn du bereit bist."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "QR 코드를 스캔하기 전에 페어링 시간이 초과되었습니다. 준비되면 다시 시작하세요."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Время сопряжения истекло до сканирования QR-кода. Начните заново, когда будете готовы."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "二维码在扫描前配对已超时。准备好后请重新开始。"
-          }
-        }
-      }
-    },
-    "PPTX" : {
-      "comment" : "Onboarding plugin picker display name for the PowerPoint presentations tool.",
-      "shouldTranslate" : false
-    },
-    "QR-linked WhatsApp Web bridge, allowlisted chats only" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Per QR verknüpfte WhatsApp-Web-Bridge, nur freigegebene Chats"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "QR로 연결된 WhatsApp Web 브리지, 허용 목록에 있는 채팅만"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Мост WhatsApp Web по QR-коду, только чаты из списка разрешённых"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通过二维码关联的 WhatsApp Web 桥接，仅限允许列表中的聊天"
-          }
-        }
-      }
-    },
-    "Read and create Excel spreadsheets." : {
-      "comment" : "Onboarding plugin picker blurb for XLSX.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Excel-Tabellen lesen und erstellen."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Read and create Excel spreadsheets."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Excel 스프레드시트를 읽고 생성합니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Читает и создаёт таблицы Excel."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "读取和创建 Excel 电子表格。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "讀取和建立 Excel 試算表。"
-          }
-        }
-      }
-    },
-    "Read and reply in allowlisted WhatsApp chats via a QR-linked bridge" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In freigegebenen WhatsApp-Chats über eine per QR verknüpfte Bridge lesen und antworten"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "QR로 연결된 브리지를 통해 허용 목록에 있는 WhatsApp 채팅을 읽고 답장"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Читать и отвечать в разрешённых чатах WhatsApp через мост, привязанный по QR-коду"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通过二维码关联的桥接，在允许列表中的 WhatsApp 聊天中读取和回复"
-          }
-        }
-      }
-    },
-    "Read text from images and analyze photos." : {
-      "comment" : "Onboarding plugin picker blurb for Vision.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Text aus Bildern lesen und Fotos analysieren."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Read text from images and analyze photos."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "이미지에서 텍스트를 읽고 사진을 분석합니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Распознаёт текст на изображениях и анализирует фото."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "从图像中读取文字并分析照片。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "從影像中讀取文字並分析照片。"
-          }
-        }
-      }
-    },
-    "Read, search, and draft Apple Mail." : {
-      "comment" : "Onboarding plugin picker blurb for Mail.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Apple Mail lesen, durchsuchen und Entwürfe schreiben."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Read, search, and draft Apple Mail."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Apple Mail을 읽고, 검색하고, 초안을 작성합니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Читает, ищет и создаёт черновики в Apple Mail."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "阅读、搜索和起草 Apple 邮件。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "閱讀、搜尋和草擬 Apple 郵件。"
-          }
-        }
-      }
-    },
-    "Receiving is off: agents will not see new WhatsApp messages and no agent can reply." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Empfang ist aus: Agenten sehen keine neuen WhatsApp-Nachrichten, und kein Agent kann antworten."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "수신이 꺼져 있습니다. 에이전트는 새 WhatsApp 메시지를 볼 수 없고 어떤 에이전트도 답장할 수 없습니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Приём выключен: агенты не увидят новые сообщения WhatsApp, и ни один агент не сможет ответить."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "接收已关闭：智能体不会看到新的 WhatsApp 消息，也没有智能体可以回复。"
-          }
-        }
-      }
-    },
-    "Require Mention in Groups" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erwähnung in Gruppen erforderlich"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "그룹에서 멘션 필수"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Требовать упоминание в группах"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "群组中需要提及"
-          }
-        }
-      }
-    },
-    "Saved, but WhatsApp receive is not ready yet" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gespeichert, aber der WhatsApp-Empfang ist noch nicht bereit"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "저장했지만 WhatsApp 수신이 아직 준비되지 않았습니다"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Сохранено, но приём WhatsApp ещё не готов"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已保存，但 WhatsApp 接收尚未就绪"
-          }
-        }
-      }
-    },
-    "Search and create notes." : {
-      "comment" : "Onboarding plugin picker blurb for Apple Notes.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Notizen durchsuchen und erstellen."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Search and create notes."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "메모를 검색하고 생성합니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Ищет и создаёт заметки."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "搜索和创建备忘录。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "搜尋和建立備忘錄。"
-          }
-        }
-      }
-    },
-    "Search chats by name or number" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Chats nach Name oder Nummer suchen"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이름 또는 번호로 채팅 검색"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Поиск чатов по имени или номеру"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "按名称或号码搜索聊天"
-          }
-        }
-      }
-    },
-    "Send Read Receipts" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lesebestätigungen senden"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "읽음 확인 보내기"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Отправлять уведомления о прочтении"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "发送已读回执"
-          }
-        }
-      }
-    },
-    "Unlink" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Trennen"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "연결 해제"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Отвязать"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解除关联"
-          }
-        }
-      }
-    },
-    "Unlinking..." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wird getrennt..."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "연결 해제 중..."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Отвязка..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在解除关联..."
-          }
-        }
-      }
-    },
-    "Using the developer override binary (OSAURUS_WA_PATH)." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verwendet die Entwickler-Override-Binärdatei (OSAURUS_WA_PATH)."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "개발자 재정의 바이너리(OSAURUS_WA_PATH)를 사용하고 있습니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Используется бинарный файл, заданный переопределением разработчика (OSAURUS_WA_PATH)."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在使用开发者覆盖二进制文件（OSAURUS_WA_PATH）。"
-          }
-        }
-      }
-    },
-    "Waiting for a WhatsApp message. Send one now from an authorized sender in a readable chat." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Warte auf eine WhatsApp-Nachricht. Sende jetzt eine von einem autorisierten Absender in einem lesbaren Chat."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 메시지를 기다리는 중입니다. 지금 읽기 가능한 채팅에서 승인된 발신자로 메시지를 보내세요."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ожидание сообщения WhatsApp. Отправьте сообщение от авторизованного отправителя в доступном для чтения чате."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在等待 WhatsApp 消息。请立即从可读聊天中的授权发送者发送一条。"
-          }
-        }
-      }
-    },
-    "Waiting for a WhatsApp message..." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Warte auf eine WhatsApp-Nachricht..."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 메시지 대기 중..."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ожидание сообщения WhatsApp..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在等待 WhatsApp 消息..."
-          }
-        }
-      }
-    },
-    "WhatsApp account linked." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp-Konto verknüpft."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 계정이 연결되었습니다."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Аккаунт WhatsApp привязан."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 账号已关联。"
-          }
-        }
-      }
-    },
-    "WhatsApp bridge helper" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp-Bridge-Helfer"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 브리지 도우미"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Помощник моста WhatsApp"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 桥接辅助程序"
-          }
-        }
-      }
-    },
-    "WhatsApp chats loaded" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp-Chats geladen"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 채팅 불러옴"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Чаты WhatsApp загружены"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 聊天已加载"
-          }
-        }
-      }
-    },
-    "WhatsApp receive" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp-Empfang"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 수신"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Приём WhatsApp"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 接收"
-          }
-        }
-      }
-    },
-    "WhatsApp settings saved" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp-Einstellungen gespeichert"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 설정이 저장됨"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Настройки WhatsApp сохранены"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 设置已保存"
-          }
-        }
-      }
-    },
-    "WhatsApp settings saved — receive is ready" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp-Einstellungen gespeichert — Empfang ist bereit"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 설정이 저장됨 — 수신 준비 완료"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Настройки WhatsApp сохранены — приём готов"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 设置已保存 — 接收已就绪"
-          }
-        }
-      }
-    },
-    "XLSX" : {
-      "comment" : "Onboarding plugin picker display name for the Excel spreadsheets tool.",
-      "shouldTranslate" : false
     },
     "—" : {
       "comment" : "A placeholder text to indicate missing data.",
@@ -11139,6 +9584,62 @@
         }
       }
     },
+    "+15551234567 — one per line" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+15551234567 — eine pro Zeile"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+15551234567 — 한 줄에 하나씩"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+15551234567 — по одному в строке"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+15551234567 — 每行一个"
+          }
+        }
+      }
+    },
+    "+15551234567 or 1203630XXXX@g.us — one per line" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+15551234567 oder 1203630XXXX@g.us — eine pro Zeile"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+15551234567 또는 1203630XXXX@g.us — 한 줄에 하나씩"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+15551234567 или 1203630XXXX@g.us — по одному в строке"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+15551234567 或 1203630XXXX@g.us — 每行一个"
+          }
+        }
+      }
+    },
     "+15551234567 or name@example.com — one per line" : {
       "localizations" : {
         "de" : {
@@ -15280,6 +13781,34 @@
         }
       }
     },
+    "A WhatsApp account is linked on this Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf diesem Mac ist ein WhatsApp-Konto verknüpft."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 Mac에 WhatsApp 계정이 연결되어 있습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "На этом Mac привязан аккаунт WhatsApp."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 Mac 上已关联一个 WhatsApp 账号。"
+          }
+        }
+      }
+    },
     "Abilities" : {
       "comment" : "Label for the \"Abilities\" tab group in the agent detail view.",
       "isCommentAutoGenerated" : true,
@@ -16308,6 +14837,34 @@
     "Account details" : {
       "shouldTranslate" : false
     },
+    "Account linked" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konto verknüpft"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "계정 연결됨"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Аккаунт привязан"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "账号已关联"
+          }
+        }
+      }
+    },
     "Account numbers" : {
       "comment" : "Description of a detection pattern category for account numbers.",
       "isCommentAutoGenerated" : true,
@@ -16443,6 +15000,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "帳號狀態、使用活動、簽名請求診斷及支援導出。"
+          }
+        }
+      }
+    },
+    "Account unlinked. Receiving and sending stay off until you link again." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konto getrennt. Empfangen und Senden bleiben aus, bis du es erneut verknüpfst."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "계정 연결이 해제되었습니다. 다시 연결할 때까지 수신과 전송은 꺼진 상태로 유지됩니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Аккаунт отвязан. Приём и отправка остаются выключенными, пока вы не привяжете его снова."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "账号已解除关联。在重新关联之前，接收和发送保持关闭。"
           }
         }
       }
@@ -20602,6 +19187,36 @@
         }
       }
     },
+    "Agents may only send files from inside these folders. Downloaded media always lands in the default media folder, which stays allowed." : {
+      "comment" : "Text displayed in a tooltip when the user is editing the allowed attachment folders.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agenten dürfen nur Dateien aus diesen Ordnern senden. Heruntergeladene Medien landen immer im Standard-Medienordner, der erlaubt bleibt."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "에이전트는 이 폴더 안의 파일만 보낼 수 있습니다. 다운로드된 미디어는 항상 기본 미디어 폴더에 저장되며, 이 폴더는 계속 허용됩니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Агенты могут отправлять файлы только из этих папок. Загруженные медиафайлы всегда сохраняются в папку медиа по умолчанию, которая остаётся разрешённой."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代理只能发送这些文件夹内的文件。下载的媒体始终存放在默认媒体文件夹中，该文件夹始终被允许。"
+          }
+        }
+      }
+    },
     "Agents may send messages to write-allowlisted destinations." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -22812,6 +21427,34 @@
         }
       }
     },
+    "Allow Sending on WhatsApp" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Senden über WhatsApp erlauben"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 전송 허용"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Разрешить отправку в WhatsApp"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许通过 WhatsApp 发送"
+          }
+        }
+      }
+    },
     "Allow Summary" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -23057,6 +21700,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "允許的智能體"
+          }
+        }
+      }
+    },
+    "Allowed Attachment Folders" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erlaubte Anhangordner"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "허용된 첨부 파일 폴더"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Разрешённые папки вложений"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许的附件文件夹"
           }
         }
       }
@@ -25633,6 +24304,51 @@
         }
       }
     },
+    "Apple Music" : {
+      "comment" : "Onboarding plugin picker display name for the Apple Music tool.",
+      "shouldTranslate" : false
+    },
+    "Apple Notes" : {
+      "comment" : "Onboarding plugin picker display name for the Apple Notes tool.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Apple Notizen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Apple Notes"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Apple 메모"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Заметки Apple"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Apple 备忘录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Apple 備忘錄"
+          }
+        }
+      }
+    },
     "Apple Silicon is required" : {
       "localizations" : {
         "de" : {
@@ -27715,6 +26431,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "附加來自 %@ 的代碼片段"
+          }
+        }
+      }
+    },
+    "Attachments" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anhänge"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "첨부 파일"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вложения"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "附件"
           }
         }
       }
@@ -36053,6 +34797,47 @@
         }
       }
     },
+    "Build PowerPoint decks." : {
+      "comment" : "Onboarding plugin picker blurb for PPTX.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "PowerPoint-Präsentationen erstellen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Build PowerPoint decks."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "PowerPoint 프레젠테이션을 만듭니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Создаёт презентации PowerPoint."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "制作 PowerPoint 演示文稿。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "製作 PowerPoint 簡報。"
+          }
+        }
+      }
+    },
     "Built into Osaurus" : {
       "comment" : "Badge text for a plugin that is installed but is no longer supported by Osaurus.",
       "isCommentAutoGenerated" : true,
@@ -37620,6 +36405,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "取消編輯"
+          }
+        }
+      }
+    },
+    "Cancel Pairing" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kopplung abbrechen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "페어링 취소"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отменить сопряжение"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消配对"
           }
         }
       }
@@ -39353,6 +38166,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更改自動儲存，接收在連線和訪問完成後開始。從可讀聊天中向機器人傳送任何來自授權傳送者的訊息，然後在此處觀察每個階段出現。"
+          }
+        }
+      }
+    },
+    "Changes save automatically, and receiving starts once Connect and Conversations are complete. Send a WhatsApp message from an authorized sender in a readable chat, then watch each stage appear here." : {
+      "comment" : "A description of the WhatsApp verification process.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Änderungen werden automatisch gespeichert, und der Empfang startet, sobald Verbinden und Unterhaltungen abgeschlossen sind. Sende eine WhatsApp-Nachricht von einem autorisierten Absender in einem lesbaren Chat und beobachte, wie hier jede Stufe erscheint."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "변경 사항은 자동으로 저장되며, 연결과 대화 설정이 완료되면 수신이 시작됩니다. 읽기 가능한 채팅에서 승인된 발신자가 WhatsApp 메시지를 보내면 각 단계가 여기에 표시됩니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Изменения сохраняются автоматически, а приём начинается после завершения разделов «Подключение» и «Беседы». Отправьте сообщение WhatsApp от авторизованного отправителя в читаемом чате и наблюдайте, как здесь появляется каждый этап."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更改会自动保存，完成“连接”和“会话”设置后即开始接收。请让已授权的发送者在可读聊天中发送一条 WhatsApp 消息，然后在此查看每个阶段的进展。"
           }
         }
       }
@@ -42683,6 +41526,34 @@
         }
       }
     },
+    "Choose an agent to reply, or add a rule for incoming WhatsApp messages." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle einen Agenten für Antworten oder füge eine Regel für eingehende WhatsApp-Nachrichten hinzu."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "답장할 에이전트를 선택하거나 수신 WhatsApp 메시지에 대한 규칙을 추가하세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выберите агента для ответа или добавьте правило для входящих сообщений WhatsApp."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择一个负责回复的智能体，或为传入的 WhatsApp 消息添加规则。"
+          }
+        }
+      }
+    },
     "Choose an export from ChatGPT, Claude, Grok, Gemini, or Open WebUI (.zip or .json), or an Osaurus import JSON file." : {
       "localizations" : {
         "de" : {
@@ -43581,6 +42452,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇由哪個智能體回覆已加入允許列表的 iMessage。回覆在私有頻道會話中執行；外部介面的工具限制仍然適用。"
+          }
+        }
+      }
+    },
+    "Choose which agent answers allowlisted WhatsApp messages. Replies run in a private channel session; external-surface tool restrictions still apply." : {
+      "comment" : "Description of the WhatsApp settings view's behavior section.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle, welcher Agent zugelassene WhatsApp-Nachrichten beantwortet. Antworten laufen in einer privaten Kanalsitzung; die Werkzeugbeschränkungen für externe Oberflächen gelten weiterhin."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "허용 목록에 있는 WhatsApp 메시지에 어느 에이전트가 응답할지 선택하세요. 응답은 비공개 채널 세션에서 실행되며, 외부 표면 도구 제한은 계속 적용됩니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выберите, какой агент отвечает на сообщения WhatsApp из списка разрешённых. Ответы выполняются в приватной сессии канала; ограничения инструментов для внешних поверхностей по-прежнему действуют."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择由哪个代理回复允许列表中的 WhatsApp 消息。回复在私有频道会话中运行；外部表面的工具限制仍然适用。"
           }
         }
       }
@@ -49140,6 +48041,34 @@
         }
       }
     },
+    "Confirm Receive Messages is on and the account is linked." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stelle sicher, dass „Nachrichten empfangen“ aktiviert und das Konto verknüpft ist."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "메시지 수신이 켜져 있고 계정이 연결되어 있는지 확인하세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Убедитесь, что включён приём сообщений и аккаунт привязан."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认已开启“接收消息”且账号已关联。"
+          }
+        }
+      }
+    },
     "Confirm Receive Messages is on and the settings were saved." : {
       "comment" : "Guidance text for verifying that the \"Receive Messages\" setting is on and the settings have been saved.",
       "isCommentAutoGenerated" : true,
@@ -49414,6 +48343,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "確認訊息是由授權傳送者在選定爲可讀的聊天中傳送的。"
+          }
+        }
+      }
+    },
+    "Confirm the receive transport above shows as running." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stelle sicher, dass der Empfangstransport oben als laufend angezeigt wird."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "위의 수신 전송이 실행 중으로 표시되는지 확인하세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Убедитесь, что транспорт приёма выше отображается как работающий."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认上方的接收传输显示为正在运行。"
           }
         }
       }
@@ -52846,6 +51803,47 @@
         }
       }
     },
+    "Control playback and search your library." : {
+      "comment" : "Onboarding plugin picker blurb for Apple Music.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wiedergabe steuern und die Mediathek durchsuchen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Control playback and search your library."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "재생을 제어하고 보관함을 검색합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Управляет воспроизведением и ищет в медиатеке."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "控制播放并搜索你的资料库。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "控制播放並搜尋您的資料庫。"
+          }
+        }
+      }
+    },
     "Control what anonymous data Osaurus collects." : {
       "localizations" : {
         "de" : {
@@ -53197,6 +52195,47 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "對話和憑證僅在兩臺設備之間加密封存——即使中繼服務器也無法讀取。"
+          }
+        }
+      }
+    },
+    "Convert, resize, and optimize images." : {
+      "comment" : "Onboarding plugin picker blurb for Images.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bilder konvertieren, skalieren und optimieren."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Convert, resize, and optimize images."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이미지를 변환하고, 크기를 조절하고, 최적화합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Конвертирует, изменяет размер и оптимизирует изображения."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "转换、调整大小和优化图像。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "轉換、調整大小和最佳化影像。"
           }
         }
       }
@@ -61722,6 +60761,34 @@
         }
       }
     },
+    "Default recent-message count for WhatsApp reads. Clamped to 1-100." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standardanzahl der letzten Nachrichten beim Lesen über WhatsApp. Begrenzt auf 1–100."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 읽기 시 기본 최근 메시지 수입니다. 1-100으로 제한됩니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Количество последних сообщений по умолчанию при чтении WhatsApp. Ограничено 1–100."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 读取时默认的最近消息数量。限制在 1-100。"
+          }
+        }
+      }
+    },
     "Default recent-message count. Clamped to 1-100." : {
       "localizations" : {
         "de" : {
@@ -67945,6 +67012,36 @@
         }
       }
     },
+    "Download incoming media (images, video, audio, documents) from allowlisted chats so agents can use it, and allow agents to send files from the allowed folders below." : {
+      "comment" : "Description of the WhatsApp settings view.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lade eingehende Medien (Bilder, Videos, Audio, Dokumente) aus zugelassenen Chats herunter, damit Agenten sie nutzen können, und erlaube Agenten, Dateien aus den unten erlaubten Ordnern zu senden."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "허용 목록에 있는 채팅의 수신 미디어(이미지, 동영상, 오디오, 문서)를 다운로드하여 에이전트가 사용할 수 있게 하고, 에이전트가 아래 허용된 폴더의 파일을 보낼 수 있도록 허용합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Загружайте входящие медиафайлы (изображения, видео, аудио, документы) из разрешённых чатов, чтобы агенты могли их использовать, и разрешите агентам отправлять файлы из разрешённых папок ниже."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载允许列表聊天中的传入媒体（图片、视频、音频、文档）供代理使用，并允许代理从下方允许的文件夹发送文件。"
+          }
+        }
+      }
+    },
     "Download incomplete" : {
       "localizations" : {
         "de" : {
@@ -73787,6 +72884,34 @@
         }
       }
     },
+    "Enable WhatsApp sending before automatic channel replies." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktiviere das Senden über WhatsApp, bevor automatische Kanalantworten möglich sind."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동 채널 답장을 사용하려면 먼저 WhatsApp 전송을 활성화하세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Включите отправку WhatsApp, прежде чем включать автоматические ответы канала."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用自动频道回复前，请先启用 WhatsApp 发送。"
+          }
+        }
+      }
+    },
     "Enabled" : {
       "localizations" : {
         "de" : {
@@ -76947,6 +76072,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "啟用自動回覆時，每個可讀的 Telegram 聊天也必須可寫。"
+          }
+        }
+      }
+    },
+    "Every readable WhatsApp chat must also be writable when automatic replies are enabled." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bei aktivierten automatischen Antworten muss jeder lesbare WhatsApp-Chat auch beschreibbar sein."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동 답장이 활성화된 경우 읽기 가능한 모든 WhatsApp 채팅은 쓰기도 가능해야 합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "При включённых автоматических ответах каждый доступный для чтения чат WhatsApp должен быть также доступен для записи."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用自动回复时，每个可读的 WhatsApp 聊天也必须可写。"
           }
         }
       }
@@ -82452,6 +81605,47 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在對話中查找"
+          }
+        }
+      }
+    },
+    "Find places and get directions." : {
+      "comment" : "Onboarding plugin picker blurb for Maps.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Orte finden und Routen abrufen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Find places and get directions."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "장소를 찾고 길안내를 받습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Находит места и прокладывает маршруты."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "查找地点并获取路线。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "尋找地點並取得路線。"
           }
         }
       }
@@ -89091,6 +88285,34 @@
         }
       }
     },
+    "Guided setup — QR-linked WhatsApp Web bridge, allowlisted chats only" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geführte Einrichtung — per QR verknüpfte WhatsApp-Web-Bridge, nur freigegebene Chats"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "가이드 설정 — QR로 연결된 WhatsApp Web 브리지, 허용 목록에 있는 채팅만"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пошаговая настройка — мост WhatsApp Web по QR-коду, только чаты из списка разрешённых"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "引导式设置 — 通过二维码关联的 WhatsApp Web 桥接，仅限允许列表中的聊天"
+          }
+        }
+      }
+    },
     "Guided setup — this Mac's Messages app, allowlisted chats only" : {
       "localizations" : {
         "de" : {
@@ -89149,6 +88371,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "指南與規範"
+          }
+        }
+      }
+    },
+    "Handle Attachments" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anhänge verarbeiten"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "첨부 파일 처리"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обрабатывать вложения"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "处理附件"
           }
         }
       }
@@ -95559,6 +94809,36 @@
         }
       }
     },
+    "In group chats, only handle messages that mention the linked account. Direct chats always dispatch." : {
+      "comment" : "Toggle to enable or disable the requirement that incoming WhatsApp messages be sent to a group that mentions the linked account.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verarbeite in Gruppenchats nur Nachrichten, die das verknüpfte Konto erwähnen. Direktchats werden immer weitergeleitet."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "그룹 채팅에서는 연결된 계정을 멘션한 메시지만 처리합니다. 1:1 채팅은 항상 전달됩니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В групповых чатах обрабатывать только сообщения с упоминанием привязанного аккаунта. Личные чаты обрабатываются всегда."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在群聊中仅处理提及已关联账号的消息。私聊消息始终会被分发。"
+          }
+        }
+      }
+    },
     "In the app, open the Bot page and turn on both privileged intents under “Privileged Gateway Intents”: Message Content Intent (required to read messages) and Server Members Intent (used to list senders)." : {
       "comment" : "Instructions for configuring the necessary intents for the Discord bot.",
       "isCommentAutoGenerated" : true,
@@ -98843,6 +98123,34 @@
         }
       }
     },
+    "Integrity check failed — reinstall a verified copy." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integritätsprüfung fehlgeschlagen — installiere eine verifizierte Kopie neu."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "무결성 검사에 실패했습니다. 검증된 사본을 다시 설치하세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проверка целостности не пройдена — переустановите проверенную копию."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完整性检查失败 — 请重新安装经过验证的副本。"
+          }
+        }
+      }
+    },
     "Integrity-verified helper" : {
       "localizations" : {
         "de" : {
@@ -98873,6 +98181,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "完整性驗證的輔助程式"
+          }
+        }
+      }
+    },
+    "Integrity-verified helper (osaurus-wa)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integritätsgeprüfter Helfer (osaurus-wa)"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "무결성 검증 도우미(osaurus-wa)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проверенный помощник (osaurus-wa)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完整性已验证的辅助程序（osaurus-wa）"
           }
         }
       }
@@ -100010,6 +99346,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kagi API 令牌"
+          }
+        }
+      }
+    },
+    "Keep a live connection to WhatsApp and store authorized incoming messages in the local inbox while the app runs." : {
+      "comment" : "Tooltip for the \"Receive Messages\" toggle.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Halte eine aktive Verbindung zu WhatsApp und speichere autorisierte eingehende Nachrichten im lokalen Posteingang, solange die App läuft."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "앱이 실행되는 동안 WhatsApp과의 실시간 연결을 유지하고 승인된 수신 메시지를 로컬 수신함에 저장합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поддерживать активное соединение с WhatsApp и сохранять авторизованные входящие сообщения в локальном ящике, пока приложение работает."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在应用运行期间保持与 WhatsApp 的实时连接，并将已授权的传入消息存储到本地收件箱。"
           }
         }
       }
@@ -101178,6 +100544,36 @@
         }
       }
     },
+    "Known Chats" : {
+      "comment" : "A label for the list of WhatsApp chats.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bekannte Chats"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알려진 채팅"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Известные чаты"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已知聊天"
+          }
+        }
+      }
+    },
     "KV" : {
       "localizations" : {
         "de" : {
@@ -101349,6 +100745,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "大型（4 GB 以上）"
+          }
+        }
+      }
+    },
+    "Larger incoming media is skipped (the message still arrives with a placeholder) and larger outgoing files are refused." : {
+      "comment" : "Tooltip for the max attachment size setting.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Größere eingehende Medien werden übersprungen (die Nachricht kommt trotzdem mit einem Platzhalter an), und größere ausgehende Dateien werden abgelehnt."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이보다 큰 수신 미디어는 건너뛰며(메시지는 자리표시자와 함께 도착합니다), 큰 발신 파일은 거부됩니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Более крупные входящие медиафайлы пропускаются (сообщение всё равно приходит с заполнителем), а более крупные исходящие файлы отклоняются."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "超过此大小的传入媒体会被跳过（消息仍会以占位符形式送达），超过此大小的传出文件会被拒绝。"
           }
         }
       }
@@ -102577,6 +102003,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "允許智能體透過 Messages.app 向可寫允許列表中的聊天發文。需要「訊息」自動化權限；「頻道」中的全域傳送開關也必須開啟。"
+          }
+        }
+      }
+    },
+    "Let agents post to write-allowlisted chats through the linked account. The global Sending switch in Channels must also be on." : {
+      "comment" : "Description of the WhatsApp sending toggle.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erlaube Agenten, über das verknüpfte Konto in schreibfreigegebene Chats zu posten. Der globale Senden-Schalter unter Kanäle muss ebenfalls aktiviert sein."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "에이전트가 연결된 계정을 통해 쓰기 허용 채팅에 게시할 수 있도록 합니다. 채널의 전역 보내기 스위치도 켜져 있어야 합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Разрешить агентам отправлять сообщения в чаты из списка на запись через привязанный аккаунт. Глобальный переключатель отправки в разделе «Каналы» также должен быть включён."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许代理通过已关联账号向写入允许列表中的聊天发送消息。“频道”中的全局发送开关也必须开启。"
           }
         }
       }
@@ -104488,6 +103944,90 @@
         }
       }
     },
+    "Link with QR" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit QR verknüpfen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QR로 연결"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Привязать по QR"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过二维码关联"
+          }
+        }
+      }
+    },
+    "Link your WhatsApp account" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verknüpfe dein WhatsApp-Konto"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 계정을 연결하세요"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Привяжите свой аккаунт WhatsApp"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关联你的 WhatsApp 账号"
+          }
+        }
+      }
+    },
+    "Linked as %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verknüpft als %@."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@(으)로 연결되었습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Привязан как %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已关联为 %@。"
+          }
+        }
+      }
+    },
     "Links" : {
       "localizations" : {
         "de" : {
@@ -105563,6 +105103,62 @@
         }
       }
     },
+    "Load from WhatsApp" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus WhatsApp laden"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp에서 불러오기"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Загрузить из WhatsApp"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 WhatsApp 加载"
+          }
+        }
+      }
+    },
+    "Load known WhatsApp chats" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bekannte WhatsApp-Chats laden"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알려진 WhatsApp 채팅 불러오기"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Загрузить известные чаты WhatsApp"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载已知的 WhatsApp 聊天"
+          }
+        }
+      }
+    },
     "Load more" : {
       "comment" : "Button label that fetches the next page of router usage from the server.",
       "localizations" : {
@@ -105937,6 +105533,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已載入 Discord 伺服器和頻道。"
+          }
+        }
+      }
+    },
+    "Loaded known WhatsApp chats." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bekannte WhatsApp-Chats geladen."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알려진 WhatsApp 채팅을 불러왔습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Известные чаты WhatsApp загружены."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已加载已知的 WhatsApp 聊天。"
           }
         }
       }
@@ -108068,6 +107692,47 @@
         }
       }
     },
+    "Look up people and phone numbers." : {
+      "comment" : "Onboarding plugin picker blurb for Contacts.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Personen und Telefonnummern nachschlagen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Look up people and phone numbers."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "사람과 전화번호를 찾아봅니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ищет людей и номера телефонов."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "查找联系人和电话号码。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "查詢聯絡人和電話號碼。"
+          }
+        }
+      }
+    },
     "Looking" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -108366,6 +108031,47 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打造得宛如你專屬"
+          }
+        }
+      }
+    },
+    "Mail" : {
+      "comment" : "Onboarding plugin picker display name for the Apple Mail tool.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mail"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Mail"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mail"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Почта"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "邮件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "郵件"
           }
         }
       }
@@ -109672,6 +109378,36 @@
         }
       }
     },
+    "Manual IDs are a fallback for chats not returned by discovery. Direct chats use E.164 phone numbers (+15551234567); groups use their JID (1203630XXXX@g.us)." : {
+      "comment" : "A description of how to enter WhatsApp chat IDs.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manuelle IDs sind ein Fallback für Chats, die die Erkennung nicht liefert. Direktchats verwenden E.164-Telefonnummern (+15551234567); Gruppen ihre JID (1203630XXXX@g.us)."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수동 ID는 검색으로 찾을 수 없는 채팅을 위한 대비책입니다. 1:1 채팅은 E.164 전화번호(+15551234567)를, 그룹은 JID(1203630XXXX@g.us)를 사용합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ручные идентификаторы — запасной вариант для чатов, которые не вернуло обнаружение. Личные чаты используют номера E.164 (+15551234567); группы — свой JID (1203630XXXX@g.us)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手动 ID 是发现功能未返回的聊天的后备方案。私聊使用 E.164 电话号码（+15551234567）；群组使用其 JID（1203630XXXX@g.us）。"
+          }
+        }
+      }
+    },
     "Manual IDs are a fallback for chats not returned by discovery. Use the chat GUID (e.g. iMessage;-;+15551234567) or a direct handle." : {
       "comment" : "A description of how to enter custom chat IDs.",
       "isCommentAutoGenerated" : true,
@@ -110050,6 +109786,36 @@
         }
       }
     },
+    "Mark a direct chat as Read above to choose its number here, or add numbers under Advanced." : {
+      "comment" : "A description of the sender picker.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markiere oben einen Direktchat als „Lesen“, um seine Nummer hier auszuwählen, oder füge Nummern unter „Erweitert“ hinzu."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "위에서 1:1 채팅을 읽기로 표시하면 여기에서 해당 번호를 선택할 수 있으며, 고급에서 번호를 추가할 수도 있습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отметьте личный чат выше как «Чтение», чтобы выбрать его номер здесь, или добавьте номера в разделе «Дополнительно»."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在上方将私聊标记为“读取”即可在此选择其号码，或在“高级”中添加号码。"
+          }
+        }
+      }
+    },
     "Mark as Sent" : {
       "comment" : "Label for a button that marks an outbound message as sent.",
       "isCommentAutoGenerated" : true,
@@ -110155,6 +109921,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將聊天標記爲已讀以便智慧體可以看到，將人員標記爲允許以便其訊息被處理。手動 ID 字段位於進階選項下。"
+          }
+        }
+      }
+    },
+    "Mark handled messages as read on WhatsApp (blue ticks) after they are stored. Senders can see this." : {
+      "comment" : "Toggle to send read receipts when sending messages.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markiere verarbeitete Nachrichten nach dem Speichern in WhatsApp als gelesen (blaue Haken). Absender können das sehen."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "처리된 메시지를 저장한 후 WhatsApp에서 읽음(파란색 체크)으로 표시합니다. 발신자가 이를 볼 수 있습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Помечать обработанные сообщения в WhatsApp как прочитанные (синие галочки) после сохранения. Отправители это видят."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在消息存储后于 WhatsApp 中将其标记为已读（蓝色对勾）。发送者可以看到此状态。"
           }
         }
       }
@@ -110652,6 +110448,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每小時最多 %lld 條"
+          }
+        }
+      }
+    },
+    "Max Attachment Size (MB)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maximale Anhanggröße (MB)"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "최대 첨부 파일 크기(MB)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Максимальный размер вложения (МБ)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "附件大小上限（MB）"
           }
         }
       }
@@ -119305,6 +119129,34 @@
         }
       }
     },
+    "No account linked" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Konto verknüpft"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "연결된 계정 없음"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Аккаунт не привязан"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未关联账号"
+          }
+        }
+      }
+    },
     "No accounts or device profiles" : {
       "localizations" : {
         "de" : {
@@ -120234,6 +120086,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未返回任何聊天。请确认辅助程序已下载且已授予完全磁盘访问权限。"
+          }
+        }
+      }
+    },
+    "No chats came back. Verify the helper is installed and the account is linked." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Chats erhalten. Prüfe, ob der Helfer installiert und das Konto verknüpft ist."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "채팅을 가져오지 못했습니다. 도우미가 설치되어 있고 계정이 연결되어 있는지 확인하세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чаты не получены. Убедитесь, что помощник установлен и аккаунт привязан."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未返回任何聊天。请确认辅助程序已安装且账号已关联。"
           }
         }
       }
@@ -121734,6 +121614,36 @@
         }
       }
     },
+    "No incoming WhatsApp messages yet this session. Send one from an authorized sender and press “Verify incoming message”." : {
+      "comment" : "Hint to show when there are no incoming WhatsApp messages to verify.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In dieser Sitzung sind noch keine WhatsApp-Nachrichten eingegangen. Sende eine von einem autorisierten Absender und drücke „Eingehende Nachricht prüfen“."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이번 세션에는 아직 수신된 WhatsApp 메시지가 없습니다. 승인된 발신자가 메시지를 보낸 뒤 “수신 메시지 확인”을 누르세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В этой сессии ещё нет входящих сообщений WhatsApp. Отправьте сообщение от авторизованного отправителя и нажмите «Проверить входящее сообщение»."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本次会话尚未收到 WhatsApp 消息。请让已授权的发送者发送一条消息，然后点击“验证传入消息”。"
+          }
+        }
+      }
+    },
     "No installed plugin owns this capture capability." : {
       "localizations" : {
         "de" : {
@@ -122932,6 +122842,34 @@
     "No matching Telegram senders" : {
       "comment" : "Text displayed when there are no matching Telegram senders to display in the list.",
       "isCommentAutoGenerated" : true
+    },
+    "No matching WhatsApp chats" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine passenden WhatsApp-Chats"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "일치하는 WhatsApp 채팅 없음"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет подходящих чатов WhatsApp"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有匹配的 WhatsApp 聊天"
+          }
+        }
+      }
     },
     "No MCP providers imported; %lld declared." : {
       "localizations" : {
@@ -124177,6 +124115,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未收到決定"
+          }
+        }
+      }
+    },
+    "No release digests are pinned in this build. Build the helper locally with `make wa-helper` and point OSAURUS_WA_PATH at build/osaurus-wa (DEBUG builds), or run an app bundle with the helper sealed inside." : {
+      "comment" : "Text describing the WhatsApp helper when no release digests are pinned in the build.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In diesem Build sind keine Release-Digests verankert. Baue den Helfer lokal mit `make wa-helper` und richte OSAURUS_WA_PATH auf build/osaurus-wa (DEBUG-Builds), oder starte ein App-Bundle mit eingesiegeltem Helfer."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 빌드에는 릴리스 다이제스트가 고정되어 있지 않습니다. `make wa-helper`로 헬퍼를 로컬 빌드한 뒤 OSAURUS_WA_PATH를 build/osaurus-wa로 지정하거나(DEBUG 빌드), 헬퍼가 내장된 앱 번들을 실행하세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В этой сборке не закреплены дайджесты релиза. Соберите помощник локально командой `make wa-helper` и укажите OSAURUS_WA_PATH на build/osaurus-wa (сборки DEBUG) либо запустите пакет приложения со встроенным помощником."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此构建未固定发布摘要。请使用 `make wa-helper` 在本地构建辅助程序，并将 OSAURUS_WA_PATH 指向 build/osaurus-wa（DEBUG 构建），或运行内置该辅助程序的应用包。"
           }
         }
       }
@@ -126414,6 +126382,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此機器人未註冊 webhook。啟用長輪詢是安全的。"
+          }
+        }
+      }
+    },
+    "No WhatsApp message arrived within 90 seconds." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Innerhalb von 90 Sekunden ist keine WhatsApp-Nachricht eingegangen."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90초 안에 WhatsApp 메시지가 도착하지 않았습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сообщение WhatsApp не поступило в течение 90 секунд."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90 秒内未收到 WhatsApp 消息。"
           }
         }
       }
@@ -130513,6 +130509,36 @@
         }
       }
     },
+    "Only messages from allowed phone numbers are handled — required for receive. Manual numbers are under Advanced." : {
+      "comment" : "A description of the WhatsApp settings.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur Nachrichten von erlaubten Telefonnummern werden verarbeitet — für den Empfang erforderlich. Manuelle Nummern findest du unter „Erweitert“."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "허용된 전화번호의 메시지만 처리됩니다 — 수신에 필수입니다. 수동 번호는 고급에 있습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обрабатываются только сообщения с разрешённых номеров — это необходимо для приёма. Ручные номера — в разделе «Дополнительно»."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅处理来自允许电话号码的消息 — 这是接收的必要条件。手动号码在“高级”中设置。"
+          }
+        }
+      }
+    },
     "Only messages from these handles trigger inbound handling; required for receive." : {
       "localizations" : {
         "de" : {
@@ -130537,6 +130563,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "只有来自这些账号的消息才会触发传入处理；接收功能必需。"
+          }
+        }
+      }
+    },
+    "Only messages from these numbers trigger inbound handling; required for receive." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur Nachrichten von diesen Nummern lösen die Eingangsverarbeitung aus; für den Empfang erforderlich."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 번호에서 온 메시지만 수신 처리를 트리거합니다. 수신에 필요합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Только сообщения с этих номеров запускают обработку входящих; требуется для приёма."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有来自这些号码的消息才会触发传入处理；接收功能必需。"
           }
         }
       }
@@ -136737,6 +136791,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "配對請求"
+          }
+        }
+      }
+    },
+    "Pairing timed out before the QR code was scanned. Start again when ready." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Kopplung ist abgelaufen, bevor der QR-Code gescannt wurde. Starte erneut, wenn du bereit bist."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QR 코드를 스캔하기 전에 페어링 시간이 초과되었습니다. 준비되면 다시 시작하세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Время сопряжения истекло до сканирования QR-кода. Начните заново, когда будете готовы."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "二维码在扫描前配对已超时。准备好后请重新开始。"
           }
         }
       }
@@ -144280,6 +144362,10 @@
         }
       }
     },
+    "PPTX" : {
+      "comment" : "Onboarding plugin picker display name for the PowerPoint presentations tool.",
+      "shouldTranslate" : false
+    },
     "Pre-flight picks the most relevant per turn." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -151606,6 +151692,34 @@
         }
       }
     },
+    "QR-linked WhatsApp Web bridge, allowlisted chats only" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Per QR verknüpfte WhatsApp-Web-Bridge, nur freigegebene Chats"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QR로 연결된 WhatsApp Web 브리지, 허용 목록에 있는 채팅만"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Мост WhatsApp Web по QR-коду, только чаты из списка разрешённых"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过二维码关联的 WhatsApp Web 桥接，仅限允许列表中的聊天"
+          }
+        }
+      }
+    },
     "Quality" : {
       "comment" : "Label for the quality of the image.",
       "isCommentAutoGenerated" : true
@@ -153363,6 +153477,47 @@
         }
       }
     },
+    "Read and create Excel spreadsheets." : {
+      "comment" : "Onboarding plugin picker blurb for XLSX.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Excel-Tabellen lesen und erstellen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Read and create Excel spreadsheets."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Excel 스프레드시트를 읽고 생성합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Читает и создаёт таблицы Excel."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "读取和创建 Excel 电子表格。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "讀取和建立 Excel 試算表。"
+          }
+        }
+      }
+    },
     "Read and edit Webflow sites and CMS items" : {
       "localizations" : {
         "de" : {
@@ -153595,6 +153750,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在已允許清單的伺服器中讀取和回覆"
+          }
+        }
+      }
+    },
+    "Read and reply in allowlisted WhatsApp chats via a QR-linked bridge" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In freigegebenen WhatsApp-Chats über eine per QR verknüpfte Bridge lesen und antworten"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QR로 연결된 브리지를 통해 허용 목록에 있는 WhatsApp 채팅을 읽고 답장"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Читать и отвечать в разрешённых чатах WhatsApp через мост, привязанный по QR-коду"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过二维码关联的桥接，在允许列表中的 WhatsApp 聊天中读取和回复"
           }
         }
       }
@@ -154064,6 +154247,47 @@
         }
       }
     },
+    "Read text from images and analyze photos." : {
+      "comment" : "Onboarding plugin picker blurb for Vision.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Text aus Bildern lesen und Fotos analysieren."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Read text from images and analyze photos."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이미지에서 텍스트를 읽고 사진을 분석합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Распознаёт текст на изображениях и анализирует фото."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "从图像中读取文字并分析照片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "從影像中讀取文字並分析照片。"
+          }
+        }
+      }
+    },
     "Read the database schema" : {
       "localizations" : {
         "de" : {
@@ -154275,6 +154499,47 @@
     },
     "Read-only snapshot of the cached permission and consent state Computer Use already uses." : {
       "shouldTranslate" : false
+    },
+    "Read, search, and draft Apple Mail." : {
+      "comment" : "Onboarding plugin picker blurb for Mail.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Apple Mail lesen, durchsuchen und Entwürfe schreiben."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Read, search, and draft Apple Mail."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Apple Mail을 읽고, 검색하고, 초안을 작성합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Читает, ищет и создаёт черновики в Apple Mail."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "阅读、搜索和起草 Apple 邮件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "閱讀、搜尋和草擬 Apple 郵件。"
+          }
+        }
+      }
     },
     "Readable Channel IDs" : {
       "localizations" : {
@@ -155501,6 +155766,36 @@
         }
       }
     },
+    "Receiving is not running. Verify the helper and QR link, turn on Receive Messages, then add readable chats and authorized senders to start it." : {
+      "comment" : "Text displayed in a WhatsApp channel settings view when the WhatsApp receive transport is not running.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Empfang läuft nicht. Prüfe den Helfer und die QR-Verknüpfung, aktiviere „Nachrichten empfangen“ und füge dann lesbare Chats und autorisierte Absender hinzu, um ihn zu starten."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수신이 실행되고 있지 않습니다. 헬퍼와 QR 연결을 확인하고 메시지 수신을 켠 다음, 읽기 가능한 채팅과 승인된 발신자를 추가하여 시작하세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Приём не запущен. Проверьте помощник и привязку по QR, включите «Получать сообщения», затем добавьте читаемые чаты и авторизованных отправителей, чтобы запустить его."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接收未运行。请检查辅助程序和二维码关联，开启“接收消息”，然后添加可读聊天和已授权发送者以启动接收。"
+          }
+        }
+      }
+    },
     "Receiving is off — send-only setup. Agents can post to writable chats but will not see or reply to incoming iMessages." : {
       "localizations" : {
         "de" : {
@@ -155531,6 +155826,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "接收已關閉——僅傳送設定。智能體可以向可寫聊天發文，但不會看到或回覆傳入的 iMessage。"
+          }
+        }
+      }
+    },
+    "Receiving is off — send-only setup. Agents can post to writable chats but will not see or reply to incoming WhatsApp messages." : {
+      "comment" : "Text describing the WhatsApp receiving setting when the setting is off and the app is configured for sending only.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Empfang ist aus — reine Sende-Einrichtung. Agenten können in beschreibbare Chats posten, sehen eingehende WhatsApp-Nachrichten aber nicht und antworten nicht darauf."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수신이 꺼져 있습니다 — 보내기 전용 설정입니다. 에이전트는 쓰기 가능한 채팅에 게시할 수 있지만 수신되는 WhatsApp 메시지를 보거나 응답하지 않습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Приём выключен — конфигурация только для отправки. Агенты могут писать в доступные для записи чаты, но не будут видеть входящие сообщения WhatsApp и отвечать на них."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接收已关闭 — 仅发送配置。代理可以向可写聊天发送消息，但不会看到或回复传入的 WhatsApp 消息。"
           }
         }
       }
@@ -155640,6 +155965,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "接收已關閉：智慧體將看不到新的 Telegram 訊息，且無法分派任何內容。"
+          }
+        }
+      }
+    },
+    "Receiving is off: agents will not see new WhatsApp messages and no agent can reply." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empfang ist aus: Agenten sehen keine neuen WhatsApp-Nachrichten, und kein Agent kann antworten."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수신이 꺼져 있습니다. 에이전트는 새 WhatsApp 메시지를 볼 수 없고 어떤 에이전트도 답장할 수 없습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Приём выключен: агенты не увидят новые сообщения WhatsApp, и ни один агент не сможет ответить."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接收已关闭：智能体不会看到新的 WhatsApp 消息，也没有智能体可以回复。"
           }
         }
       }
@@ -162133,6 +162486,36 @@
         }
       }
     },
+    "Reply to the incoming WhatsApp message with the selected agent's sanitized response. WhatsApp and global writes plus the write allowlist still apply." : {
+      "comment" : "Toggle to enable automatic reply to incoming WhatsApp messages.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beantworte die eingehende WhatsApp-Nachricht mit der bereinigten Antwort des ausgewählten Agenten. WhatsApp- und globale Schreibrechte sowie die Schreib-Zulassungsliste gelten weiterhin."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "선택한 에이전트의 정제된 응답으로 수신 WhatsApp 메시지에 답장합니다. WhatsApp 및 전역 쓰기 설정과 쓰기 허용 목록은 계속 적용됩니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отвечать на входящее сообщение WhatsApp очищенным ответом выбранного агента. Ограничения записи WhatsApp и глобальные, а также список разрешённых на запись по-прежнему действуют."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用所选代理经净化的回复来回应传入的 WhatsApp 消息。WhatsApp 与全局写入设置以及写入允许列表仍然适用。"
+          }
+        }
+      }
+    },
     "Reply with an Agent" : {
       "comment" : "Section title for the reply to incoming messages settings.",
       "isCommentAutoGenerated" : true,
@@ -162938,6 +163321,34 @@
         }
       }
     },
+    "Require Mention in Groups" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erwähnung in Gruppen erforderlich"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "그룹에서 멘션 필수"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Требовать упоминание в группах"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "群组中需要提及"
+          }
+        }
+      }
+    },
     "Required" : {
       "localizations" : {
         "de" : {
@@ -163446,6 +163857,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要更大聲說話，響應更快"
+          }
+        }
+      }
+    },
+    "Requires the helper and a linked account. Chats come from the local session store; nothing leaves this machine." : {
+      "comment" : "A description of the WhatsApp channel.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfordert den Helfer und ein verknüpftes Konto. Chats stammen aus dem lokalen Sitzungsspeicher; nichts verlässt diesen Rechner."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "헬퍼와 연결된 계정이 필요합니다. 채팅은 로컬 세션 저장소에서 가져오며, 이 컴퓨터 밖으로 나가는 것은 없습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Требуются помощник и привязанный аккаунт. Чаты берутся из локального хранилища сессии; ничего не покидает этот компьютер."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要辅助程序和已关联的账号。聊天来自本地会话存储；任何数据都不会离开这台设备。"
           }
         }
       }
@@ -173649,6 +174090,34 @@
         }
       }
     },
+    "Saved, but WhatsApp receive is not ready yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gespeichert, aber der WhatsApp-Empfang ist noch nicht bereit"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장했지만 WhatsApp 수신이 아직 준비되지 않았습니다"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сохранено, но приём WhatsApp ещё не готов"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保存，但 WhatsApp 接收尚未就绪"
+          }
+        }
+      }
+    },
     "Saved!" : {
       "localizations" : {
         "de" : {
@@ -173922,6 +174391,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "和你的小恐龍打個招呼"
+          }
+        }
+      }
+    },
+    "Scan a QR code from your phone: WhatsApp → Settings → Linked Devices → Link a Device." : {
+      "comment" : "Text displayed in a row of a WhatsApp settings view that describes how to link a WhatsApp account.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanne einen QR-Code mit deinem Telefon: WhatsApp → Einstellungen → Verknüpfte Geräte → Gerät verknüpfen."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "휴대폰으로 QR 코드를 스캔하세요: WhatsApp → 설정 → 연결된 기기 → 기기 연결."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отсканируйте QR-код с телефона: WhatsApp → Настройки → Связанные устройства → Привязка устройства."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用手机扫描二维码：WhatsApp → 设置 → 已关联的设备 → 关联设备。"
+          }
+        }
+      }
+    },
+    "Scan with your phone: WhatsApp → Settings → Linked Devices → Link a Device. Codes rotate about every 20 seconds." : {
+      "comment" : "A description of how to pair with WhatsApp.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanne mit deinem Telefon: WhatsApp → Einstellungen → Verknüpfte Geräte → Gerät verknüpfen. Die Codes wechseln etwa alle 20 Sekunden."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "휴대폰으로 스캔하세요: WhatsApp → 설정 → 연결된 기기 → 기기 연결. 코드는 약 20초마다 바뀝니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отсканируйте телефоном: WhatsApp → Настройки → Связанные устройства → Привязка устройства. Коды меняются примерно каждые 20 секунд."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用手机扫描：WhatsApp → 设置 → 已关联的设备 → 关联设备。二维码约每 20 秒更换一次。"
           }
         }
       }
@@ -175421,6 +175950,47 @@
         }
       }
     },
+    "Search and create notes." : {
+      "comment" : "Onboarding plugin picker blurb for Apple Notes.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Notizen durchsuchen und erstellen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Search and create notes."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "메모를 검색하고 생성합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ищет и создаёт заметки."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "搜索和创建备忘录。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "搜尋和建立備忘錄。"
+          }
+        }
+      }
+    },
     "Search and edit Jira, Confluence, and Compass content" : {
       "localizations" : {
         "de" : {
@@ -175625,6 +176195,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "按名稱或 ID 搜尋聊天"
+          }
+        }
+      }
+    },
+    "Search chats by name or number" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chats nach Name oder Nummer suchen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이름 또는 번호로 채팅 검색"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поиск чатов по имени или номеру"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按名称或号码搜索聊天"
           }
         }
       }
@@ -179668,6 +180266,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "立即發送 · 中斷當前運行"
+          }
+        }
+      }
+    },
+    "Send Read Receipts" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lesebestätigungen senden"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "읽음 확인 보내기"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отправлять уведомления о прочтении"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送已读回执"
           }
         }
       }
@@ -186769,6 +187395,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "跳過下載，僅使用 Osaurus Cloud"
+          }
+        }
+      }
+    },
+    "Skip messages sent from the linked account itself (including your phone and other linked devices). Turn this off to test the full loop from a single number by messaging yourself — the sender must still be in the authorized list, and automatic replies can loop if the agent answers itself." : {
+      "comment" : "Toggle to skip messages sent by the linked account.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Überspringe Nachrichten, die vom verknüpften Konto selbst gesendet wurden (einschließlich deines Telefons und anderer verknüpfter Geräte). Deaktiviere dies, um den kompletten Ablauf mit einer einzigen Nummer zu testen, indem du dir selbst schreibst — der Absender muss weiterhin in der Autorisierungsliste stehen, und automatische Antworten können sich in einer Schleife wiederholen, wenn der Agent sich selbst antwortet."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "연결된 계정 자체(내 휴대폰 및 다른 연결된 기기 포함)에서 보낸 메시지를 건너뜁니다. 하나의 번호로 자신에게 메시지를 보내 전체 흐름을 테스트하려면 이 옵션을 끄세요 — 발신자는 여전히 승인 목록에 있어야 하며, 에이전트가 자신에게 응답하면 자동 응답이 루프에 빠질 수 있습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пропускать сообщения, отправленные с самого привязанного аккаунта (включая ваш телефон и другие привязанные устройства). Отключите это, чтобы протестировать весь цикл с одного номера, написав самому себе — отправитель всё равно должен быть в списке авторизованных, а автоматические ответы могут зациклиться, если агент отвечает сам себе."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳过由已关联账号本身发送的消息（包括你的手机和其他已关联设备）。关闭此选项即可通过给自己发消息、用单个号码测试完整流程 — 发送者仍必须在授权列表中，且如果代理回复自己，自动回复可能会形成循环。"
           }
         }
       }
@@ -201518,6 +202174,36 @@
       "comment" : "A localized string that can be used to show a warning to the user. The argument is the limit.",
       "isCommentAutoGenerated" : true
     },
+    "The whatsmeow-based bridge helper is required for all WhatsApp actions. Build it with `make wa-helper` (needs the Go toolchain)." : {
+      "comment" : "Text describing the WhatsApp helper.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der auf whatsmeow basierende Bridge-Helfer ist für alle WhatsApp-Aktionen erforderlich. Baue ihn mit `make wa-helper` (benötigt die Go-Toolchain)."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "모든 WhatsApp 작업에는 whatsmeow 기반 브리지 헬퍼가 필요합니다. `make wa-helper`로 빌드하세요(Go 도구 체인 필요)."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Для всех действий WhatsApp требуется мост-помощник на основе whatsmeow. Соберите его командой `make wa-helper` (нужен тулчейн Go)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有 WhatsApp 操作都需要基于 whatsmeow 的桥接辅助程序。请使用 `make wa-helper` 构建（需要 Go 工具链）。"
+          }
+        }
+      }
+    },
     "The work task is still running. Dismissing will cancel the task." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -211882,6 +212568,62 @@
         }
       }
     },
+    "Unlink" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trennen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "연결 해제"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отвязать"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解除关联"
+          }
+        }
+      }
+    },
+    "Unlinking..." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird getrennt..."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "연결 해제 중..."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отвязка..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在解除关联..."
+          }
+        }
+      }
+    },
     "Unload" : {
       "localizations" : {
         "de" : {
@@ -215943,6 +216685,34 @@
         }
       }
     },
+    "Using the developer override binary (OSAURUS_WA_PATH)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verwendet die Entwickler-Override-Binärdatei (OSAURUS_WA_PATH)."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "개발자 재정의 바이너리(OSAURUS_WA_PATH)를 사용하고 있습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Используется бинарный файл, заданный переопределением разработчика (OSAURUS_WA_PATH)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在使用开发者覆盖二进制文件（OSAURUS_WA_PATH）。"
+          }
+        }
+      }
+    },
     "Using the developer override binary." : {
       "localizations" : {
         "de" : {
@@ -218534,6 +219304,36 @@
         }
       }
     },
+    "Waiting for a QR code from the helper..." : {
+      "comment" : "A message displayed when the WhatsApp pairing QR code is being generated.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warte auf einen QR-Code vom Helfer..."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "헬퍼의 QR 코드를 기다리는 중..."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ожидание QR-кода от помощника..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待辅助程序生成二维码..."
+          }
+        }
+      }
+    },
     "Waiting for a Slack message. Send the test message now from an authorized sender in a readable channel." : {
       "comment" : "Status message displayed when verifying a Slack message, indicating that the user should send a test message.",
       "isCommentAutoGenerated" : true,
@@ -218674,6 +219474,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "等待 Telegram 訊息..."
+          }
+        }
+      }
+    },
+    "Waiting for a WhatsApp message. Send one now from an authorized sender in a readable chat." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warte auf eine WhatsApp-Nachricht. Sende jetzt eine von einem autorisierten Absender in einem lesbaren Chat."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 메시지를 기다리는 중입니다. 지금 읽기 가능한 채팅에서 승인된 발신자로 메시지를 보내세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ожидание сообщения WhatsApp. Отправьте сообщение от авторизованного отправителя в доступном для чтения чате."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待 WhatsApp 消息。请立即从可读聊天中的授权发送者发送一条。"
+          }
+        }
+      }
+    },
+    "Waiting for a WhatsApp message..." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warte auf eine WhatsApp-Nachricht..."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 메시지 대기 중..."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ожидание сообщения WhatsApp..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待 WhatsApp 消息..."
           }
         }
       }
@@ -221256,6 +222112,204 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "v%@ 的新功能"
+          }
+        }
+      }
+    },
+    "WhatsApp account linked." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp-Konto verknüpft."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 계정이 연결되었습니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Аккаунт WhatsApp привязан."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 账号已关联。"
+          }
+        }
+      }
+    },
+    "WhatsApp bridge helper" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp-Bridge-Helfer"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 브리지 도우미"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Помощник моста WhatsApp"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 桥接辅助程序"
+          }
+        }
+      }
+    },
+    "WhatsApp chats loaded" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp-Chats geladen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 채팅 불러옴"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Чаты WhatsApp загружены"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 聊天已加载"
+          }
+        }
+      }
+    },
+    "WhatsApp receive" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp-Empfang"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 수신"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Приём WhatsApp"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 接收"
+          }
+        }
+      }
+    },
+    "WhatsApp runs through a local bridge helper speaking the WhatsApp Web protocol, linked to your own account like a browser session — no bot account, token, or Meta Business setup. This uses an unofficial protocol: WhatsApp may log the session out, and a dedicated number is recommended." : {
+      "comment" : "A description of WhatsApp's connection setup.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp läuft über einen lokalen Bridge-Helfer, der das WhatsApp-Web-Protokoll spricht und wie eine Browser-Sitzung mit deinem eigenen Konto verknüpft ist — kein Bot-Konto, Token oder Meta-Business-Setup. Dies nutzt ein inoffizielles Protokoll: WhatsApp kann die Sitzung abmelden, und eine eigene Nummer wird empfohlen."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp는 WhatsApp Web 프로토콜을 사용하는 로컬 브리지 헬퍼를 통해 실행되며, 브라우저 세션처럼 본인 계정에 연결됩니다 — 봇 계정, 토큰, Meta Business 설정이 필요 없습니다. 비공식 프로토콜을 사용하므로 WhatsApp가 세션을 로그아웃시킬 수 있으며, 전용 번호 사용을 권장합니다."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp работает через локальный мост-помощник, использующий протокол WhatsApp Web и привязанный к вашему собственному аккаунту, как сессия браузера — без бот-аккаунта, токена или настройки Meta Business. Используется неофициальный протокол: WhatsApp может завершить сессию, рекомендуется выделенный номер."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 通过本地桥接辅助程序运行，该程序使用 WhatsApp Web 协议，像浏览器会话一样关联到你自己的账号 — 无需机器人账号、令牌或 Meta Business 设置。这使用非官方协议：WhatsApp 可能会注销该会话，建议使用专用号码。"
+          }
+        }
+      }
+    },
+    "WhatsApp settings saved" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp-Einstellungen gespeichert"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 설정이 저장됨"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Настройки WhatsApp сохранены"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 设置已保存"
+          }
+        }
+      }
+    },
+    "WhatsApp settings saved — receive is ready" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp-Einstellungen gespeichert — Empfang ist bereit"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 설정이 저장됨 — 수신 준비 완료"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Настройки WhatsApp сохранены — приём готов"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 设置已保存 — 接收已就绪"
           }
         }
       }
@@ -224388,6 +225442,10 @@
           }
         }
       }
+    },
+    "XLSX" : {
+      "comment" : "Onboarding plugin picker display name for the Excel spreadsheets tool.",
+      "shouldTranslate" : false
     },
     "xoxb-..." : {
       "localizations" : {

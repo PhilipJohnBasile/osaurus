@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/mattn/go-sqlite3 v1.14.49
-	go.mau.fi/whatsmeow v0.0.0-20260730092514-662ad1dc6900
+	go.mau.fi/whatsmeow v0.0.0-20260804144817-1494ba731cb0
 	google.golang.org/protobuf v1.36.11
 )
 
