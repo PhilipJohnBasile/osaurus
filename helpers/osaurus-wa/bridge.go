@@ -113,6 +113,23 @@ func newBridge(storeDir string) (*bridge, error) {
 	return b, nil
 }
 
+// resetClientForPairing replaces a dead whatsmeow client with a fresh one.
+// After a logout or a remote unlink from the phone, whatsmeow marks the
+// device Deleted and swaps all of its session stores for no-op stubs that
+// fail every operation (and Connect refuses outright with ErrDeviceDeleted),
+// so re-pairing in a long-lived helper process needs a new device + client.
+func (b *bridge) resetClientForPairing() {
+	old := b.client
+	device := b.container.NewDevice()
+	client := whatsmeow.NewClient(device, helperLogger(b.debug))
+	client.AddEventHandler(b.handleEvent)
+	b.mu.Lock()
+	b.client = client
+	b.mu.Unlock()
+	old.RemoveEventHandlers()
+	old.Disconnect()
+}
+
 // debugf traces bridge-level flow to stderr when OSAURUS_WA_DEBUG is set.
 func (b *bridge) debugf(msg string, args ...any) {
 	if !b.debug {
@@ -269,6 +286,9 @@ func (b *bridge) handleLoginStart() (map[string]any, *rpcError) {
 	b.loginQRStop = make(chan struct{})
 	b.mu.Unlock()
 
+	if b.client.Store.Deleted {
+		b.resetClientForPairing()
+	}
 	b.loginHandler = b.client.AddEventHandler(b.handleLoginEvent)
 	if err := b.client.Connect(); err != nil {
 		b.finishLogin(nil)
