@@ -464,11 +464,12 @@ Plugins are installed per agent. Each agent can have a different set of plugins 
 
 **Managing plugins:**
 
-- Open Management window → **Sandbox** → **Plugins** tab
-- **Import** plugins from JSON files, URLs, or GitHub repos
+- Open Settings → **Tools** → **Custom** tab
+- **Import** plugins from JSON files
 - **Create** new plugins with the built-in editor
-- **Install** plugins to specific agents
 - **Export** and **duplicate** plugins for sharing
+
+Created and imported plugins are exposed to the model immediately. Installation into the sandbox (directory seeding, dependencies, setup command) happens automatically the first time an agent invokes one of the plugin's tools.
 
 ### Plugin Tools
 
