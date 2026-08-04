@@ -1,12 +1,12 @@
 {
   "artifact": "osaurus-wa",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "upstreamRepository": "https://github.com/osaurus-ai/osaurus",
   "license": "MIT",
-  "archiveURL": "https://github.com/osaurus-ai/osaurus/releases/download/wa-helper-v0.2.0/osaurus-wa-macos.zip",
-  "archiveSHA256": "e8c32c4a7c31eb3beaacb45431b59f5ddc22d3f25bfff98039e8d1d1a771aa9d",
+  "archiveURL": "https://github.com/osaurus-ai/osaurus/releases/download/wa-helper-v0.2.1/osaurus-wa-macos.zip",
+  "archiveSHA256": "52c25ecff949914bc17141bf942310d5bc451490207701bf5edf42132546c2f9",
   "executableName": "osaurus-wa",
-  "executableSHA256": "62da041296f88276e1a07f731bfe54df93d77e8a72b3104afb93522608be687e",
+  "executableSHA256": "a7320ca2416702940855ac8b641632def6bd0dad8b21418cfed417b38d157430",
   "executableRequiredArchitectures": ["arm64"],
-  "note": "Pinned to the wa-helper-v0.2.0 release. Rotate with `make wa-helper-release` and update WhatsAppRuntimeAssets.swift together (locked by the pin-sync unit test); see docs/CHANNEL_RELEASE_RUNBOOK_WHATSAPP.md."
+  "note": "Pinned to the wa-helper-v0.2.1 release. Rotate with `make wa-helper-release` and update WhatsAppRuntimeAssets.swift together (locked by the pin-sync unit test); see docs/CHANNEL_RELEASE_RUNBOOK_WHATSAPP.md."
 }

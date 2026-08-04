@@ -18,7 +18,7 @@ import (
 	"path/filepath"
 )
 
-const helperVersion = "0.2.0"
+const helperVersion = "0.2.1"
 
 var rpcMethods = []string{
 	"status",

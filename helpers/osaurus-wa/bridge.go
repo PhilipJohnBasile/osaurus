@@ -17,7 +17,9 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow"
+	waCompanionReg "go.mau.fi/whatsmeow/proto/waCompanionReg"
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -29,6 +31,8 @@ type bridge struct {
 	container *sqlstore.Container
 	client    *whatsmeow.Client
 	writer    *stdioWriter
+
+	debug bool
 
 	mu            sync.Mutex
 	watching      bool
@@ -48,16 +52,52 @@ type bridge struct {
 	passkeyDance bool
 }
 
+// stderrLogger routes whatsmeow logs to stderr (stdout carries the JSON-RPC
+// stream and must stay clean). Enabled via OSAURUS_WA_DEBUG for diagnosing
+// live protocol issues; production runs with waLog.Noop.
+type stderrLogger struct{ mod string }
+
+func (l *stderrLogger) logf(level, msg string, args ...any) {
+	fmt.Fprintf(
+		os.Stderr, "%s [%s %s] %s\n",
+		time.Now().Format("15:04:05.000"), l.mod, level, fmt.Sprintf(msg, args...),
+	)
+}
+
+func (l *stderrLogger) Errorf(msg string, args ...any) { l.logf("ERROR", msg, args...) }
+func (l *stderrLogger) Warnf(msg string, args ...any)  { l.logf("WARN", msg, args...) }
+func (l *stderrLogger) Infof(msg string, args ...any)  { l.logf("INFO", msg, args...) }
+func (l *stderrLogger) Debugf(msg string, args ...any) { l.logf("DEBUG", msg, args...) }
+func (l *stderrLogger) Sub(module string) waLog.Logger {
+	return &stderrLogger{mod: l.mod + "/" + module}
+}
+
+func helperLogger(debug bool) waLog.Logger {
+	if debug {
+		return &stderrLogger{mod: "wa"}
+	}
+	return waLog.Noop
+}
+
 func newBridge(storeDir string) (*bridge, error) {
 	if err := os.MkdirAll(storeDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create store dir: %w", err)
 	}
+	// Primary phones validate the pairing QR's client-type field against the
+	// values real WA Web emits and reject the scan outright otherwise
+	// (whatsmeow's unset default derives "other web client"). Mirror WA
+	// Web's platform (Chrome; the value it reports even from Electron) like
+	// other bridges do, and keep the product name in Os so the entry in the
+	// phone's Linked Devices list stays identifiable.
+	store.DeviceProps.Os = proto.String("Osaurus (Mac OS)")
+	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_CHROME.Enum()
+	debug := os.Getenv("OSAURUS_WA_DEBUG") != ""
 	dbPath := filepath.Join(storeDir, "whatsapp.db")
 	container, err := sqlstore.New(
 		context.Background(),
 		"sqlite3",
 		"file:"+dbPath+"?_foreign_keys=on&_busy_timeout=5000",
-		waLog.Noop,
+		helperLogger(debug),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("open session store: %w", err)
@@ -67,10 +107,21 @@ func newBridge(storeDir string) (*bridge, error) {
 		container.Close()
 		return nil, fmt.Errorf("load device: %w", err)
 	}
-	b := &bridge{container: container}
-	b.client = whatsmeow.NewClient(device, waLog.Noop)
+	b := &bridge{container: container, debug: debug}
+	b.client = whatsmeow.NewClient(device, helperLogger(debug))
 	b.client.AddEventHandler(b.handleEvent)
 	return b, nil
+}
+
+// debugf traces bridge-level flow to stderr when OSAURUS_WA_DEBUG is set.
+func (b *bridge) debugf(msg string, args ...any) {
+	if !b.debug {
+		return
+	}
+	fmt.Fprintf(
+		os.Stderr, "%s [bridge] %s\n",
+		time.Now().Format("15:04:05.000"), fmt.Sprintf(msg, args...),
+	)
 }
 
 func (b *bridge) close() {
@@ -263,22 +314,38 @@ func (b *bridge) finishLogin(payload map[string]any) {
 		go b.client.RemoveEventHandler(handler)
 	}
 	if payload != nil {
-		if payload["status"] != "success" {
-			b.client.Disconnect()
-		}
+		// Notify first: Disconnect can block behind whatsmeow's socket lock
+		// (e.g. an auto-reconnect dial in flight), and it must never delay
+		// or eat the terminal notification. Backgrounded because this may
+		// run inside a whatsmeow event-dispatch goroutine.
 		b.writer.notify("login", payload)
+		if payload["status"] != "success" {
+			go b.client.Disconnect()
+		}
 	}
 }
 
 // handleLoginEvent drives one pairing session from raw whatsmeow events
 // (registered only while a login is active).
 func (b *bridge) handleLoginEvent(rawEvt any) {
+	// whatsmeow's dispatcher recovers handler panics silently (invisible
+	// with the no-op logger), which would strand the pairing session with
+	// no terminal notification. Report loudly instead.
+	defer func() {
+		if r := recover(); r != nil {
+			b.finishLogin(map[string]any{
+				"status": "error",
+				"detail": fmt.Sprintf("internal error handling %T: %v", rawEvt, r),
+			})
+		}
+	}()
 	b.mu.Lock()
 	active := b.loginActive
 	b.mu.Unlock()
 	if !active {
 		return
 	}
+	b.debugf("login event %T", rawEvt)
 	switch evt := rawEvt.(type) {
 	case *events.QR:
 		go b.emitLoginQRs(slices.Clone(evt.Codes))
