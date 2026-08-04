@@ -368,7 +368,23 @@ func (b *bridge) handleLoginEvent(rawEvt any) {
 	b.debugf("login event %T", rawEvt)
 	switch evt := rawEvt.(type) {
 	case *events.QR:
-		go b.emitLoginQRs(slices.Clone(evt.Codes))
+		// A second QR event mid-session means the server retired the previous
+		// registration material (companion_reg_refresh) and whatsmeow rotated
+		// the ADV secret: the old codes are dead, so replace the running
+		// emitter with one for the re-rendered batch.
+		b.mu.Lock()
+		if b.passkeyDance {
+			// The phone already scanned; a QR re-render is meaningless now.
+			b.mu.Unlock()
+			return
+		}
+		if b.loginQRStop != nil {
+			close(b.loginQRStop)
+		}
+		stop := make(chan struct{})
+		b.loginQRStop = stop
+		b.mu.Unlock()
+		go b.emitLoginQRs(slices.Clone(evt.Codes), stop)
 	case *events.PairSuccess:
 		b.finishLogin(map[string]any{
 			"status":      "success",
@@ -464,18 +480,13 @@ func (b *bridge) handleLoginEvent(rawEvt any) {
 	}
 }
 
-// emitLoginQRs streams the code pool as `qr` notifications, first code 60s
-// then 20s each, mirroring whatsmeow's own rotation. Draining the pool
-// without a scan times the login out — unless a passkey dance took over
-// (which closes loginQRStop and owns the session lifetime from then on).
-func (b *bridge) emitLoginQRs(codes []string) {
+// emitLoginQRs streams one code batch as `qr` notifications, first code 60s
+// then 20s each, mirroring whatsmeow's own rotation. `stop` belongs to this
+// emitter: it closes when a passkey dance takes over, the session finishes,
+// or a refreshed batch replaces this one. Draining the pool without a scan
+// times the login out — but only if this emitter is still the active one.
+func (b *bridge) emitLoginQRs(codes []string, stop chan struct{}) {
 	for i, code := range codes {
-		b.mu.Lock()
-		stop := b.loginQRStop
-		b.mu.Unlock()
-		if stop == nil {
-			return
-		}
 		timeout := 20 * time.Second
 		if i == 0 {
 			timeout = 60 * time.Second
@@ -490,7 +501,12 @@ func (b *bridge) emitLoginQRs(codes []string) {
 			return
 		}
 	}
-	b.finishLogin(map[string]any{"status": "timeout"})
+	b.mu.Lock()
+	current := b.loginQRStop == stop
+	b.mu.Unlock()
+	if current {
+		b.finishLogin(map[string]any{"status": "timeout"})
+	}
 }
 
 func (b *bridge) handleLoginCancel() (map[string]any, *rpcError) {

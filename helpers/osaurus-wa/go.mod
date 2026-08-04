@@ -28,3 +28,5 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 )
+
+replace go.mau.fi/whatsmeow => github.com/osaurus-ai/whatsmeow v0.0.0-20260804213027-d8227f8b48c0

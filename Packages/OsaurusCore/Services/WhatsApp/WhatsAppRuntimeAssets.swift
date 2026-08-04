@@ -11,7 +11,7 @@
 //  locked to `scripts/build/wa-helper-manifest.json`, a DEBUG-only dev
 //  override env var, and a same-team code-signature carve-out for a copy
 //  sealed inside the app bundle. Digests are pinned to the
-//  `wa-helper-v0.2.2` release archive; rotate them with
+//  `wa-helper-v0.2.3` release archive; rotate them with
 //  `make wa-helper-release` per docs/CHANNEL_RELEASE_RUNBOOK_WHATSAPP.md.
 //
 
@@ -26,7 +26,7 @@ import Security
 
         /// Pinned `osaurus-wa` release. Bump together with the digests below
         /// when rotating the helper.
-        public static let version = "0.2.2"
+        public static let version = "0.2.3"
 
         public static let upstreamRepository = "https://github.com/osaurus-ai/osaurus"
         public static let license = "MIT"
@@ -36,17 +36,17 @@ import Security
         // MARK: - Digests (fail-closed pins)
         //
         // MUST match `scripts/build/wa-helper-manifest.json` (locked by a
-        // unit test). Pinned to the `wa-helper-v0.2.2` release archive; an
+        // unit test). Pinned to the `wa-helper-v0.2.3` release archive; an
         // all-zero pin would mean unpinned and refuse every copy except the
         // DEBUG dev override and an app-sealed same-team signed copy.
 
         public static let executableSHA256 =
-            "c6332e7fe5f3d77e2d43bb0d9ba3eb9ab29d10203207ca5ebd26a452d98418b3"
+            "8bb150af3e5d617f77a4bc1d0734faaf940adc38684941160b4bba0283a4b1d6"
 
         public static let archiveURLString =
             "https://github.com/osaurus-ai/osaurus/releases/download/wa-helper-v\(version)/osaurus-wa-macos.zip"
         public static let archiveSHA256 =
-            "a133b8bcff09d839fd47f4a3c6b908746c0c4a98131fc898bf7a5063db9a80a2"
+            "156b184b28aa86ef65712c891ed06af4bb343ef479671f2ded6a8c5229501856"
         public static let maxArchiveDownloadBytes = 64 * 1_024 * 1_024
 
         public static let executableRequiredArchitectures = ["arm64"]
