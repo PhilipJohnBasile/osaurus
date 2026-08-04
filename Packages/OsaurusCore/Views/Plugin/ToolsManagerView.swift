@@ -829,7 +829,11 @@ private struct CustomToolsTabContent: View {
             SandboxPluginEditorView(
                 plugin: .blank(),
                 isNew: true,
-                onSave: { plugin in pluginLibrary.save(plugin) },
+                onSave: { plugin in
+                    pluginLibrary.save(plugin)
+                    ToolRegistry.shared.registerSandboxPluginTools(plugin: plugin)
+                    onChange()
+                },
                 onDismiss: {}
             )
         }
@@ -839,6 +843,9 @@ private struct CustomToolsTabContent: View {
                 isNew: false,
                 onSave: { updated in
                     pluginLibrary.update(oldId: plugin.id, plugin: updated)
+                    ToolRegistry.shared.unregisterSandboxPluginTools(pluginId: plugin.id)
+                    ToolRegistry.shared.registerSandboxPluginTools(plugin: updated)
+                    onChange()
                     editingPlugin = nil
                 },
                 onDismiss: { editingPlugin = nil }
