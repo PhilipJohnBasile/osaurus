@@ -223,8 +223,17 @@ public final class SandboxToolRegistrar {
     /// Register all sandbox plugin tools globally (agent-agnostic).
     /// Plugin tools are available to any agent and resolved at execution time.
     public func registerAllPluginTools() {
-        let allPlugins = SandboxPluginManager.shared.allUniquePlugins()
-        for plugin in allPlugins {
+        // Union installed plugins with the library: a custom tool created in
+        // Settings lives only in the library until an agent first uses it, but
+        // it must still be offered to the model so that first use can happen.
+        var pluginsById: [String: SandboxPlugin] = [:]
+        for plugin in SandboxPluginLibrary.shared.plugins {
+            pluginsById[plugin.id] = plugin
+        }
+        for plugin in SandboxPluginManager.shared.allUniquePlugins() {
+            pluginsById[plugin.id] = plugin
+        }
+        for plugin in pluginsById.values {
             ToolRegistry.shared.registerSandboxPluginTools(plugin: plugin)
         }
     }
