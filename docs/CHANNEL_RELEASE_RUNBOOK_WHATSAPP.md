@@ -24,10 +24,10 @@ no build lane stages a copy there today; accepted by digest pin or same-team
 code signature) → the downloaded directory (digest pin only, since it is
 user-writable). Every spawn re-verifies; a swapped binary fails closed.
 
-**Digests are currently UNPINNED (all-zero).** Until the first release is
-published, the Download button stays hidden, the installer refuses up front,
-and the only spawnable helper is a dev build (`make wa-helper` +
-`OSAURUS_WA_PATH`).
+Digests are pinned to the `wa-helper-v0.1.0` release archive. If the pins
+were ever reset to all-zero (unpinned), the Download button would stay
+hidden, the installer would refuse up front, and the only spawnable helper
+would be a dev build (`make wa-helper` + `OSAURUS_WA_PATH`).
 
 ## Publishing / Rotating the Pinned Helper
 

@@ -9,8 +9,8 @@
 //  and the install lands atomically under
 //  `~/.osaurus/helpers/osaurus-wa/<version>/`.
 //
-//  While `WhatsAppRuntimeAssets` digests are all-zero (no release published
-//  yet) the install refuses up front; dev builds use `make wa-helper` +
+//  If `WhatsAppRuntimeAssets` digests were ever all-zero (unpinned), the
+//  install refuses up front; dev builds use `make wa-helper` +
 //  `OSAURUS_WA_PATH` instead.
 //
 

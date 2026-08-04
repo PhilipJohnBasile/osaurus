@@ -4,9 +4,9 @@
   "upstreamRepository": "https://github.com/osaurus-ai/osaurus",
   "license": "MIT",
   "archiveURL": "https://github.com/osaurus-ai/osaurus/releases/download/wa-helper-v0.1.0/osaurus-wa-macos.zip",
-  "archiveSHA256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "archiveSHA256": "48b38b882118caf38248745574d9e0ab38ec86e56968ab80a30fb66daf1b25c8",
   "executableName": "osaurus-wa",
-  "executableSHA256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "executableSHA256": "e833cabaad01d2027e3d633219b7d4a4fbd5826d199bfabfe89970e233f0b2bd",
   "executableRequiredArchitectures": ["arm64"],
-  "note": "Digests are unpinned until the first osaurus-wa release is published. Until then the WhatsApp channel only spawns a dev-built helper via OSAURUS_WA_PATH (DEBUG builds). Build locally with `make wa-helper`."
+  "note": "Pinned to the wa-helper-v0.1.0 release. Rotate with `make wa-helper-release` and update WhatsAppRuntimeAssets.swift together (locked by the pin-sync unit test); see docs/CHANNEL_RELEASE_RUNBOOK_WHATSAPP.md."
 }

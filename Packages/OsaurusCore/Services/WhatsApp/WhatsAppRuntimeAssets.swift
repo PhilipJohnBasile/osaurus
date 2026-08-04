@@ -10,9 +10,9 @@
 //  The trust model mirrors `IMessageRuntimeAssets`: fail-closed digest pins
 //  locked to `scripts/build/wa-helper-manifest.json`, a DEBUG-only dev
 //  override env var, and a same-team code-signature carve-out for a copy
-//  sealed inside the app bundle. Digests are currently UNPINNED (all-zero):
-//  no release archive has been published yet, so the only spawnable helper
-//  is a dev build via `OSAURUS_WA_PATH` (or an app-sealed, re-signed copy).
+//  sealed inside the app bundle. Digests are pinned to the
+//  `wa-helper-v0.1.0` release archive; rotate them with
+//  `make wa-helper-release` per docs/CHANNEL_RELEASE_RUNBOOK_WHATSAPP.md.
 //
 
 import CryptoKit
@@ -36,17 +36,17 @@ import Security
         // MARK: - Digests (fail-closed pins)
         //
         // MUST match `scripts/build/wa-helper-manifest.json` (locked by a
-        // unit test). All-zero means unpinned: verification refuses every
-        // copy except the DEBUG dev override and an app-sealed same-team
-        // signed copy.
+        // unit test). Pinned to the `wa-helper-v0.1.0` release archive; an
+        // all-zero pin would mean unpinned and refuse every copy except the
+        // DEBUG dev override and an app-sealed same-team signed copy.
 
         public static let executableSHA256 =
-            "0000000000000000000000000000000000000000000000000000000000000000"
+            "e833cabaad01d2027e3d633219b7d4a4fbd5826d199bfabfe89970e233f0b2bd"
 
         public static let archiveURLString =
             "https://github.com/osaurus-ai/osaurus/releases/download/wa-helper-v\(version)/osaurus-wa-macos.zip"
         public static let archiveSHA256 =
-            "0000000000000000000000000000000000000000000000000000000000000000"
+            "48b38b882118caf38248745574d9e0ab38ec86e56968ab80a30fb66daf1b25c8"
         public static let maxArchiveDownloadBytes = 64 * 1_024 * 1_024
 
         public static let executableRequiredArchitectures = ["arm64"]
