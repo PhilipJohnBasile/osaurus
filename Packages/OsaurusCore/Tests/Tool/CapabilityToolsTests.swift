@@ -508,6 +508,56 @@ struct CapabilitiesLoadToolTests {
         #expect(!block.contains("UNIQUE_PARAM_PROSE_MARKER"))
     }
 
+    @Test func loadedSchemaBlockCompactsForCompactPromptModel() {
+        // A live model that prefers the compact prompt gets the skeleton
+        // schema in load results too — a multi-tool plugin group's full
+        // schemas (~7.9K chars for Mail) wedged a 16B QAT model into
+        // empty-EOS turns. "foundation" resolves prefersCompactPrompt with
+        // no disk probe, making this deterministic on any test host.
+        let block = ChatExecutionContext.$currentModelName.withValue("foundation") {
+            CapabilitiesLoadTool.loadedSchemaBlock(for: schemaProbeTool())
+        }
+        #expect(block.contains("\"name\":\"schema_probe_tool\""))
+        #expect(block.contains("city"))
+        #expect(block.contains("\"required\":[\"city\"]"))
+        #expect(!block.contains("UNIQUE_PARAM_PROSE_MARKER"))
+    }
+
+    @Test func loadedSchemaBlockStaysFullForUnresolvedModel() {
+        // An unresolvable model id (remote/API alias with no local config)
+        // resolves `.unknown` → verbose: capable and remote models keep the
+        // full schema so first-call accuracy is never sacrificed on a model
+        // that can afford the prose.
+        let block = ChatExecutionContext.$currentModelName.withValue(
+            "acme/totally-unknown-model-id"
+        ) {
+            CapabilitiesLoadTool.loadedSchemaBlock(for: schemaProbeTool())
+        }
+        #expect(block.contains("UNIQUE_PARAM_PROSE_MARKER"))
+    }
+
+    @Test func skillInstructionCapPassesShortTextThrough() {
+        let text = "# Skill\nShort body."
+        #expect(CapabilitiesLoadTool.instructionsCappedToCompactBudget(text) == text)
+    }
+
+    @Test func skillInstructionCapTruncatesAtNewlineWithNote() {
+        // Body over the budget: cut lands on the last newline inside the
+        // budget (never mid-line) and the explicit truncation note tells
+        // the model the trailing sections were dropped deliberately.
+        let line = String(repeating: "x", count: 99) + "\n"
+        let text = String(
+            repeating: line,
+            count: (CapabilitiesLoadTool.compactSkillInstructionBudget / 100) + 20
+        )
+        let capped = CapabilitiesLoadTool.instructionsCappedToCompactBudget(text)
+        #expect(capped.count < text.count)
+        #expect(capped.contains("[Skill instructions truncated"))
+        let body = capped.components(separatedBy: "\n\n[Skill instructions truncated")[0]
+        #expect(body.count <= CapabilitiesLoadTool.compactSkillInstructionBudget)
+        #expect(body.hasSuffix(String(repeating: "x", count: 99)))
+    }
+
     @Test func handlesInvalidIdFormat() async throws {
         // All-failed contract: a load where NOTHING succeeded returns a
         // real failure envelope (kind: invalid_args, field: ids), not

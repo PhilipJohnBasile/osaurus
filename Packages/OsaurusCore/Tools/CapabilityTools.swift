@@ -803,12 +803,54 @@ final class CapabilitiesLoadTool: OsaurusTool, @unchecked Sendable {
     /// `skillReferenceBudget`.
     static let compactSkillReferenceBudget = 8_000
 
-    /// Effective budget for this load: the experiment axis (nil in
-    /// production) can compact loaded skill references so the harness can
-    /// price "loaded result compaction" in cumulative-token terms.
+    /// Instruction-body budget (characters) for a loaded skill on a
+    /// compact-prompt model. `buildFullInstructions` budgets reference
+    /// files but not the SKILL.md body itself, so a prose-heavy skill
+    /// (Mail is ~8.7K chars) plus its tool schemas rode into one tool
+    /// result as ~4.7K tokens — enough to wedge a small local model into
+    /// empty-EOS turns (live 16B QAT repro, Aug 2026). The truncation
+    /// cuts trailing sections (worked examples, limitations) while the
+    /// loaded schemas below the skill text keep every tool callable.
+    static let compactSkillInstructionBudget = 6_000
+
+    /// True when this load's result should render compact: skeleton
+    /// schemas and tighter skill budgets. Three triggers — the Default
+    /// agent's configure loads (its addendum already teaches the surface),
+    /// the eval compaction axis, and a live model that prefers the compact
+    /// prompt (small/tiny window, or a local model at or under the
+    /// `compactParamCeilingBillions` ceiling). Unresolved/nil model names
+    /// (API surface, previews) resolve `.unknown` → verbose, preserving
+    /// full schemas for capable and remote models. Model name and agent
+    /// are session-constant, so result shape stays stable across turns.
+    static func loadResultsPreferCompact() -> Bool {
+        if ChatExecutionContext.currentAgentId == Agent.defaultId { return true }
+        if PromptComposerExperimentScope.current?.compactLoadedResults == true { return true }
+        return ContextSizeResolver.resolve(modelId: ChatExecutionContext.currentModelName)
+            .prefersCompactPrompt
+    }
+
+    /// Effective budget for this load: compact-prompt models (and the
+    /// eval compaction axis) get the tight budget so a reference-heavy
+    /// skill cannot flood a small model's context; everything else keeps
+    /// the generous production budget.
     static var effectiveSkillReferenceBudget: Int {
-        PromptComposerExperimentScope.current?.compactLoadedResults == true
-            ? compactSkillReferenceBudget : skillReferenceBudget
+        loadResultsPreferCompact() ? compactSkillReferenceBudget : skillReferenceBudget
+    }
+
+    /// Cap a loaded skill's instruction body at
+    /// `compactSkillInstructionBudget`, cutting at the last newline inside
+    /// the budget and appending an explicit truncation note so the model
+    /// knows trailing sections were dropped deliberately. Text at or under
+    /// the budget passes through unchanged.
+    static func instructionsCappedToCompactBudget(_ instructions: String) -> String {
+        guard instructions.count > compactSkillInstructionBudget else { return instructions }
+        let budgetEnd = instructions.index(
+            instructions.startIndex, offsetBy: compactSkillInstructionBudget)
+        let cut = instructions[..<budgetEnd].lastIndex(of: "\n") ?? budgetEnd
+        return String(instructions[..<cut])
+            + "\n\n[Skill instructions truncated to fit this model's context "
+            + "budget. Follow the workflow above and use the loaded tools "
+            + "listed below.]"
     }
 
     /// Built-in skills are not plugin-backed, so they have no dynamic tool
@@ -1244,18 +1286,15 @@ final class CapabilitiesLoadTool: OsaurusTool, @unchecked Sendable {
     /// block). The loaded tool folds into `<tools>` on the next user turn via
     /// `frozenAlwaysLoadedNames`.
     ///
-    /// The default (configuration) agent only ever loads configure-write tools;
-    /// it gets the compact bootstrap skeleton (enums + field names + required
-    /// kept, prose dropped) so the suffix stays as lean as its turn-1 baseline.
-    /// Every other agent gets the full schema so dynamically loaded
-    /// plugin/MCP/sandbox tools call correctly on the first attempt.
+    /// Compact-prompt sessions (`loadResultsPreferCompact`) get the compact
+    /// bootstrap skeleton (enums + field names + required kept, prose
+    /// dropped): a multi-tool plugin group's full schemas alone ran ~7.9K
+    /// chars (Mail, 9 tools) and helped wedge a small local model into
+    /// empty-EOS turns. Capable/remote models keep the full schema so
+    /// dynamically loaded plugin/MCP/sandbox tools call correctly on the
+    /// first attempt.
     static func loadedSchemaBlock(for spec: Tool) -> String {
-        // `compactLoadedResults` (eval-only, nil in production) extends the
-        // default agent's skeleton-schema behavior to every agent so the
-        // harness can price compacted load results.
-        let compact =
-            ChatExecutionContext.currentAgentId == Agent.defaultId
-            || PromptComposerExperimentScope.current?.compactLoadedResults == true
+        let compact = loadResultsPreferCompact()
         let rendered = compact ? SystemPromptComposer.compactBootstrapSpec(spec) : spec
         let dict = rendered.toTokenizerToolSpec()
         guard JSONSerialization.isValidJSONObject(dict),
@@ -1358,10 +1397,18 @@ final class CapabilitiesLoadTool: OsaurusTool, @unchecked Sendable {
         // Parity with `/skill-name`: instructions AND reference materials.
         // The budget keeps a reference-heavy skill from flooding the tool
         // result; past it, files collapse to a named omission note.
-        output += await SkillManager.shared.buildFullInstructions(
+        var instructions = await SkillManager.shared.buildFullInstructions(
             for: skill,
             referenceBudget: Self.effectiveSkillReferenceBudget
         )
+        // The reference budget doesn't bound the SKILL.md body itself. On a
+        // compact-prompt model, cap the body too — trailing sections (worked
+        // examples, limitations) are droppable, while the loaded tool schemas
+        // appended after the skill text keep every tool callable.
+        if Self.loadResultsPreferCompact() {
+            instructions = Self.instructionsCappedToCompactBudget(instructions)
+        }
+        output += instructions
         output += "\n\n"
         if sameNamed.count > 1 {
             let alternates = sameNamed
