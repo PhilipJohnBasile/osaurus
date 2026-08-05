@@ -101,6 +101,17 @@ public struct EvalCase: Sendable, Codable, Identifiable {
         /// still use their production AgentSettings fields rather than this
         /// allow-list.
         public let enableTools: [String]?
+        /// Eval fixture plugin GROUPS to register for an `agent_loop` case.
+        /// Each id must name a probe group `EvalHostBootstrap` ships (currently
+        /// `osaurus.eval.calendar`). The runner registers the group's tools
+        /// before the loop, pins the eval agent to auto mode with an explicit
+        /// allowlist of exactly the fixture tools (plus any `enableTools`), and
+        /// unregisters afterwards. This makes the enabled-capabilities manifest
+        /// deterministic — one known plugin group — so natural-language
+        /// discovery cases ("what's on my calendar?") prove the production
+        /// manifest → `capabilities` load → member-tool flow instead of
+        /// whatever plugins the contributor happens to have installed.
+        public let enablePluginGroups: [String]?
         /// Tool names that must NOT be enabled for the case to be valid —
         /// used by the "impossible-but-distinct" case so a host that
         /// happens to have a matching tool installed skips instead of
@@ -208,6 +219,7 @@ public struct EvalCase: Sendable, Codable, Identifiable {
             requirePlugins: [String]? = nil,
             seedMethods: [SeedMethod]? = nil,
             enableTools: [String]? = nil,
+            enablePluginGroups: [String]? = nil,
             ensureToolsDisabled: [String]? = nil,
             workspaceFiles: [WorkspaceFile]? = nil,
             agentCapabilities: AgentCapabilitiesFixture? = nil,
@@ -221,6 +233,7 @@ public struct EvalCase: Sendable, Codable, Identifiable {
             self.requirePlugins = requirePlugins
             self.seedMethods = seedMethods
             self.enableTools = enableTools
+            self.enablePluginGroups = enablePluginGroups
             self.ensureToolsDisabled = ensureToolsDisabled
             self.workspaceFiles = workspaceFiles
             self.agentCapabilities = agentCapabilities
@@ -1577,6 +1590,13 @@ public struct EvalCase: Sendable, Codable, Identifiable {
         /// Commands run in the workspace after the loop ends; each must
         /// exit with its `expectExitCode`.
         public let commands: [CommandAssertion]?
+        /// Substrings the COMPOSED SYSTEM PROMPT must contain. Surface
+        /// pinning: a case that exists to prove behavior on a specific
+        /// prompt surface (e.g. the sandbox chat surface rendering the
+        /// enabled-capabilities manifest) asserts the surface actually
+        /// composed, so a future prompt refactor that silently changes the
+        /// surface fails the case instead of testing the wrong prompt.
+        public let systemPromptContains: [String]?
         /// Substrings the final assistant text must contain (cheap
         /// deterministic check; use `rubric` for semantic grading).
         public let finalTextContains: [String]?
@@ -1673,6 +1693,7 @@ public struct EvalCase: Sendable, Codable, Identifiable {
             files: [FileAssertion]? = nil,
             sandboxFiles: [FileAssertion]? = nil,
             commands: [CommandAssertion]? = nil,
+            systemPromptContains: [String]? = nil,
             finalTextContains: [String]? = nil,
             finalTextMustNotContain: [String]? = nil,
             rubric: [String]? = nil,
@@ -1707,6 +1728,7 @@ public struct EvalCase: Sendable, Codable, Identifiable {
             self.files = files
             self.sandboxFiles = sandboxFiles
             self.commands = commands
+            self.systemPromptContains = systemPromptContains
             self.finalTextContains = finalTextContains
             self.finalTextMustNotContain = finalTextMustNotContain
             self.rubric = rubric

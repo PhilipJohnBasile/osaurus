@@ -1,0 +1,5 @@
+{
+  "name": "drop-model-family-guidance",
+  "description": "Ablate ONLY the per-model-family reminder block from the restored lean custom-agent/sandbox contract. One axis of the 2026-08 PluginFlow matrix that decides which of the #2250-removed sections pay for their tokens on natural-query plugin discovery.",
+  "dropSections": ["modelFamilyGuidance"]
+}

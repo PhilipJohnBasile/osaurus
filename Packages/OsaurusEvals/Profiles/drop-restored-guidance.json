@@ -1,0 +1,5 @@
+{
+  "name": "drop-restored-guidance",
+  "description": "Ablate ALL THREE sections restored to the lean custom-agent/sandbox contract after #2250 (modelFamilyGuidance, agentLoopGuidance, capabilityNudge). Running this profile reproduces the regressed prompt; the delta vs baseline is the total value of the restoration on the PluginFlow lane.",
+  "dropSections": ["modelFamilyGuidance", "agentLoopGuidance", "capabilityNudge"]
+}

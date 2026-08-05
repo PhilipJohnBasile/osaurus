@@ -186,13 +186,13 @@ struct ModelFamilyGuidanceObedienceTests {
     @Test("tool-grounding rule is owned by groundingDirective, not family blocks")
     func toolGroundingRuleIsOwnedByGroundingDirective() {
         // Both grounding variants carry the anti-invention rule…
-        #expect(SystemPromptTemplates.groundingDirectiveFull.contains("never invent a tool name"))
+        let full = SystemPromptTemplates.groundingDirectiveFull(names: .gateway)
+        let fullCompact = SystemPromptTemplates.groundingDirectiveFullCompact(names: .gateway)
+        #expect(full.contains("never invent a tool name"))
         #expect(SystemPromptTemplates.groundingDirectiveBase.contains("never invent a tool name"))
-        #expect(
-            SystemPromptTemplates.groundingDirectiveFullCompact.contains("never invent a tool name")
-        )
+        #expect(fullCompact.contains("never invent a tool name"))
         // …and the discovery-aware variants own the capability-claim rule.
-        #expect(SystemPromptTemplates.groundingDirectiveFull.contains("Enabled capabilities list"))
+        #expect(full.contains("Enabled capabilities list"))
 
         // No family block restates it.
         let allBlocks: [(String, String)] = [

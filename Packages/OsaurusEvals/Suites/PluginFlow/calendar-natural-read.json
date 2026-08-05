@@ -1,0 +1,22 @@
+{
+  "id": "pluginflow.calendar-natural-read",
+  "domain": "agent_loop",
+  "label": "plugin flow • natural calendar read on the sandbox chat surface",
+  "query": "What's on my calendar tomorrow?",
+  "notes": "The live #2250 regression, reproduced: a NATURAL query that never names a tool, on the production sandbox chat surface (soul/sandbox/grounding/enabledManifest — not the folder surface AgentLoop cases compose). The model must discover the calendar plugin group from the enabled-capabilities manifest, load it through the `capabilities` gateway, call the member tool, and ground the answer in the deterministic stub events. systemPromptContains pins the surface itself so a prompt refactor can't silently move this case off the surface it exists to prove. SKIPS without a working sandbox VM.",
+  "fixtures": {
+    "sandbox": {},
+    "enablePluginGroups": ["osaurus.eval.calendar"]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 8,
+      "mustCallTools": ["capabilities", "eval_calendar_get_events"],
+      "systemPromptContains": [
+        "## Enabled capabilities",
+        "plugin/osaurus.eval.calendar"
+      ],
+      "finalTextContains": ["standup", "dentist"]
+    }
+  }
+}

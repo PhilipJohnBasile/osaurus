@@ -256,7 +256,7 @@ struct EnabledCapabilitiesManifestTests {
         #expect(rendered.contains("  skill/skill_0 — d"))
         #expect(rendered.contains("  skill/skill_\(cap - 1) — d"))
         #expect(!rendered.contains("skill/skill_\(cap) — d"))
-        #expect(rendered.contains("+3 more skill(s) — call capabilities_discover to list them."))
+        #expect(rendered.contains("+3 more skill(s) — a `capabilities_discover` query lists them."))
     }
 
     @Test("compact mode also caps the inline standalone-skills list")
@@ -276,7 +276,7 @@ struct EnabledCapabilitiesManifestTests {
         #expect(rendered.contains("  skill/skill_0"))
         #expect(rendered.contains("  skill/skill_\(cap - 1)"))
         #expect(!rendered.contains("skill/skill_\(cap)\n"))
-        #expect(rendered.contains("+2 more skill(s) — capabilities_discover lists them."))
+        #expect(rendered.contains("+2 more skill(s) — a `capabilities_discover` query lists them."))
     }
 
     @Test("intro warns that the frozen list may miss later installs")
@@ -317,7 +317,44 @@ struct EnabledCapabilitiesManifestTests {
         // collapses to a +N pointer instead of per-tool lines.
         #expect(rendered.contains("  tool/tool_0 — d"))
         #expect(rendered.contains("<plugin: LatePlugin>"))
-        #expect(rendered.contains("+3 more tool(s) — call capabilities_discover to list them."))
+        #expect(rendered.contains("+3 more tool(s) — a `capabilities_discover` query lists them."))
         #expect(!rendered.contains("late_tool_a — d"))
+    }
+
+    @Test("gateway names render the merged capabilities tool and never the legacy pair")
+    func gatewayNamesReplaceLegacyPair() throws {
+        // Chat schemas publish only the merged `capabilities` gateway
+        // (#2250). The manifest's load/discover instructions must name it —
+        // naming the stripped `capabilities_load` steered models into a
+        // non-retryable toolNotFound refusal (the calendar regression).
+        let cap = SystemPromptTemplates.enabledManifestSkillCap
+        let groups = [
+            Group(
+                groupId: "osaurus-calendar",
+                pluginDisplay: "Osaurus Calendar",
+                skills: [],
+                tools: [Cap(name: "calendar_list_events", description: "List events")]
+            ),
+            Group(
+                pluginDisplay: "Skills (no plugin)",
+                skills: (0 ..< cap + 1).map { Cap(name: "skill_\($0)", description: "d") },
+                tools: []
+            ),
+        ]
+        for compact in [false, true] {
+            let rendered = try #require(
+                SystemPromptTemplates.enabledCapabilitiesManifest(
+                    groups: groups,
+                    compact: compact,
+                    names: .gateway
+                )
+            )
+            #expect(rendered.contains("`capabilities`"))
+            #expect(!rendered.contains("capabilities_load"))
+            #expect(!rendered.contains("capabilities_discover"))
+            if !compact {
+                #expect(rendered.contains(#"capabilities({"ids": ["tool/<name>"]})"#))
+            }
+        }
     }
 }

@@ -1,0 +1,23 @@
+{
+  "id": "pluginflow.calendar-post-load-continuation",
+  "domain": "agent_loop",
+  "label": "plugin flow • post-load continuation without a stall",
+  "query": "What meetings do I have tomorrow morning? Include the start times.",
+  "notes": "The exact live stall shape: small models load the plugin group and then stop ('I've loaded the calendar tools') instead of continuing into the member call. mustCallToolsInOrder pins load-then-call in the SAME run and maxModelSteps 6 fails a model that dithers between the load and the call. This is the primary sensor for the restored post-load continuation guidance. SKIPS without a working sandbox VM.",
+  "fixtures": {
+    "sandbox": {},
+    "enablePluginGroups": ["osaurus.eval.calendar"]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 8,
+      "maxModelSteps": 6,
+      "mustCallToolsInOrder": ["capabilities", "eval_calendar_get_events"],
+      "systemPromptContains": [
+        "## Enabled capabilities",
+        "plugin/osaurus.eval.calendar"
+      ],
+      "finalTextContains": ["standup"]
+    }
+  }
+}

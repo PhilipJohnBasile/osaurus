@@ -139,18 +139,27 @@ struct SystemPromptDefaultIdentityTests {
         }
     }
 
-    /// Same sanity for the capability-discovery nudge — still names
-    /// `capabilities_discover` / `capabilities_load` because that block is
-    /// gated on `capabilities_discover` actually being in the tools[] array.
-    @Test("capabilityDiscoveryNudge still names capabilities_discover / capabilities_load")
+    /// Same sanity for the capability-discovery nudge — it must name exactly
+    /// the tools the schema publishes, because the block is gated on a
+    /// discovery-capable tool actually being in the tools[] array. Chat
+    /// schemas publish the merged `capabilities` gateway; legacy surfaces
+    /// publish the discover/load pair (#2250 regression: naming an
+    /// unpublished loader steers models into a dead-end refusal).
+    @Test("capabilityDiscoveryNudge names exactly the schema's capability tools")
     func capabilityNudgeStillCarriesTheNames() {
-        let block = SystemPromptTemplates.capabilityDiscoveryNudge
-        #expect(block.contains("capabilities_discover"))
-        #expect(block.contains("capabilities_load"))
-        #expect(block.contains(#"capabilities_discover({"query": "<what you need>"})"#))
-        #expect(!block.contains(#"capabilities_discover({"queries": "#))
-        #expect(!block.contains("tool/sandbox_exec"))
-        #expect(!block.contains("skill/plot-data"))
+        let legacy = SystemPromptTemplates.capabilityDiscoveryNudge(names: .legacy)
+        #expect(legacy.contains("capabilities_discover"))
+        #expect(legacy.contains("capabilities_load"))
+        #expect(legacy.contains(#"capabilities_discover({"query": "<what you need>"})"#))
+        #expect(!legacy.contains(#"capabilities_discover({"queries": "#))
+        #expect(!legacy.contains("tool/sandbox_exec"))
+        #expect(!legacy.contains("skill/plot-data"))
+
+        let gateway = SystemPromptTemplates.capabilityDiscoveryNudge(names: .gateway)
+        #expect(gateway.contains(#"capabilities({"query": "<what you need>"})"#))
+        #expect(!gateway.contains("capabilities_discover"))
+        #expect(!gateway.contains("capabilities_load"))
+        #expect(!gateway.contains("tool/sandbox_exec"))
     }
 }
 
@@ -177,6 +186,22 @@ struct SoulSectionTests {
     func soulSection_dropsBlank() {
         #expect(SystemPromptTemplates.soulSection("").isEmpty)
         #expect(SystemPromptTemplates.soulSection("   \n\t  ").isEmpty)
+    }
+
+    /// Chat schemas publish only the merged `capabilities` gateway (#2250),
+    /// so the SOUL preamble's "bring it into your schema" instruction must
+    /// name it — naming the stripped `capabilities_discover` /
+    /// `capabilities_load` pair steered models into a toolNotFound dead end
+    /// on sandbox surfaces (the calendar regression's sandbox half).
+    @Test("soulSection names the capability tools the schema publishes")
+    func soulSection_namesSchemaCapabilityTools() {
+        let gateway = SystemPromptTemplates.soulSection("- prefer Postgres", names: .gateway)
+        #expect(gateway.contains("`capabilities`"))
+        #expect(!gateway.contains("capabilities_discover"))
+        #expect(!gateway.contains("capabilities_load"))
+
+        let legacy = SystemPromptTemplates.soulSection("- prefer Postgres", names: .legacy)
+        #expect(legacy.contains("`capabilities_discover` / `capabilities_load`"))
     }
 
     // MARK: - 8 KB cap

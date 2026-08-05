@@ -97,6 +97,53 @@ struct ToolScopeGateRecoveryTests {
         #expect(message.contains("Call capabilities_load with ids"))
     }
 
+    /// The #2250 regression shape: sessions frozen before the gateway
+    /// switch, older skill bodies, and legacy-trained models still call
+    /// `capabilities_load` / `capabilities_discover` by name. Those are
+    /// registered built-ins, so without the carve-out they'd take the
+    /// opaque non-retryable refusal and the model would give up one call
+    /// away from succeeding. With the gateway in scope, the gate must
+    /// steer to `capabilities` with a retryable envelope instead.
+    @Test
+    func legacyCapabilityToolNames_redirectToGatewayWhenItIsInScope() async throws {
+        let gatewaySpec = Tool(
+            type: "function",
+            function: ToolFunction(
+                name: "capabilities",
+                description: "merged gateway",
+                parameters: nil
+            )
+        )
+        let scope = ToolExecutionScope(exposed: [gatewaySpec])
+        for legacyName in ["capabilities_load", "capabilities_discover"] {
+            let result = try await ChatExecutionContext.$toolExecutionScope.withValue(scope) {
+                try await ToolRegistry.shared.execute(name: legacyName, argumentsJSON: "{}")
+            }
+            let parsed = try envelope(result)
+            #expect(parsed?["ok"] as? Bool == false)
+            #expect(parsed?["kind"] as? String == "tool_not_found")
+            #expect(parsed?["retryable"] as? Bool == true, "\(legacyName) must be retryable")
+            let message = parsed?["message"] as? String ?? ""
+            #expect(message.contains("`capabilities`"), "\(legacyName) hint must name the gateway")
+        }
+    }
+
+    /// Without the gateway in scope the legacy names keep the opaque
+    /// refusal — the carve-out must not invent a loader the request
+    /// does not expose.
+    @Test
+    func legacyCapabilityToolNames_stayOpaqueWithoutTheGateway() async throws {
+        let scope = ToolExecutionScope(exposed: [])
+        let result = try await ChatExecutionContext.$toolExecutionScope.withValue(scope) {
+            try await ToolRegistry.shared.execute(
+                name: "capabilities_load",
+                argumentsJSON: "{}"
+            )
+        }
+        let parsed = try envelope(result)
+        #expect(parsed?["retryable"] as? Bool == false)
+    }
+
     @Test
     func unexposedGatedBuiltInDoesNotSuggestCapabilitiesLoad() async throws {
         let scope = ToolExecutionScope(exposed: [])
@@ -151,6 +198,89 @@ struct ToolScopeGateRecoveryTests {
         #expect(parsed?["retryable"] as? Bool == false)
         let message = parsed?["message"] as? String ?? ""
         #expect(!message.contains("Call capabilities"))
+    }
+
+    /// The live Qwen3-4B PluginFlow shape: the model reads the
+    /// `plugin/<id>` row in the enabled-capabilities manifest and calls
+    /// the GROUP id as if it were a tool
+    /// (`osaurus.eval.calendar({"date":"tomorrow"})`). The gate must
+    /// return a RETRYABLE envelope steering to a gateway load of
+    /// `plugin/<id>` — with and without the `plugin/` prefix — instead of
+    /// the generic "do not guess tool names" dead end.
+    @Test
+    func groupIdCalledAsTool_redirectsToGatewayLoad() async throws {
+        EvalHostBootstrap.registerCalendarProbeGroup()
+        defer { EvalHostBootstrap.unregisterCalendarProbeGroup() }
+
+        let gatewaySpec = Tool(
+            type: "function",
+            function: ToolFunction(
+                name: "capabilities",
+                description: "merged gateway",
+                parameters: nil
+            )
+        )
+        let scope = ToolExecutionScope(exposed: [gatewaySpec])
+        for guessed in [
+            EvalHostBootstrap.calendarProbePluginId,
+            "plugin/\(EvalHostBootstrap.calendarProbePluginId)",
+        ] {
+            let result = try await ChatExecutionContext.$toolExecutionScope.withValue(scope) {
+                try await ToolRegistry.shared.execute(
+                    name: guessed,
+                    argumentsJSON: #"{"date":"tomorrow"}"#
+                )
+            }
+            let parsed = try envelope(result)
+            #expect(parsed?["ok"] as? Bool == false)
+            #expect(parsed?["kind"] as? String == "tool_not_found")
+            #expect(parsed?["retryable"] as? Bool == true, "\(guessed) must be retryable")
+            let message = parsed?["message"] as? String ?? ""
+            #expect(message.contains("capability group"))
+            #expect(
+                message.contains("plugin/\(EvalHostBootstrap.calendarProbePluginId)"),
+                "\(guessed) hint must carry the loadable id"
+            )
+            // No member tool names in the hint — same anti-hallucination
+            // stance as the missing "did you mean" list.
+            #expect(!message.contains("eval_calendar_get_events"))
+        }
+    }
+
+    /// A group whose member tools are all outside this agent's allowlist
+    /// keeps the opaque refusal — the rescue must not reveal withheld
+    /// groups.
+    @Test
+    func groupIdCalledAsTool_staysOpaqueWhenAgentIsNotAllowedAnyMember() async throws {
+        EvalHostBootstrap.registerCalendarProbeGroup()
+        defer { EvalHostBootstrap.unregisterCalendarProbeGroup() }
+
+        // A manual-mode agent whose allowlist has none of the group tools.
+        let agent = Agent(
+            name: "GroupRescueDenied-\(UUID().uuidString.prefix(6))",
+            systemPrompt: "",
+            agentAddress: "test-group-rescue-\(UUID().uuidString)",
+            toolSelectionMode: .manual,
+            memoryEnabled: false
+        )
+        AgentManager.shared.add(agent)
+        AgentManager.shared.updateEnabledToolNames(["get_current_time"], for: agent.id)
+        defer { Task { _ = await AgentManager.shared.delete(id: agent.id) } }
+
+        let scope = ToolExecutionScope(exposed: [])
+        let result = try await ChatExecutionContext.$currentAgentId.withValue(agent.id) {
+            try await ChatExecutionContext.$toolExecutionScope.withValue(scope) {
+                try await ToolRegistry.shared.execute(
+                    name: EvalHostBootstrap.calendarProbePluginId,
+                    argumentsJSON: "{}"
+                )
+            }
+        }
+
+        let parsed = try envelope(result)
+        #expect(parsed?["retryable"] as? Bool == false)
+        let message = parsed?["message"] as? String ?? ""
+        #expect(!message.contains("capability group"))
     }
 
     @Test

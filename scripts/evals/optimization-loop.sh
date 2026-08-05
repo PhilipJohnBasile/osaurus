@@ -146,8 +146,14 @@ read -ra DET_SUITES <<< "${DET_SUITES:-AgentChannels ArgumentCoercion Capability
 # scripted cases are model-independent (identical per model) while the live lanes
 # (real-model + mock/real executor) vary with the run model, so it lands real
 # `apple_script` rows in the cross-model matrix (same rationale as `Subagent`).
+# `PluginFlow` is the live-shaped #2250 regression net: natural-query plugin
+# discovery/loading on the SANDBOX chat surface (the surface AgentLoop's
+# folder-mode cases do not compose). It needs the sandbox VM, so like
+# SandboxFrontier it lands real rows only on entitlement-signed runs and
+# SKIPS elsewhere — keep it in the default list so a prompt refactor cannot
+# pass the matrix without passing the flow that regressed in production.
 # `read -ra` splits the override/default into the array (SC2206-clean, bash 3.2-safe).
-read -ra LLM_SUITES <<< "${LLM_SUITES:-AgentDB AgentLoop AgentLoopFrontier AppleScript CacheProof CapabilityClaims ComputerUseLoop DefaultAgent HTTPAPI Memory MicroPerf PromptInjection ReasoningChannel SandboxFrontier Subagent}"
+read -ra LLM_SUITES <<< "${LLM_SUITES:-AgentDB AgentLoop AgentLoopFrontier AppleScript CacheProof CapabilityClaims ComputerUseLoop DefaultAgent HTTPAPI Memory MicroPerf PluginFlow PromptInjection ReasoningChannel SandboxFrontier Subagent}"
 
 log() { printf '[opt-loop] %s\n' "$*"; }
 

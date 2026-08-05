@@ -1,0 +1,5 @@
+{
+  "name": "drop-agent-loop-guidance",
+  "description": "Ablate ONLY the agent-loop discipline section (act now / todo / complete) from the restored lean custom-agent/sandbox contract. One axis of the 2026-08 PluginFlow matrix.",
+  "dropSections": ["agentLoopGuidance"]
+}

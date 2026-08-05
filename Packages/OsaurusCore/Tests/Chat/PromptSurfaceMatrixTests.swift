@@ -250,13 +250,21 @@ struct PromptSurfaceMatrixTests {
                 #expect(!rows[4].sectionIds.contains("skillsGovern"))
                 #expect(rows[4].totalTokens > rows[2].totalTokens)
 
-                #expect((rows[5].context.enabledManifest ?? "").isEmpty)
+                // The manifest renders for gateway-only custom-agent chat
+                // (Design C grounds capability breadth in it) and names the
+                // `capabilities` gateway, never the stripped legacy pair.
+                let channelsManifest = rows[5].context.enabledManifest ?? ""
+                #expect(channelsManifest.contains("## Enabled capabilities"))
+                #expect(!channelsManifest.contains("capabilities_load"))
+                #expect(!channelsManifest.contains("capabilities_discover"))
                 #expect(!rows[5].sectionIds.contains("skillsGovern"))
 
                 #expect(!rows[6].sectionIds.contains("spawn"))
                 #expect(rows[6].toolNames.contains("spawn_agent"))
                 #expect(rows[6].toolNames.contains("spawn_batch"))
-                #expect((rows[6].context.enabledManifest ?? "").isEmpty)
+                #expect(
+                    (rows[6].context.enabledManifest ?? "").contains("## Enabled capabilities")
+                )
                 #expect(rows[6].toolNames.count == rows[6].context.tools.count)
                 for spawnToolName in ["spawn_agent", "spawn_batch"] {
                     let featureTool = rows[3].context.tools.first {

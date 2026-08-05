@@ -45,6 +45,11 @@ struct ContextBudgetPreviewTests {
         body: @MainActor @Sendable (UUID) async -> Void
     ) async {
         await SandboxTestLock.runWithStoragePaths {
+            // Deterministic manifest input: `enabledManifest` renders only
+            // when a dynamic tool/skill exists, which otherwise depends on
+            // interleaved-suite registry state. The probe group pins it.
+            EvalHostBootstrap.registerCalendarProbeGroup()
+            defer { EvalHostBootstrap.unregisterCalendarProbeGroup() }
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(
                 "osaurus-context-budget-preview-\(UUID().uuidString)",
                 isDirectory: true
@@ -152,7 +157,18 @@ struct ContextBudgetPreviewTests {
             let ids = sectionIds(preview)
             #expect(ids.contains("platform"))
             #expect(ids.contains("persona"))
-            #expect(ids == ["platform", "persona"])
+            // Capability grounding + the restored discovery teaching set ride
+            // plain chat: grounding + manifest (Design C's answer to "do you
+            // have X" — dropping them was the #2250 plugin-denial regression)
+            // plus the discovery nudge. agentLoopGuidance stays off the lean
+            // surface: restoring it regressed the pinned vm-file-export
+            // delivery contract (spurious `complete` closure calls).
+            #expect(
+                ids == [
+                    "platform", "persona", "grounding", "enabledManifest",
+                    "capabilityNudge",
+                ]
+            )
             // No model-family hint without a model id, no skills configured.
             #expect(ids.contains("modelFamilyGuidance") == false)
             #expect(ids.contains("skills") == false)
@@ -166,8 +182,12 @@ struct ContextBudgetPreviewTests {
         }
     }
 
-    /// Manual mode exposes the explicitly pinned tool without restoring
-    /// legacy gateway or lifecycle prose.
+    /// Manual mode exposes the explicitly pinned tool. Loop-lifecycle prose
+    /// stays out (the loop tools aren't in a manual schema), and the whole
+    /// capability teaching set (grounding/manifest/nudge) stays out too: the
+    /// pinned allowlist yields no loadable groups, so the manifest is empty
+    /// and the manifest-gated set never renders — discovery prose for an
+    /// agent whose scope forbids loading anything would be misleading.
     @Test("preview: manual mode exposes only the pinned optional capability")
     func toolsOn_manual_exposesPinnedCapability() async {
         await withAgent(
@@ -181,6 +201,7 @@ struct ContextBudgetPreviewTests {
             let ids = sectionIds(preview)
             #expect(!ids.contains("agentLoopGuidance"))
             #expect(!ids.contains("capabilityNudge"))
+            #expect(!ids.contains("grounding"))
             #expect(preview.tools.contains { $0.function.name == "render_chart" })
         }
     }
@@ -322,7 +343,9 @@ struct ContextBudgetPreviewTests {
             )
 
             #expect(!send.tools.isEmpty)
-            #expect(!sectionIds(send).contains("capabilityNudge"))
+            // Restored discovery nudge is session-constant: present on BOTH
+            // warmup and first send, so parity below still holds.
+            #expect(sectionIds(send).contains("capabilityNudge"))
             #expect(sectionIds(send) == sectionIds(warmup))
             #expect(send.staticPrefix == warmup.staticPrefix)
             #expect(send.prompt == warmup.prompt)
@@ -357,15 +380,18 @@ struct ContextBudgetPreviewTests {
                 frozenAlwaysLoadedNames: frozen
             )
 
-            #expect(!sectionIds(thanks).contains("capabilityNudge"))
+            // Session-constant: the nudge is on BOTH turns (never flips
+            // mid-conversation), so byte-stability below still holds.
+            #expect(sectionIds(thanks).contains("capabilityNudge"))
             #expect(sectionIds(thanks) == sectionIds(steady))
             #expect(thanks.staticPrefix == steady.staticPrefix)
             #expect(thanks.prompt == steady.prompt)
         }
     }
 
-    /// Custom auto agents keep the lifecycle schema while retaining the lean
-    /// custom-agent prompt (the schemas carry the tool contract).
+    /// Custom auto agents keep the lifecycle schema AND the restored loop
+    /// cheat-sheet: the schemas carry the tool contract, the guidance section
+    /// teaches when to use it (its removal was part of the #2250 stall).
     @Test("compose: ordinary work keeps lifecycle tools in lean custom prompt")
     func ordinaryWork_keepsLifecycleContract() async {
         await withAgent(toolSelectionMode: .auto) { agentId in
@@ -377,6 +403,8 @@ struct ContextBudgetPreviewTests {
             let names = Set(context.tools.map { $0.function.name })
             #expect(names.isSuperset(of: SystemPromptComposer.agentLoopToolNames))
             #expect(names.contains("get_current_time"))
+            // Lifecycle tools stay in the schema, but the lean surface carries
+            // no agentLoopGuidance prose (vm-file-export regression guard).
             #expect(!sectionIds(context).contains("agentLoopGuidance"))
         }
     }
@@ -440,10 +468,12 @@ struct ContextBudgetPreviewTests {
     // MARK: - Model family guidance
 
     /// Family hints fire when the model id matches a known family
-    /// substring. Pricing them ahead of time matters because some
-    /// blocks (Gemma in particular) are several hundred tokens.
-    @Test("preview: gemma model omits family prose from minimal contract")
-    func toolsOn_gemmaModel_omitsModelFamilyGuidance() async {
+    /// substring — restored on the lean custom-agent contract because
+    /// dropping them was part of the #2250 tool-call regression. Pricing
+    /// them ahead of time matters because some blocks (Gemma in
+    /// particular) are several hundred tokens.
+    @Test("preview: gemma model carries family prose on lean contract")
+    func toolsOn_gemmaModel_carriesModelFamilyGuidance() async {
         await withAgent(toolSelectionMode: .auto) { agentId in
             let preview = SystemPromptComposer.composePreviewContext(
                 agentId: agentId,
@@ -451,12 +481,12 @@ struct ContextBudgetPreviewTests {
                 model: "google/gemma-3-12b-it"
             )
             let ids = sectionIds(preview)
-            #expect(!ids.contains("modelFamilyGuidance"))
+            #expect(ids.contains("modelFamilyGuidance"))
         }
     }
 
-    @Test("preview: DSV4 model omits family prose from minimal contract")
-    func toolsOn_dsv4Model_omitsModelFamilyGuidance() async {
+    @Test("preview: DSV4 model carries family prose on lean contract")
+    func toolsOn_dsv4Model_carriesModelFamilyGuidance() async {
         await withAgent(toolSelectionMode: .auto) { agentId in
             let preview = SystemPromptComposer.composePreviewContext(
                 agentId: agentId,
@@ -464,27 +494,26 @@ struct ContextBudgetPreviewTests {
                 model: "JANGQ/DeepSeek-V4-Flash-JANGTQ2"
             )
             let ids = sectionIds(preview)
-            #expect(!ids.contains("modelFamilyGuidance"))
-            #expect(!preview.prompt.contains("Do not say you will do it and then stop."))
+            #expect(ids.contains("modelFamilyGuidance"))
         }
     }
 
     /// Unrecognised families (a generic llama finetune, Apple Foundation,
-    /// etc.) now get the minimal *default* obedience block rather than
+    /// etc.) get the minimal *default* obedience block rather than
     /// nothing. Leaving them unguided paired them with the always-on
     /// prohibition sections and read as refusal-prone — the regression this
     /// fix targets. The block is the one for `.other`, kept short so it
     /// doesn't bias the prompt the way a full universal addendum would.
-    @Test("preview: unknown model family omits default guidance prose")
-    func toolsOn_unknownModelFamily_omitsDefaultGuidance() async {
+    @Test("preview: unknown model family carries default guidance prose")
+    func toolsOn_unknownModelFamily_carriesDefaultGuidance() async {
         await withAgent(toolSelectionMode: .auto) { agentId in
             let preview = SystemPromptComposer.composePreviewContext(
                 agentId: agentId,
                 executionMode: .none,
                 model: "mystery/llama-finetune-x"
             )
-            #expect(!sectionIds(preview).contains("modelFamilyGuidance"))
-            #expect(!preview.prompt.contains(ModelFamilyGuidance.defaultGuidance))
+            #expect(sectionIds(preview).contains("modelFamilyGuidance"))
+            #expect(preview.prompt.contains(ModelFamilyGuidance.defaultGuidance))
         }
     }
 
@@ -518,8 +547,9 @@ struct ContextBudgetPreviewTests {
                     .first { $0.id == "modelFamilyGuidance" }?.tokens ?? 0
             }
 
+            // Unknown family renders the short default obedience block.
             let genericTokens = familyTokens()
-            #expect(genericTokens == 0)
+            #expect(genericTokens > 0)
 
             session.applyPickerItems([
                 ModelPickerItem(
@@ -530,8 +560,11 @@ struct ContextBudgetPreviewTests {
                 )
             ])
 
+            // Enrichment resolves the qwen family block, which is a
+            // different (larger) section — a stale cached preview would
+            // still show the generic token count.
             #expect(session.selectedPickerItem?.modelType == "qwen3_5")
-            #expect(familyTokens() == genericTokens)
+            #expect(familyTokens() > genericTokens)
         }
     }
 

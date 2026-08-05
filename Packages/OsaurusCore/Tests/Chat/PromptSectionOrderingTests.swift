@@ -62,6 +62,13 @@ struct PromptSectionOrderingTests {
         body: @MainActor @Sendable (UUID) async -> Void
     ) async {
         await SandboxTestLock.runWithStoragePaths {
+            // Deterministic manifest input: the `enabledManifest` section only
+            // renders when at least one dynamic tool/skill exists, which
+            // otherwise depends on whatever another (interleaved) suite has
+            // registered process-wide. Pin it with the eval calendar probe
+            // group so the section-id equality checks below are stable.
+            EvalHostBootstrap.registerCalendarProbeGroup()
+            defer { EvalHostBootstrap.unregisterCalendarProbeGroup() }
             let agent = Agent(
                 name: "OrderingTestAgent-\(UUID().uuidString.prefix(6))",
                 systemPrompt: "Test identity",
@@ -103,10 +110,11 @@ struct PromptSectionOrderingTests {
 
     // MARK: - Auto mode, no execution mode
 
-    /// Plain first-turn chat with auto-mode tools: cross-cutting rules
-    /// (gemma family guidance) come before capability nudge. Agent-loop
-    /// guidance is intentionally absent until history contains a loop
-    /// tool call.
+    /// Plain first-turn chat with auto-mode tools keeps the lean contract
+    /// plus the tool-loop teaching set: capability grounding (grounding +
+    /// manifest — dropping them was the #2250 plugin-denial regression) and
+    /// the restored family/loop/discovery guidance whose absence produced
+    /// the post-load stalls. All gates are session-constant.
     @Test("ordering: auto + gemma + no exec mode")
     func ordering_autoGemmaNoExecMode() async {
         await withAgent(toolSelectionMode: .auto) { agentId in
@@ -115,18 +123,28 @@ struct PromptSectionOrderingTests {
                 executionMode: .none,
                 model: "google/gemma-3-12b-it"
             )
-            #expect(sectionIds(ctx) == ["platform", "persona"])
+            #expect(
+                sectionIds(ctx) == [
+                    "platform", "persona", "modelFamilyGuidance", "grounding",
+                    "enabledManifest", "capabilityNudge",
+                ]
+            )
         }
     }
 
     // MARK: - Sandbox mode
 
-    /// Sandbox mode: file-mutation tools fire, so codeStyle + riskAware
-    /// land between modelFamilyGuidance and sandbox. Agent-loop guidance
-    /// is still absent on first turn; sandbox sits before capability nudge.
+    /// Sandbox mode keeps the lean contract plus capability grounding:
+    /// sandbox chat is a general-purpose surface (the VM is just the
+    /// agent's execution home), so the grounding directive and the
+    /// enabled-capabilities manifest render there exactly like plain chat
+    /// — dropping them was the sandbox half of the #2250 plugin-denial
+    /// regression ("what's on my calendar" with the Calendar plugin on).
     @Test("ordering: auto + gpt + sandbox mode")
     func ordering_autoGptSandbox() async {
         await SandboxTestLock.runWithStoragePaths {
+            EvalHostBootstrap.registerCalendarProbeGroup()
+            defer { EvalHostBootstrap.unregisterCalendarProbeGroup() }
             let agent = Agent(
                 name: "OrderingTestAgent-Sandbox",
                 systemPrompt: "Test identity",
@@ -145,7 +163,12 @@ struct PromptSectionOrderingTests {
                 executionMode: .sandbox(hostRead: nil),
                 model: "gpt-5"
             )
-            #expect(sectionIds(ctx) == ["platform", "persona", "sandbox"])
+            #expect(
+                sectionIds(ctx) == [
+                    "platform", "persona", "sandbox", "modelFamilyGuidance", "grounding",
+                    "enabledManifest", "capabilityNudge",
+                ]
+            )
 
             ToolRegistry.shared.unregisterAllSandboxTools()
             _ = await AgentManager.shared.delete(id: agent.id)
@@ -155,13 +178,15 @@ struct PromptSectionOrderingTests {
     // MARK: - Sandbox-only block gating (Secret handling / Self-improvement /
     //         capability build ladder)
 
-    /// In sandbox mode with plugin creation enabled, the three sandbox-gated
-    /// blocks appear and carry their plugin-build lines: Self-improvement
-    /// names sandbox plugins, and the capability nudge ends in a build step
-    /// (not denial). Secret handling is present regardless of plugin creation.
+    /// In sandbox mode with plugin creation enabled, the restored capability
+    /// nudge carries the sandbox escalation ladder INCLUDING the plugin-build
+    /// rung. Self-improvement and the plugin-creator tutorial stay off the
+    /// lean surface — the ladder's one-line rung is the pointer.
     @Test("sandbox blocks: present with plugin lines when canCreatePlugins")
     func sandboxBlocks_presentWithPluginLinesWhenCanCreate() async {
         await SandboxTestLock.runWithStoragePaths {
+            EvalHostBootstrap.registerCalendarProbeGroup()
+            defer { EvalHostBootstrap.unregisterCalendarProbeGroup() }
             let agent = Agent(
                 name: "SandboxBlocks-PluginOn",
                 systemPrompt: "Test identity",
@@ -181,7 +206,17 @@ struct PromptSectionOrderingTests {
                 model: "gpt-5"
             )
             let ids = sectionIds(ctx)
-            #expect(ids == ["platform", "persona", "sandbox"])
+            #expect(
+                ids == [
+                    "platform", "persona", "sandbox", "modelFamilyGuidance", "grounding",
+                    "enabledManifest", "capabilityNudge",
+                ]
+            )
+            // The nudge's escalation ladder includes the build rungs when the
+            // agent can create plugins.
+            #expect(ctx.prompt.contains("Assemble it from sandbox primitives"))
+            #expect(ctx.prompt.contains("build a sandbox plugin (see Building"))
+            // The heavier sandbox tutorials stay off the lean surface.
             #expect(!ctx.prompt.contains("Build or update a sandbox plugin"))
             #expect(!ctx.prompt.contains("## Building new tools"))
 
@@ -192,11 +227,12 @@ struct PromptSectionOrderingTests {
 
     /// In sandbox mode with plugin creation OFF, the sections still appear but
     /// every plugin-build line is stripped — no wasted context describing an
-    /// unavailable path. The non-plugin guidance (workspace persistence,
-    /// SOUL.md, secret handling) stays.
+    /// unavailable path. The non-plugin escalation rungs stay.
     @Test("sandbox blocks: plugin lines stripped when canCreatePlugins is off")
     func sandboxBlocks_pluginLinesStrippedWhenCannotCreate() async {
         await SandboxTestLock.runWithStoragePaths {
+            EvalHostBootstrap.registerCalendarProbeGroup()
+            defer { EvalHostBootstrap.unregisterCalendarProbeGroup() }
             let agent = Agent(
                 name: "SandboxBlocks-PluginOff",
                 systemPrompt: "Test identity",
@@ -216,7 +252,13 @@ struct PromptSectionOrderingTests {
                 model: "gpt-5"
             )
             let ids = sectionIds(ctx)
-            #expect(ids == ["platform", "persona", "sandbox"])
+            #expect(
+                ids == [
+                    "platform", "persona", "sandbox", "modelFamilyGuidance", "grounding",
+                    "enabledManifest", "capabilityNudge",
+                ]
+            )
+            #expect(ctx.prompt.contains("Assemble it from sandbox primitives"))
             #expect(!ctx.prompt.contains("Build or update a sandbox plugin"))
             #expect(!ctx.prompt.contains("build a sandbox plugin (see Building"))
             #expect(!ids.contains("pluginCreator"))
@@ -286,16 +328,28 @@ struct PromptSectionOrderingTests {
         }
     }
 
-    /// Ordinary chat does not carry legacy lifecycle/gateway prose.
-    @Test("ordering: ordinary chat omits lifecycle and capability prose")
-    func ordering_ordinaryChatOmitsLegacyGuidance() async {
+    /// Ordinary chat carries the complete tool-loop teaching set: capability
+    /// grounding (grounding + manifest) plus the restored loop/discovery/
+    /// family guidance. The heavier tutorials (selfImprovement, codeStyle,
+    /// pluginCreator) stay off this surface.
+    @Test("ordering: ordinary chat carries loop + discovery guidance")
+    func ordering_ordinaryChatCarriesLoopGuidance() async {
         await withAgent(toolSelectionMode: .auto) { agentId in
             let ctx = await SystemPromptComposer.composeChatContext(
                 agentId: agentId,
                 executionMode: .none,
                 model: "google/gemma-3-12b-it"
             )
-            #expect(sectionIds(ctx) == ["platform", "persona"])
+            let ids = sectionIds(ctx)
+            #expect(
+                ids == [
+                    "platform", "persona", "modelFamilyGuidance", "grounding",
+                    "enabledManifest", "capabilityNudge",
+                ]
+            )
+            #expect(!ids.contains("selfImprovement"))
+            #expect(!ids.contains("codeStyle"))
+            #expect(!ids.contains("pluginCreator"))
         }
     }
 
@@ -346,9 +400,11 @@ struct PromptSectionOrderingTests {
 
     // MARK: - Grounding gating
 
-    /// The minimal contract relies on the persona rather than a separate
-    /// grounding section in both ordinary and tiny chat.
-    @Test("gate: grounding prose stays out of the minimal contract")
+    /// Plain chat carries the grounding directive (it owns the "never deny
+    /// a listed capability" rule the manifest relies on). Tiny models
+    /// auto-disable tools, which cascades to every gated section — tiny
+    /// chat stays truly minimal.
+    @Test("gate: grounding rides plain chat; tiny (tools-off) stays minimal")
     func gate_groundingStaysOutOfMinimalContract() async {
         await withAgent(toolSelectionMode: .auto) { agentId in
             let on = await SystemPromptComposer.composeChatContext(
@@ -356,7 +412,7 @@ struct PromptSectionOrderingTests {
                 executionMode: .none,
                 model: "gpt-5"
             )
-            #expect(!sectionIds(on).contains("grounding"))
+            #expect(sectionIds(on).contains("grounding"))
 
             let tiny = await SystemPromptComposer.composeChatContext(
                 agentId: agentId,
@@ -413,8 +469,12 @@ struct PromptSectionOrderingTests {
             // cheat-sheet is schema-gated, so it is on BOTH turns.
             #expect(s2.subtracting(s1).isEmpty)
             #expect(s1.subtracting(s2).isEmpty)
-            #expect(s1 == Set(["platform", "persona"]))
-            #expect(s2 == Set(["platform", "persona"]))
+            let expected = Set([
+                "platform", "persona", "modelFamilyGuidance", "grounding",
+                "enabledManifest", "capabilityNudge",
+            ])
+            #expect(s1 == expected)
+            #expect(s2 == expected)
         }
     }
 

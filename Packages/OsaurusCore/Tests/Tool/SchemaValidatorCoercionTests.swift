@@ -368,6 +368,73 @@ struct SchemaValidatorCoercionTests {
         #expect((coerced?["verbose"] as? String) == "")
     }
 
+    // MARK: - Bare string → single-element string array
+
+    private let stringArraySchema: JSONValue = .object([
+        "type": .string("object"),
+        "additionalProperties": .bool(false),
+        "properties": .object([
+            "ids": .object([
+                "type": .string("array"),
+                "items": .object(["type": .string("string")]),
+            ])
+        ]),
+        "required": .array([.string("ids")]),
+    ])
+
+    @Test func bareStringWrapsIntoStringArray() {
+        // Capabilities-style live failure: model sends `{"ids": "x"}` for a
+        // string-array parameter. `ArgumentCoercion.stringArray` accepts the
+        // bare-string shape in tool bodies, so preflight coercion must agree
+        // instead of rejecting with "Property 'ids' must be an array".
+        let coerced =
+            SchemaValidator.coerceArguments(
+                ["ids": "plugin/osaurus.calendar"],
+                against: stringArraySchema
+            ) as? [String: Any]
+        #expect((coerced?["ids"] as? [String]) == ["plugin/osaurus.calendar"])
+        let r = SchemaValidator.validate(
+            arguments: coerced ?? [:], against: stringArraySchema
+        )
+        #expect(r.isValid, "got: \(r.errorMessage ?? "?")")
+    }
+
+    @Test func emptyBareStringDoesNotWrapIntoArray() {
+        // An empty string carries no element — leave it for the validator's
+        // type check rather than fabricating `[""]`.
+        let coerced =
+            SchemaValidator.coerceArguments(
+                ["ids": "  "],
+                against: stringArraySchema
+            ) as? [String: Any]
+        #expect((coerced?["ids"] as? String) == "  ")
+        let r = SchemaValidator.validate(
+            arguments: coerced ?? [:], against: stringArraySchema
+        )
+        #expect(!r.isValid)
+    }
+
+    @Test func bareStringDoesNotWrapForNonStringItemArrays() {
+        // The wrap rescue mirrors `ArgumentCoercion.stringArray`, which is a
+        // string-array contract — an integer-items array must still reject a
+        // bare string.
+        let schema: JSONValue = .object([
+            "type": .string("object"),
+            "properties": .object([
+                "counts": .object([
+                    "type": .string("array"),
+                    "items": .object(["type": .string("integer")]),
+                ])
+            ]),
+        ])
+        let coerced =
+            SchemaValidator.coerceArguments(
+                ["counts": "3"],
+                against: schema
+            ) as? [String: Any]
+        #expect((coerced?["counts"] as? String) == "3")
+    }
+
     // MARK: - Case-insensitive enum match
 
     private let enumSchema: JSONValue = .object([

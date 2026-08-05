@@ -612,6 +612,63 @@ struct CapabilitiesLoadToolTests {
         #expect(buffered.contains(where: { $0.function.name == dynamic.name }))
     }
 
+    /// Prefix rescue (live calendar repro): small models copy the id out of
+    /// a manifest line like `plugin/osaurus.calendar — Calendar` and drop
+    /// the `<type>/` prefix. A bare id that names exactly one known
+    /// capability must load it instead of dead-ending on "Invalid ID
+    /// format" — that refusal (non-retryable by design) stalled the run.
+    @Test @MainActor func bareToolIdWithUniqueMatchLoads() async throws {
+        let dynamic = CapabilityPolicyFixtureTool(
+            name: "capability_bare_id_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))",
+            description: "Bare-id rescue fixture"
+        )
+        ToolRegistry.shared.registerPluginTool(dynamic)
+        ToolRegistry.shared.setEnabled(true, for: dynamic.name)
+        defer { ToolRegistry.shared.unregister(names: [dynamic.name]) }
+        _ = await CapabilityLoadBuffer.shared.drain()
+        let tool = CapabilitiesLoadTool()
+        let result = try await ChatExecutionContext.$currentAgentId.withValue(UUID()) {
+            try await tool.execute(argumentsJSON: "{\"ids\": [\"\(dynamic.name)\"]}")
+        }
+
+        #expect(!ToolEnvelope.isError(result))
+        #expect(result.contains("loaded"))
+        let buffered = await CapabilityLoadBuffer.shared.drain()
+        #expect(buffered.contains(where: { $0.function.name == dynamic.name }))
+    }
+
+    /// Same rescue for a bare plugin/group id (`osaurus.calendar` for
+    /// `plugin/osaurus.calendar`) — the exact shape from the live failure.
+    @Test @MainActor func barePluginIdWithUniqueMatchLoads() async throws {
+        let plugin = SandboxPlugin(
+            name: "BareId \(UUID().uuidString.prefix(6))",
+            description: "Bare plugin-id rescue fixture"
+        )
+        let groupTool = SandboxPluginTool(
+            spec: SandboxToolSpec(
+                id: "probe",
+                description: "Probe tool for the bare plugin-id rescue",
+                parameters: [:],
+                run: "echo hi"
+            ),
+            plugin: plugin
+        )
+        ToolRegistry.shared.registerPluginTool(groupTool)
+        ToolRegistry.shared.setEnabled(true, for: groupTool.name)
+        defer { ToolRegistry.shared.unregister(names: [groupTool.name]) }
+        let groupId = try #require(ToolRegistry.shared.groupName(for: groupTool.name))
+        _ = await CapabilityLoadBuffer.shared.drain()
+
+        let tool = CapabilitiesLoadTool()
+        let result = try await ChatExecutionContext.$currentAgentId.withValue(UUID()) {
+            try await tool.execute(argumentsJSON: "{\"ids\": [\"\(groupId)\"]}")
+        }
+
+        #expect(!ToolEnvelope.isError(result))
+        let buffered = await CapabilityLoadBuffer.shared.drain()
+        #expect(buffered.contains(where: { $0.function.name == groupTool.name }))
+    }
+
     @Test func gatedBuiltInCannotBeLoadedByExactGuessedId() async throws {
         let tool = CapabilitiesLoadTool()
         let result = try await ChatExecutionContext.$currentAgentId.withValue(UUID()) {

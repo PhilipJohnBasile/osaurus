@@ -69,8 +69,8 @@
       "agent_loop.substantial-single-file-app",
       "agent_loop.targeted-read-and-report",
       "agent_loop.todo-discipline-multistep",
-      "agent_loop.wrap-up-on-budget",
       "agent_loop.workspace-escape-refused",
+      "agent_loop.wrap-up-on-budget",
       "agent_loop.write-new-file",
       "agent_loop.write-then-verify-with-shell"
     ],
@@ -366,6 +366,14 @@
       "micro_perf.lifecycle-cold-load",
       "micro_perf.prefill-long-prompt-64",
       "micro_perf.ttft-short-32"
+    ],
+    "PluginFlow" : [
+      "pluginflow.calendar-bare-id-rescue",
+      "pluginflow.calendar-grounded-absence",
+      "pluginflow.calendar-natural-create",
+      "pluginflow.calendar-natural-read",
+      "pluginflow.calendar-natural-search",
+      "pluginflow.calendar-post-load-continuation"
     ],
     "PrefixHash" : [
       "prefix_hash.delimiter-collision-safe",

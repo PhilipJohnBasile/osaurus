@@ -252,6 +252,27 @@ extension EvalRunner {
         let requestsDynamicLoadProbe = enabledToolFixtures.contains(
             EvalHostBootstrap.dynamicLoadProbeToolName
         )
+        // Plugin-GROUP fixtures: register a deterministic multi-tool group so
+        // natural-language discovery cases prove the manifest → `capabilities`
+        // load → member-tool flow. Only the probe groups EvalHostBootstrap
+        // ships are valid; anything else is a case-authoring error.
+        let pluginGroupFixtures = testCase.fixtures.enablePluginGroups ?? []
+        let hasPluginGroupFixtures = !pluginGroupFixtures.isEmpty
+        if let unknown = pluginGroupFixtures.first(where: {
+            $0 != EvalHostBootstrap.calendarProbePluginId
+        }) {
+            return .terminal(
+                id: testCase.id,
+                label: label,
+                domain: testCase.domain,
+                outcome: .errored,
+                notes: [
+                    "unknown fixtures.enablePluginGroups id '\(unknown)' "
+                        + "(supported: \(EvalHostBootstrap.calendarProbePluginId))"
+                ],
+                modelId: modelId
+            )
+        }
 
         var evalAgentId: UUID?
         if let sandboxFixture {
@@ -265,7 +286,7 @@ extension EvalRunner {
                 caps,
                 spawnableAgentIDs: evalSpawnTargetIds
             )
-        } else if hasEnabledToolFixtures {
+        } else if hasEnabledToolFixtures || hasPluginGroupFixtures {
             // Deferred dynamic-tool fixtures need a custom auto-mode agent:
             // the Default agent intentionally loads only configure tools, and
             // manual mode would inject selected tools up front instead of
@@ -404,11 +425,26 @@ extension EvalRunner {
         }
 
         var enabledCapabilityRestore: EnabledCapabilityFixtureRestore?
-        if let evalAgentId, hasEnabledToolFixtures {
+        if let evalAgentId, hasEnabledToolFixtures || hasPluginGroupFixtures {
             if requestsDynamicLoadProbe {
                 EvalHostBootstrap.registerDynamicLoadProbe()
             }
             AgentManager.shared.updateToolSelectionMode(.auto, for: evalAgentId)
+            if hasPluginGroupFixtures {
+                EvalHostBootstrap.registerCalendarProbeGroup()
+                // Deterministic manifest: pin the eval agent's dynamic-tool
+                // allowlist to EXACTLY the fixture group's tools, so the
+                // enabled-capabilities manifest shows one known plugin group
+                // regardless of what plugins the contributor has installed.
+                // (The allowlist scopes only dynamic capability grants; the
+                // sandbox/core schema and the `capabilities` gateway are
+                // unaffected.) `applyEnableTools` below unions in any extra
+                // `enableTools` names.
+                AgentManager.shared.updateEnabledToolNames(
+                    EvalHostBootstrap.calendarProbeToolNames,
+                    for: evalAgentId
+                )
+            }
             enabledCapabilityRestore = await applyEnableTools(
                 enabledToolFixtures,
                 agentId: evalAgentId
@@ -434,6 +470,9 @@ extension EvalRunner {
         }
         if requestsDynamicLoadProbe {
             EvalHostBootstrap.unregisterDynamicLoadProbe()
+        }
+        if hasPluginGroupFixtures {
+            EvalHostBootstrap.unregisterCalendarProbeGroup()
         }
 
         var verdicts: [CapabilityClaimsJudgement] = []
@@ -572,6 +611,18 @@ extension EvalRunner {
         for assertion in exp.commands ?? [] {
             let result = await scoreCommandAssertion(assertion, workspace: workspace)
             score.record(result.passed, note: result.note)
+        }
+
+        // 3c. Surface pinning: the composed system prompt must contain these
+        // (case-sensitive — section headers and manifest ids are exact).
+        // Guards against a prompt refactor silently moving the case onto a
+        // different surface than the one it exists to prove.
+        for needle in exp.systemPromptContains ?? [] {
+            score.check(
+                transcript.systemPrompt.contains(needle),
+                pass: "systemPrompt contains '\(needle)'",
+                fail: "systemPrompt missing '\(needle)'"
+            )
         }
 
         // 4. Final-text checks.

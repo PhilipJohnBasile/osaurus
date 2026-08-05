@@ -183,7 +183,7 @@ final class CapabilitiesTool: OsaurusTool, @unchecked Sendable {
             let result = try await CapabilitiesLoadTool().execute(
                 argumentsJSON: String(decoding: data, as: UTF8.self)
             )
-            return relabel(result)
+            return relabel(Self.normalizeLegacyNames(result))
         }
         if let query = args["query"] as? String,
             !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -192,9 +192,7 @@ final class CapabilitiesTool: OsaurusTool, @unchecked Sendable {
             let result = try await CapabilitiesDiscoverTool(agentId: agentId).execute(
                 argumentsJSON: String(decoding: data, as: UTF8.self)
             )
-            return relabel(
-                result.replacingOccurrences(of: "`capabilities_load`", with: "`capabilities`")
-            )
+            return relabel(Self.normalizeLegacyNames(result))
         }
         return ToolEnvelope.failure(
             kind: .invalidArgs,
@@ -203,6 +201,17 @@ final class CapabilitiesTool: OsaurusTool, @unchecked Sendable {
             expected: "non-empty query string or ids array",
             tool: name
         )
+    }
+
+    /// The wrapped legacy tools compose result and failure texts that name
+    /// themselves (`capabilities_load` / `capabilities_discover`). Through
+    /// this gateway those names are not in the model's schema, so echoing
+    /// them teaches the model to call tools that will be refused. Rewrite
+    /// every mention to the gateway's own name before relabeling.
+    private static func normalizeLegacyNames(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "capabilities_load", with: "capabilities")
+            .replacingOccurrences(of: "capabilities_discover", with: "capabilities")
     }
 
     private func relabel(_ result: String) -> String {
@@ -852,7 +861,22 @@ final class CapabilitiesLoadTool: OsaurusTool, @unchecked Sendable {
         var sections: [String] = []
         var failures: [LoadFailure] = []
 
-        for id in ids {
+        for requestedId in ids {
+            // Prefix rescue: small models copy the id out of a manifest line
+            // like `plugin/osaurus.calendar — Calendar` and drop the
+            // `<type>/` prefix. When the bare id names exactly one known
+            // capability, load it — failing a correct intent over a
+            // mechanical prefix is what stalled live calendar runs. An
+            // ambiguous or unknown bare id still fails below with the exact
+            // expected format.
+            let id: String
+            if !requestedId.contains("/"),
+                let qualified = await Self.qualifyBareCapabilityId(requestedId)
+            {
+                id = qualified
+            } else {
+                id = requestedId
+            }
             guard let slashIdx = id.firstIndex(of: "/") else {
                 failures.append(
                     LoadFailure(
@@ -916,13 +940,58 @@ final class CapabilitiesLoadTool: OsaurusTool, @unchecked Sendable {
             )
         }
 
-        let text = sections.isEmpty ? "No capabilities loaded." : sections.joined()
+        // Post-load continuation directive: live small-model runs stalled
+        // exactly here — the model announced the load ("I've loaded the
+        // calendar tools") and stopped instead of calling what it loaded.
+        // One directive line in the RESULT (conversation suffix) costs zero
+        // prompt-prefix tokens and never touches the cached KV prefix.
+        let text =
+            sections.isEmpty
+            ? "No capabilities loaded."
+            : sections.joined()
+                + "Continue the user's request NOW using the loaded capabilities; "
+                + "do not stop to announce the load.\n"
         let warnings = failures.map(\.message)
         return ToolEnvelope.success(
             tool: name,
             text: text,
             warnings: warnings.isEmpty ? nil : warnings
         )
+    }
+
+    /// Resolve a bare capability id (no `<type>/` prefix) to its qualified
+    /// form when it names exactly one known capability. Checks the same id
+    /// spaces the typed loaders resolve against — plugin group ids and
+    /// display names, registered tool names, and skill names — and returns
+    /// nil on zero or multiple matches so ambiguity still surfaces the
+    /// exact-format error instead of guessing.
+    private static func qualifyBareCapabilityId(_ rawId: String) async -> String? {
+        await MainActor.run {
+            var matches: [String] = []
+            let registry = ToolRegistry.shared
+            let groupIds = Set(
+                registry.listDynamicTools()
+                    .compactMap { registry.groupName(for: $0.name) }
+                    .filter { !$0.isEmpty }
+            )
+            let isPlugin =
+                groupIds.contains { $0.caseInsensitiveCompare(rawId) == .orderedSame }
+                || groupIds.contains { gid in
+                    guard
+                        let display = PluginManager.shared.loadedPlugin(for: gid)?
+                            .plugin.manifest.name
+                    else { return false }
+                    return display.caseInsensitiveCompare(rawId) == .orderedSame
+                }
+            if isPlugin { matches.append("plugin/\(rawId)") }
+            if !registry.specs(forTools: [rawId]).isEmpty {
+                matches.append("tool/\(rawId)")
+            }
+            if SkillManager.shared.skill(named: rawId) != nil {
+                matches.append("skill/\(rawId)")
+            }
+            return matches.count == 1 ? matches[0] : nil
+        }
     }
 
     /// Structured per-id failure: the `kind` drives the all-failed

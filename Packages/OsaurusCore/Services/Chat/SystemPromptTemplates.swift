@@ -65,9 +65,9 @@ public enum SystemPromptTemplates {
 
         - Always answer the user in plain text once the requested work is complete. Todo is advisory progress metadata and never overrides a final response.
         - `todo(markdown)` — OPTIONAL, multi-step (3+) only: create it before starting, then re-send it only after a task or checkbox actually changes. Never repeat an unchanged checklist or mark verification done before running it. Before the final answer, if task status changed since the last todo call, re-send the full checklist once with every actually finished item checked through the tool, not as prose. Then answer exactly once and stop; unchecked items remain visible but never keep the turn open. Skip direct/single-step work.
-        - `complete(summary)` — OPTIONAL early closure for honestly blocked `todo` work. A fully checked todo needs no complete call: answer the user normally and stop. Invoke complete only as a structured tool call; never type `complete(...)` into the answer.
+        - `complete(summary)` — OPTIONAL early closure for honestly blocked `todo` work; valid only after a `todo` call in this run. Never call it for finished work or without a todo — answer the user in plain text and stop. Invoke complete only as a structured tool call; never type `complete(...)` into the answer.
         - `clarify(question)` — pause and ask exactly one concrete question only when guessing wrong would change the result. For minor preferences pick a sensible default and proceed.
-        - `share_artifact(path | content+filename)` — the only way the user sees a generated image, chart, report, code blob, or any file. **The file MUST exist before this call.** Sandbox: save under your home dir (default cwd), not `/tmp`. For inline text/markdown, pass `content`+`filename` and skip the file write.
+        - `share_artifact(path | content+filename)` — show the user a generated image, chart, or inline text/markdown in the chat (for inline content, pass `content`+`filename` and skip the file write). **A `path` file MUST exist before this call.** Files saved into the working directory with `file_write` are already delivered to the user — never re-share a file that is itself the deliverable. Sandbox: save under your home dir (default cwd), not `/tmp`.
         """
 
     /// Compact agent-loop cheat-sheet for small-context / small local models
@@ -88,9 +88,9 @@ public enum SystemPromptTemplates {
 
         - Answer the user in plain text once the requested work is complete. Todo is advisory and never overrides a final response.
         - `todo(markdown)` — OPTIONAL for 3+ steps: create once and re-send only after an actual task or checkbox change. Never repeat it unchanged or check verification before running it. Before the final answer, send one last tool update if status changed; do not print the checklist as prose. Then answer once and stop. Unchecked items never keep the turn open. Skip direct/single-step work.
-        - `complete(summary)` — OPTIONAL early closure for blocked `todo` work. For success, check every box, answer normally, and stop. Invoke it as a tool only; never print `complete(...)` in the answer.
+        - `complete(summary)` — OPTIONAL early closure for blocked `todo` work; valid only after `todo` this run. For success or todo-less work answer in plain text and stop. Invoke it as a tool only; never print `complete(...)` in the answer.
         - `clarify(question)` — last resort; a fully specified task is not ambiguous, just do it. Ask ONE question only when the user asks or a required input is missing/contradictory with no sensible default.
-        - `share_artifact(path | content+filename)` — the only way the user sees a file/image; it MUST exist first. Sandbox: save under home, not `/tmp`.
+        - `share_artifact(path | content+filename)` — show an image/chart or inline content in the chat; a `path` MUST exist first. Files written to the working directory are already delivered — never re-share them. Sandbox: save under home, not `/tmp`.
         """
 
     // MARK: - Time Context
@@ -119,25 +119,63 @@ public enum SystemPromptTemplates {
             """
     }
 
+    // MARK: - Capability Tool Names
+
+    /// The names of the capability search/load tools actually published to a
+    /// session's schema. Chat surfaces publish the merged `capabilities`
+    /// gateway (one tool, `query` to search / `ids` to load); legacy and
+    /// non-chat surfaces still publish the `capabilities_discover` /
+    /// `capabilities_load` pair. Every prompt section that teaches capability
+    /// loading MUST name the tools from the resolved schema — naming a tool
+    /// that is not in the request is the recitation-loop trap `defaultPersona`
+    /// documents, and after #2250 stripped the legacy pair from chat schemas
+    /// the un-parameterized sections steered models into non-retryable
+    /// `toolNotFound` refusals (the calendar/plugin "not working" regression).
+    public struct CapabilityToolNames: Sendable, Equatable {
+        /// Tool the model calls to search for capabilities it lacks.
+        public let discover: String
+        /// Tool the model calls with exact ids to load capabilities.
+        public let load: String
+
+        public init(discover: String, load: String) {
+            self.discover = discover
+            self.load = load
+        }
+
+        /// Merged chat gateway: one tool handles both search and load.
+        public static let gateway = CapabilityToolNames(
+            discover: "capabilities", load: "capabilities"
+        )
+        /// Legacy discover/load pair for surfaces that still publish both.
+        public static let legacy = CapabilityToolNames(
+            discover: "capabilities_discover", load: "capabilities_load"
+        )
+
+        /// True when one tool serves both roles (the merged gateway).
+        public var isUnified: Bool { discover == load }
+    }
+
     // MARK: - Grounding
 
     /// Anti-fabrication directive injected whenever tools are present
     /// (gated on `!effectiveToolsOff` + a non-empty schema in the
     /// composer). Both conditions are session-constant → KV-cache safe.
-    /// This is the full variant — it names `capabilities_discover` and the
+    /// This is the full variant — it names the discovery tool and the
     /// Enabled capabilities list, so the composer emits it only when that
     /// tool is actually in the resolved schema. Naming a tool that isn't
     /// in the request is the recitation-loop trap `defaultPersona`
     /// documents; schemas without discovery get `groundingDirectiveBase`
     /// instead (via `groundingDirective(discoveryAvailable:)`).
-    public static let groundingDirectiveFull = """
+    public static func groundingDirectiveFull(names: CapabilityToolNames) -> String {
+        """
         ## Grounding
 
         - Ground factual and live-data claims — weather, prices, web content, file contents, command output, current state — in a tool result rather than answering from memory.
-        - You can almost always get there: a shell or network tool fetches live/external data, and `capabilities_discover` finds tools you don't have yet. Attempt that before deciding you can't — the absence of a purpose-built tool is not a dead end. Say what you can't do only after genuinely trying, and never invent a tool name or fabricate a value to fill a gap.
-        - A claim about your own capabilities is a factual claim. "I don't have a tool for X" or "I can't do X" must be backed by either the Enabled capabilities list or a `capabilities_discover` call that came back empty. Never by X being absent from your current tool schema. Your loaded tools are a fixed subset, not the full enabled set.
-        - When the user asks whether you have a tool, whether you can do something, or what you can do: check the Enabled capabilities list first, then `capabilities_discover` if the list does not settle it, then answer.
+        - You can almost always get there: a shell or network tool fetches live/external data, and `\(names.discover)` finds tools you don't have yet. Attempt that before deciding you can't — the absence of a purpose-built tool is not a dead end. Say what you can't do only after genuinely trying, and never invent a tool name or fabricate a value to fill a gap.
+        - A claim about your own capabilities is a factual claim. "I don't have a tool for X" or "I can't do X" must be backed by either the Enabled capabilities list or a `\(names.discover)` search that came back empty. Never by X being absent from your current tool schema. Your loaded tools are a fixed subset, not the full enabled set.
+        - When the user asks whether you have a tool, whether you can do something, or what you can do: check the Enabled capabilities list first, then `\(names.discover)` if the list does not settle it, then answer.
         """
+    }
 
     /// Tool-name-free grounding variant for schemas WITHOUT
     /// `capabilities_discover` (e.g. manual mode with a curated tool list).
@@ -153,46 +191,59 @@ public enum SystemPromptTemplates {
     /// Compact discovery-aware grounding for small-context / small local
     /// models (`prefersCompactPrompt`). Keeps the three load-bearing claims
     /// (ground live data, try-before-you-deny, capability-claims must be
-    /// backed) — just tighter. Still names `capabilities_discover` / the
+    /// backed) — just tighter. Still names the discovery tool / the
     /// Enabled list, so it is only chosen when discovery is in the schema.
-    public static let groundingDirectiveFullCompact = """
+    public static func groundingDirectiveFullCompact(names: CapabilityToolNames) -> String {
+        """
         ## Grounding
 
         - Ground live-data and factual claims (weather, prices, web, file contents, command output, current state) in a tool result, not memory.
-        - You can almost always get there: a shell/network tool fetches external data and `capabilities_discover` finds tools you lack. Try before saying you can't, and never invent a tool name or fabricate a value.
-        - "I can't do X" / "I don't have a tool for X" must be backed by the Enabled capabilities list or an empty `capabilities_discover` — never by X being absent from your current schema (a fixed subset, not the full enabled set).
+        - You can almost always get there: a shell/network tool fetches external data and `\(names.discover)` finds tools you lack. Try before saying you can't, and never invent a tool name or fabricate a value.
+        - "I can't do X" / "I don't have a tool for X" must be backed by the Enabled capabilities list or an empty `\(names.discover)` search — never by X being absent from your current schema (a fixed subset, not the full enabled set).
         """
+    }
 
     /// Select the grounding variant for the resolved schema. The flags are
     /// session-constant (the schema + size class are frozen at session start),
     /// so the choice is KV-cache safe. `compact` only narrows the
     /// discovery-aware variant — the tool-name-free base is already minimal.
-    public static func groundingDirective(discoveryAvailable: Bool, compact: Bool = false) -> String {
+    /// `names` must be resolved from the same schema that satisfied
+    /// `discoveryAvailable`, so the directive never names an unpublished tool.
+    public static func groundingDirective(
+        discoveryAvailable: Bool,
+        compact: Bool = false,
+        names: CapabilityToolNames = .legacy
+    ) -> String {
         guard discoveryAvailable else { return groundingDirectiveBase }
-        return compact ? groundingDirectiveFullCompact : groundingDirectiveFull
+        return compact
+            ? groundingDirectiveFullCompact(names: names)
+            : groundingDirectiveFull(names: names)
     }
 
     // MARK: - Capability Discovery Nudge
 
-    /// Static guidance appended to the system prompt when `capabilities_discover`
-    /// / `capabilities_load` are in the active tool set (auto-selection mode).
+    /// Static guidance appended to the system prompt when a capability
+    /// search/load tool is in the active tool set (auto-selection mode).
     /// Tells the model how to recover when its current tool kit is missing
     /// something instead of inventing tool names — works hand-in-hand with
     /// the `toolNotFound` self-heal envelope returned by `ToolRegistry`.
-    public static let capabilityDiscoveryNudge = """
+    public static func capabilityDiscoveryNudge(names: CapabilityToolNames) -> String {
+        """
         ## Discovering more tools
 
         Your current tool list is a fixed starting set, not an exhaustive \
         one. If an Enabled capabilities list appears below, its ids can be \
-        pulled in on demand with capabilities_load. When no list appears, or \
-        when a capability seems missing and is NOT named there, \
-        `capabilities_discover({"query": "<what you need>"})` searches beyond \
-        the listed set and returns exact IDs that you can load the same way.
+        pulled in on demand with `\(names.load)` (pass them as `ids`). When \
+        no list appears, or when a capability seems missing and is NOT named \
+        there, `\(names.discover)({"query": "<what you need>"})` searches \
+        beyond the listed set and returns exact IDs that you can load the \
+        same way.
 
         Do not invent tool names — use IDs from the list or from discovery. \
-        Only after a `capabilities_discover` call comes back empty may you \
+        Only after a `\(names.discover)` search comes back empty may you \
         work around the gap or tell the user the capability is unavailable.
         """
+    }
 
     /// Sandbox-mode variant of the discovery nudge. Keeps the discover/load
     /// explanation and the "don't invent" line, then replaces the terminal
@@ -208,8 +259,16 @@ public enum SystemPromptTemplates {
     /// terminus stays last — no wasted context on an unavailable path.
     public static func capabilityDiscoveryNudgeSandbox(
         canCreatePlugins: Bool,
-        compact: Bool = false
+        compact: Bool = false,
+        names: CapabilityToolNames = .legacy
     ) -> String {
+        // The search-then-load rung reads differently when one gateway tool
+        // serves both roles — "`capabilities` then `capabilities`" would look
+        // like a typo to the model.
+        let searchLoadRung =
+            names.isUnified
+            ? "`\(names.discover)` — search with `query`, then load the returned ids"
+            : "`\(names.discover)` then `\(names.load)` anything returned"
         if compact {
             // Same escalation, prose-folded: discover/load, then build from
             // sandbox primitives, then (optionally) a plugin, then the
@@ -222,7 +281,7 @@ public enum SystemPromptTemplates {
                 + "network first"
             var rungs = [
                 "check the Enabled capabilities list",
-                "`capabilities_discover` then `capabilities_load` anything returned",
+                searchLoadRung,
                 buildStep,
             ]
             if canCreatePlugins {
@@ -237,7 +296,7 @@ public enum SystemPromptTemplates {
             return """
                 ## Discovering more tools
 
-                Your tool list is a fixed starting set, not exhaustive — when a task needs something you don't already have, reach for it before answering from memory or saying you can't. The Enabled capabilities list names more to load by id with `capabilities_load`; when something is missing and NOT listed, `capabilities_discover({"query": "<what you need>"})` searches the rest. Do not invent tool names, and never claim a capability is unavailable without first checking the list and running `capabilities_discover`.
+                Your tool list is a fixed starting set, not exhaustive — when a task needs something you don't already have, reach for it before answering from memory or saying you can't. The Enabled capabilities list names more to load by id with `\(names.load)`; when something is missing and NOT listed, `\(names.discover)({"query": "<what you need>"})` searches the rest. Do not invent tool names, and never claim a capability is unavailable without first checking the list and searching with `\(names.discover)`.
 
                 A missing capability is the start of work, not a dead end. In order: \(numbered). Credentials follow Secret handling; destructive actions follow Risk-aware actions.
                 """
@@ -248,8 +307,8 @@ public enum SystemPromptTemplates {
             Your current tool list is a fixed starting set, not an exhaustive \
             one. The Enabled capabilities list below names more you can pull in \
             on demand and shows exactly how to load by id with \
-            capabilities_load. When a capability seems missing and is NOT named \
-            there, `capabilities_discover({"query": "<what you need>"})` \
+            `\(names.load)`. When a capability seems missing and is NOT named \
+            there, `\(names.discover)({"query": "<what you need>"})` \
             searches beyond the listed set and returns exact IDs that you load \
             the same way.
 
@@ -262,9 +321,13 @@ public enum SystemPromptTemplates {
         // is included only when the agent can create plugins, so the terminus
         // renumbers automatically and no context is spent on an unavailable
         // path.
+        let searchLoadStep =
+            names.isUnified
+            ? "Search `\(names.discover)` for what you need; load anything returned by its ids."
+            : "\(names.discover) for what you need; \(names.load) anything returned."
         var stepBodies: [[String]] = [
             ["Check the Enabled capabilities list."],
-            ["capabilities_discover for what you need; capabilities_load anything returned."],
+            [searchLoadStep],
             [
                 "Assemble it from sandbox primitives. The sandbox has network access,",
                 "   python3, node, sqlite3, curl, and sandbox_install for any client library.",
@@ -531,22 +594,24 @@ public enum SystemPromptTemplates {
     /// The manifest is the grounded answer to "do you have X" — it lets a
     /// model confirm an enabled capability with zero tool calls. Every line
     /// begins with its loadable id (`tool/<name>` or `skill/<name>`) so the
-    /// model can pass it straight to `capabilities_load` without a discover.
+    /// model can pass it straight to the load tool without a discover.
     /// Tools past `enabledManifestToolCap` collapse to a per-plugin `+N more`
-    /// pointer the model can expand with `capabilities_discover`. `compact`
+    /// pointer the model can expand with the discovery tool. `compact`
     /// (small-/tiny-context models) drops per-tool descriptions but keeps the
     /// ids, since naming the capability is what stops the model from denying
-    /// it.
+    /// it. `names` must come from the resolved schema so the instructions
+    /// never name a tool the request does not publish.
     public static func enabledCapabilitiesManifest(
         groups: [ManifestPluginGroup],
-        compact: Bool = false
+        compact: Bool = false,
+        names: CapabilityToolNames = .legacy
     ) -> String? {
         guard !groups.isEmpty else { return nil }
 
         let blocks =
             compact
-            ? tieredCompactBlocks(groups)
-            : verboseBlocks(groups)
+            ? tieredCompactBlocks(groups, names: names)
+            : verboseBlocks(groups, names: names)
 
         // The "never deny a listed capability" rule is owned by
         // `groundingDirective` (which co-fires whenever this section
@@ -566,11 +631,11 @@ public enum SystemPromptTemplates {
             intro = """
                 ## Enabled capabilities
 
-                Enabled for this session. Load a plugin with capabilities_load \
+                Enabled for this session. Load a plugin with `\(names.load)` \
                 using the exact `plugin/<id>` printed below; `tool/` and \
                 `skill/` ids load individually. Never copy an example or invent \
-                an id. List frozen at session start — capabilities_discover also \
-                finds anything installed since.
+                an id. List frozen at session start — a `\(names.discover)` \
+                query also finds anything installed since.
                 """
         } else {
             intro = """
@@ -578,16 +643,16 @@ public enum SystemPromptTemplates {
 
                 These capabilities are enabled for this session. Each line begins \
                 with its loadable id; some are already in your tool schema, others \
-                must be loaded first. To load one, call capabilities_load with its \
+                must be loaded first. To load one, call `\(names.load)` with its \
                 id exactly as shown \
-                (e.g. `capabilities_load({"ids": ["tool/<name>"]})`). This list is \
+                (e.g. `\(names.load)({"ids": ["tool/<name>"]})`). This list is \
                 frozen at session start; capabilities installed after that won't \
-                appear here but capabilities_discover still finds them — check it \
-                before declaring something unavailable.
+                appear here but a `\(names.discover)` query still finds them — \
+                check it before declaring something unavailable.
 
                 Worked example — User: "You have a list_messages tool." If \
-                `tool/list_messages` is listed here, confirm it and capabilities_load \
-                it before use.
+                `tool/list_messages` is listed here, confirm it and load it with \
+                `\(names.load)` before use.
                 """
         }
 
@@ -601,7 +666,8 @@ public enum SystemPromptTemplates {
     /// skills) keep listing their directly-loadable `tool/`/`skill/` ids
     /// inline — there is no `plugin/<id>` to expand and they are few.
     private static func tieredCompactBlocks(
-        _ groups: [ManifestPluginGroup]
+        _ groups: [ManifestPluginGroup],
+        names: CapabilityToolNames
     ) -> [String] {
         var renderedSkillLines = 0
         return groups.map { group in
@@ -619,7 +685,9 @@ public enum SystemPromptTemplates {
                 var lines = ["<\(group.pluginDisplay)>"]
                 lines.append(contentsOf: skillsToShow.map { "  skill/\($0.name)" })
                 if overflow > 0 {
-                    lines.append("  +\(overflow) more skill(s) — capabilities_discover lists them.")
+                    lines.append(
+                        "  +\(overflow) more skill(s) — a `\(names.discover)` query lists them."
+                    )
                 }
                 lines.append(contentsOf: group.tools.map { "  tool/\($0.name)" })
                 return lines.joined(separator: "\n")
@@ -637,7 +705,8 @@ public enum SystemPromptTemplates {
     /// tool lines before low-priority plugins collapse to a `+N more`
     /// pointer. Unchanged from the original manifest behavior.
     private static func verboseBlocks(
-        _ groups: [ManifestPluginGroup]
+        _ groups: [ManifestPluginGroup],
+        names: CapabilityToolNames
     ) -> [String] {
         var blocks: [String] = []
         var renderedToolLines = 0
@@ -659,7 +728,7 @@ public enum SystemPromptTemplates {
             }
             if skillOverflow > 0 {
                 skillLines.append(
-                    "  +\(skillOverflow) more skill(s) — call capabilities_discover to list them."
+                    "  +\(skillOverflow) more skill(s) — a `\(names.discover)` query lists them."
                 )
             }
 
@@ -670,7 +739,7 @@ public enum SystemPromptTemplates {
                 var collapsed = ["<plugin: \(group.pluginDisplay)>"]
                 collapsed.append(contentsOf: skillLines)
                 collapsed.append(
-                    "  +\(group.tools.count) more tool(s) — call capabilities_discover to list them."
+                    "  +\(group.tools.count) more tool(s) — a `\(names.discover)` query lists them."
                 )
                 blocks.append(collapsed.joined(separator: "\n"))
                 continue
@@ -690,7 +759,7 @@ public enum SystemPromptTemplates {
             lines.append(contentsOf: toolLines)
             if overflow > 0 {
                 lines.append(
-                    "  +\(overflow) more tool(s) — call capabilities_discover to list them."
+                    "  +\(overflow) more tool(s) — a `\(names.discover)` query lists them."
                 )
             }
             blocks.append(lines.joined(separator: "\n"))
@@ -703,17 +772,19 @@ public enum SystemPromptTemplates {
     /// this rule tells the model to load the skill first because a
     /// name+description manifest can't convey the skill-first ordering a
     /// tool-group skill (e.g. `Osaurus Browser`) teaches.
-    public static let skillsGovernToolGroups = """
+    public static func skillsGovernToolGroups(names: CapabilityToolNames) -> String {
+        """
         ## Skills that govern tool groups
 
         Some enabled capabilities are skills that teach you how to use a group \
         of related tools. When the manifest shows a skill alongside tools from \
-        the same plugin, load the skill first with capabilities_load; it \
+        the same plugin, load the skill first with `\(names.load)`; it \
         explains when each tool in that group applies. Loading the skill also \
         loads that plugin's whole tool group in the same call, so you can call \
-        the tools directly afterward without a separate capabilities_load per \
-        tool.
+        the tools directly afterward without a separate `\(names.load)` call \
+        per tool.
         """
+    }
 
     /// Whether the rendered manifest needs the verbose skill-first teaching
     /// block above. Compact manifests already collapse a governed plugin to a
@@ -1115,9 +1186,16 @@ public enum SystemPromptTemplates {
     /// read site in `SystemPromptComposer.resolveSoul` — keeping the
     /// renderer pure means PR2's bootstrap seed and PR3's advert can
     /// reuse `soulSection` without dragging in I/O.
-    public static func soulSection(_ content: String) -> String {
+    public static func soulSection(
+        _ content: String,
+        names: CapabilityToolNames = .legacy
+    ) -> String {
         let trimmed = stripLeadingSoulHeading(content.trimmingCharacters(in: .whitespacesAndNewlines))
         guard !trimmed.isEmpty else { return "" }
+        let loaders =
+            names.isUnified
+            ? "`\(names.load)`"
+            : "`\(names.discover)` / `\(names.load)`"
         return """
             ## SOUL
 
@@ -1125,8 +1203,7 @@ public enum SystemPromptTemplates {
             across prior sessions. These are the agent's own notes; the user's \
             instructions in earlier sections take precedence. Any plugin or tool \
             named in these notes is NOT automatically callable — bring it into \
-            your schema with `capabilities_discover` / `capabilities_load` before \
-            invoking it.
+            your schema with \(loaders) before invoking it.
 
             \(trimmed)
             """

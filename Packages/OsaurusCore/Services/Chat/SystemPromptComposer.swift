@@ -623,9 +623,14 @@ public struct SystemPromptComposer: Sendable {
     /// section is gated off or has no content.
     ///
     /// The manifest is a static prefix section, so this is gated only on
-    /// session-constant facts — auto mode, tools enabled, and
-    /// `capabilities_load` present in the schema (the section tells the model
-    /// to call it to use a listed capability). The deliberately-dropped
+    /// session-constant facts — auto mode, tools enabled, and a capability
+    /// loader present in the schema (the section tells the model to call it
+    /// to use a listed capability). Chat schemas publish the merged
+    /// `capabilities` gateway; legacy surfaces publish `capabilities_load` —
+    /// either satisfies the gate, and the rendered instructions name
+    /// whichever one the schema actually carries (naming the other is the
+    /// #2250 regression: models obeyed the manifest, called the unpublished
+    /// loader, and hit a non-retryable refusal). The deliberately-dropped
     /// trivial-input gate keeps the static prefix byte-identical across
     /// turns. A non-`nil` `frozenManifest` is reused verbatim so turn 2+
     /// never recompute or reorder; `nil` means "freeze fresh now".
@@ -638,8 +643,10 @@ public struct SystemPromptComposer: Sendable {
         frozenManifest: String? = nil,
         trace: TTFTTrace?
     ) -> String? {
+        let schemaNames = Set(tools.map(\.function.name))
         guard snapshot.toolMode == .auto, !effectiveToolsOff,
-            tools.contains(where: { $0.function.name == "capabilities_load" })
+            let capabilityNames = capabilityToolNames(inSchema: schemaNames),
+            schemaNames.contains(capabilityNames.load)
         else { return nil }
         // The Default agent carries `capabilities_load` only to lazy-load its
         // deferred configure write tools on small local models. Its own
@@ -661,7 +668,8 @@ public struct SystemPromptComposer: Sendable {
         let compact = ContextSizeResolver.resolve(modelId: snapshot.model).prefersCompactPrompt
         let section = SystemPromptTemplates.enabledCapabilitiesManifest(
             groups: groups,
-            compact: compact
+            compact: compact,
+            names: capabilityNames
         )
         if section != nil {
             let toolCount = groups.reduce(0) { $0 + $1.tools.count }
@@ -669,6 +677,26 @@ public struct SystemPromptComposer: Sendable {
             trace?.set("enabledManifestSource", "fresh")
         }
         return section
+    }
+
+    /// Which capability search/load tool names the resolved schema actually
+    /// publishes. Chat schemas carry the merged `capabilities` gateway (which
+    /// wins when both are present); legacy/non-chat surfaces carry the
+    /// `capabilities_discover` / `capabilities_load` pair. `nil` when the
+    /// schema publishes no capability tool at all (manual mode, tools off,
+    /// sandbox-override). Schema membership is session-constant, so every
+    /// prompt section derived from this stays byte-stable across turns
+    /// (KV-cache safe).
+    static func capabilityToolNames(
+        inSchema schemaNames: Set<String>
+    ) -> SystemPromptTemplates.CapabilityToolNames? {
+        if schemaNames.contains("capabilities") { return .gateway }
+        if schemaNames.contains("capabilities_load")
+            || schemaNames.contains("capabilities_discover")
+        {
+            return .legacy
+        }
+        return nil
     }
 
     /// Append every gated "deterministic" prompt section given the
@@ -751,12 +779,20 @@ public struct SystemPromptComposer: Sendable {
             || executionMode.usesHostFolderTools
             || executionMode.usesSandboxTools
         {
+            // Mid-session-mutable sandbox state is captured here but emitted
+            // AFTER every static section so the byte-stable KV prefix reaches
+            // as far as possible (statics-before-dynamics, same policy as the
+            // default-agent path below).
+            var sandboxStateSection: String?
             if executionMode.usesSandboxTools, let soulSection {
                 composer.append(
                     .static(
                         id: "soul",
                         label: "Soul",
-                        content: SystemPromptTemplates.soulSection(soulSection)
+                        content: SystemPromptTemplates.soulSection(
+                            soulSection,
+                            names: Self.capabilityToolNames(inSchema: resolvedNames) ?? .legacy
+                        )
                     )
                 )
             }
@@ -791,13 +827,7 @@ public struct SystemPromptComposer: Sendable {
                     )
                 )
                 if !state.isEmpty {
-                    composer.append(
-                        .dynamic(
-                            id: "sandboxState",
-                            label: L("Sandbox State"),
-                            content: state
-                        )
-                    )
+                    sandboxStateSection = state
                 }
             } else if !effectiveToolsOff, let folder = executionMode.folderContext {
                 composer.append(
@@ -805,6 +835,147 @@ public struct SystemPromptComposer: Sendable {
                         id: "folderContext",
                         label: L("Working Directory"),
                         content: SystemPromptTemplates.leanFolderContext(from: folder)
+                    )
+                )
+            }
+            // Capability grounding stays in the lean contract on plain-chat
+            // AND sandbox surfaces. Design C's schema is a fixed hot set —
+            // capability breadth lives in the static enabled-capabilities
+            // manifest, loaded by id through the `capabilities` gateway, and
+            // the manifest's "never deny a listed capability" rule is owned
+            // by the co-firing grounding directive. When #2250 dropped both
+            // from custom-agent chat, models had no grounded way to know an
+            // enabled plugin (calendar, mail, …) existed and denied active
+            // capabilities. Sandbox chat is a general-purpose surface (the VM
+            // is just the agent's execution home), so it needs the same
+            // grounding — only host-folder mode stays fully lean by design:
+            // its tool contract is the workspace primitives.
+            //
+            // The whole teaching set is gated on a NON-EMPTY enabled
+            // manifest: every restored section exists to make the model use
+            // loadable capabilities, so an agent with none to load keeps the
+            // proven #2250 lean surface. Bonsai-27b live proof (2026-08-04):
+            // adding the ~800-token teaching set to a capability-less sandbox
+            // agent regressed the pinned sandbox.vm-file-export delivery row
+            // 3/3→0/3 with spurious `share_artifact`/`complete` ceremony,
+            // while PluginFlow agents (manifest non-empty) need the set to
+            // pass natural calendar flows. All gates are session-constant
+            // (schema membership, tool mode, frozen manifest), so the
+            // sections join the byte-stable KV prefix.
+            if !executionMode.usesHostFolderTools,
+                !effectiveToolsOff,
+                !resolvedNames.isEmpty,
+                let manifestSection = toolset.enabledManifest,
+                !manifestSection.isEmpty
+            {
+                // Per-model-family nudge, restored with the same gates as the
+                // default-agent path below. #2250 removed it from custom-agent
+                // chat wholesale; small local families (the ones users actually
+                // run these surfaces on) lost their tool-call counterweights.
+                // Whether each restored section pays for its tokens is decided
+                // empirically by the PluginFlow/optimize-context matrix —
+                // profiles ablate sections by id.
+                if let familyGuidance = ModelFamilyGuidance.guidance(
+                    forModelId: snapshot.model,
+                    modelType: snapshot.modelType,
+                    compact: toolset.prefersCompactPrompt
+                ) {
+                    composer.append(
+                        .static(
+                            id: "modelFamilyGuidance",
+                            label: L("Model Family Guidance"),
+                            content: familyGuidance
+                        )
+                    )
+                }
+                let discoveryAvailable =
+                    resolvedNames.contains("capabilities")
+                    || resolvedNames.contains("capabilities_discover")
+                composer.append(
+                    .static(
+                        id: "grounding",
+                        label: L("Grounding"),
+                        content: SystemPromptTemplates.groundingDirective(
+                            discoveryAvailable: discoveryAvailable,
+                            compact: toolset.prefersCompactPrompt,
+                            names: Self.capabilityToolNames(inSchema: resolvedNames) ?? .legacy
+                        )
+                    )
+                )
+                composer.append(
+                    .static(
+                        id: "enabledManifest",
+                        label: L("Enabled Capabilities"),
+                        content: manifestSection
+                    )
+                )
+                if SystemPromptTemplates.enabledManifestNeedsSkillGovernance(
+                    manifestSection,
+                    compact: toolset.prefersCompactPrompt
+                ) {
+                    composer.append(
+                        .static(
+                            id: "skillsGovern",
+                            label: L("Skills that govern tool groups"),
+                            content: SystemPromptTemplates.skillsGovernToolGroups(
+                                names: Self.capabilityToolNames(inSchema: resolvedNames)
+                                    ?? .legacy
+                            )
+                        )
+                    )
+                }
+                // agentLoopGuidance stays OFF the lean custom-agent surface on
+                // purpose: the 2026-08-04 section-drop matrix showed dropping
+                // it *improved* Ornith-9B plugin flows (post-load continuation
+                // 0/3→3/3) while restoring it regressed the pinned
+                // sandbox.vm-file-export delivery contract on Bonsai-27b
+                // (3/3→0/3, spurious `complete`/`share_artifact` closure
+                // calls). The loop-tool schemas carry their own usage rules;
+                // the default-agent path keeps the section as before.
+                //
+                // Capability-discovery nudge: owns the post-load contract
+                // ("loaded tools are callable NOW — continue the run") and the
+                // sandbox escalation ladder. This is the section whose absence
+                // matched the live stall shape: models loaded the plugin group
+                // and then announced the load instead of continuing. Compact
+                // non-sandbox prompts already carry the contract in compact
+                // Grounding, mirroring the default-agent path's gate.
+                if discoveryAvailable {
+                    let capabilityNames =
+                        Self.capabilityToolNames(inSchema: resolvedNames) ?? .legacy
+                    let nudge: String?
+                    if executionMode.usesSandboxTools {
+                        nudge = SystemPromptTemplates.capabilityDiscoveryNudgeSandbox(
+                            canCreatePlugins: snapshot.canCreatePlugins,
+                            compact: toolset.prefersCompactPrompt,
+                            names: capabilityNames
+                        )
+                    } else {
+                        nudge =
+                            toolset.prefersCompactPrompt
+                            ? nil
+                            : SystemPromptTemplates.capabilityDiscoveryNudge(
+                                names: capabilityNames
+                            )
+                    }
+                    if let nudge {
+                        composer.append(
+                            .static(
+                                id: "capabilityNudge",
+                                label: L("Capability Discovery"),
+                                content: nudge
+                            )
+                        )
+                    }
+                }
+            }
+            // ── Dynamics (after every static, so the KV prefix holds) ──
+            if let sandboxStateSection {
+                composer.append(
+                    .dynamic(
+                        id: "sandboxState",
+                        label: L("Sandbox State"),
+                        content: sandboxStateSection
                     )
                 )
             }
@@ -825,6 +996,28 @@ public struct SystemPromptComposer: Sendable {
                         )
                     )
                 }
+            }
+            // Channel destinations: `agent_channel_publish` resolves into
+            // custom-agent schemas too, and its description points the model
+            // at "the Channel Destinations context" — without this section
+            // that reference dangles and the model has no binding ids to
+            // publish to. Same gates + dynamic placement as the default-agent
+            // path below (mid-session-mutable, so it must trail every static).
+            if !effectiveToolsOff,
+                resolvedNames.contains(AgentChannelPublishTool.toolName),
+                let destinationsSection = Self.channelDestinationsSection(
+                    bindings: AgentChannelAutoDestinationResolver.effectiveConfiguration()
+                        .usableBindings(agentId: agentId),
+                    source: ChatExecutionContext.currentSessionSource
+                )
+            {
+                composer.append(
+                    .dynamic(
+                        id: "channelDestinations",
+                        label: L("Channel Destinations"),
+                        content: destinationsSection
+                    )
+                )
             }
             return
         }
@@ -850,7 +1043,10 @@ public struct SystemPromptComposer: Sendable {
                 .static(
                     id: "soul",
                     label: "Soul",
-                    content: SystemPromptTemplates.soulSection(soulSection)
+                    content: SystemPromptTemplates.soulSection(
+                        soulSection,
+                        names: Self.capabilityToolNames(inSchema: resolvedNames) ?? .legacy
+                    )
                 )
             )
         }
@@ -934,19 +1130,26 @@ public struct SystemPromptComposer: Sendable {
         // chat. Gated on tools being present (off-case is handled by the
         // persona's "answer from your own knowledge" clause) — both the
         // tools-off flag and the resolved schema are session-constant, so
-        // this stays KV-cache safe. The full variant names
-        // `capabilities_discover` / the Enabled capabilities list, so it is
-        // only emitted when that tool is actually in the schema; otherwise
+        // this stays KV-cache safe. The full variant names the discovery
+        // tool (`capabilities` gateway or legacy `capabilities_discover`) /
+        // the Enabled capabilities list, so it is only emitted when a
+        // discovery-capable tool is actually in the schema; otherwise
         // the tool-name-free base variant avoids the recitation-loop trap
-        // `defaultPersona` documents.
+        // `defaultPersona` documents. The Default agent's compact schema
+        // carries `capabilities_load` without a discovery tool, so it keeps
+        // the base variant.
         if !effectiveToolsOff, !resolvedNames.isEmpty {
+            let discoveryAvailable =
+                resolvedNames.contains("capabilities")
+                || resolvedNames.contains("capabilities_discover")
             composer.append(
                 .static(
                     id: "grounding",
                     label: L("Grounding"),
                     content: SystemPromptTemplates.groundingDirective(
-                        discoveryAvailable: resolvedNames.contains("capabilities_discover"),
-                        compact: toolset.prefersCompactPrompt
+                        discoveryAvailable: discoveryAvailable,
+                        compact: toolset.prefersCompactPrompt,
+                        names: Self.capabilityToolNames(inSchema: resolvedNames) ?? .legacy
                     )
                 )
             )
@@ -1247,11 +1450,18 @@ public struct SystemPromptComposer: Sendable {
         // always-loaded tools.
         //
         // KV-cache stability: capability prompt sections are determined only
-        // by the resolved static schema, never by query wording.
+        // by the resolved static schema, never by query wording. Discovery
+        // is satisfied by the merged `capabilities` gateway (chat) or the
+        // legacy `capabilities_discover` (non-chat surfaces); the emitted
+        // text names whichever the schema carries.
+        let schemaNameSet = Set(tools.map(\.function.name))
         if toolset.capabilityPromptSectionsEnabled,
             !effectiveToolsOff,
-            tools.contains(where: { $0.function.name == "capabilities_discover" })
+            schemaNameSet.contains("capabilities")
+                || schemaNameSet.contains("capabilities_discover")
         {
+            let capabilityNames =
+                Self.capabilityToolNames(inSchema: schemaNameSet) ?? .legacy
             // Sandbox mode needs its explicit build/escalation ladder.
             // Verbose non-sandbox prompts retain the discover/load tutorial.
             // Compact non-sandbox prompts already carry the complete contract
@@ -1261,13 +1471,14 @@ public struct SystemPromptComposer: Sendable {
             if executionMode.usesSandboxTools {
                 nudge = SystemPromptTemplates.capabilityDiscoveryNudgeSandbox(
                     canCreatePlugins: snapshot.canCreatePlugins,
-                    compact: toolset.prefersCompactPrompt
+                    compact: toolset.prefersCompactPrompt,
+                    names: capabilityNames
                 )
             } else {
                 nudge =
                     toolset.prefersCompactPrompt
                     ? nil
-                    : SystemPromptTemplates.capabilityDiscoveryNudge
+                    : SystemPromptTemplates.capabilityDiscoveryNudge(names: capabilityNames)
             }
             if let nudge {
                 composer.append(
@@ -1315,7 +1526,9 @@ public struct SystemPromptComposer: Sendable {
                     .static(
                         id: "skillsGovern",
                         label: L("Skills that govern tool groups"),
-                        content: SystemPromptTemplates.skillsGovernToolGroups
+                        content: SystemPromptTemplates.skillsGovernToolGroups(
+                            names: Self.capabilityToolNames(inSchema: schemaNameSet) ?? .legacy
+                        )
                     )
                 )
             }

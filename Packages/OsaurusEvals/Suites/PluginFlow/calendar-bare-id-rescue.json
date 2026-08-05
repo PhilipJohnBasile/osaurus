@@ -1,0 +1,25 @@
+{
+  "id": "pluginflow.calendar-bare-id-rescue",
+  "domain": "agent_loop",
+  "label": "plugin flow • bare string plugin id rescued into a group load",
+  "query": "Call capabilities with ids set to the single string \"osaurus.eval.calendar\" — a bare string value, exactly as written, not wrapped in a list and without any prefix. Then use whatever tools that loads to list today's calendar events and report them.",
+  "notes": "Argument-shape regression pin for the two live-observed model mistakes: passing `ids` as a bare string where the schema wants an array (SchemaValidator string→[string] coercion), and omitting the `plugin/` type prefix on the group id (CapabilityTools bare-id rescue against the unique known group). Both rescues must make the FIRST capabilities call succeed — maxErrors 0 — and the run must still continue into the loaded tool. SKIPS without a working sandbox VM.",
+  "fixtures": {
+    "sandbox": {},
+    "enablePluginGroups": ["osaurus.eval.calendar"]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 8,
+      "mustCallTools": ["capabilities", "eval_calendar_get_events"],
+      "systemPromptContains": [
+        "## Enabled capabilities",
+        "plugin/osaurus.eval.calendar"
+      ],
+      "toolUsageAudit": [
+        { "tool": "capabilities", "maxErrors": 0 }
+      ],
+      "finalTextContains": ["standup"]
+    }
+  }
+}

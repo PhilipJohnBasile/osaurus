@@ -50,8 +50,8 @@ struct PromptTokenTableTests {
             ),
             Row(
                 "grounding(discovery)",
-                full: SystemPromptTemplates.groundingDirectiveFull,
-                compact: SystemPromptTemplates.groundingDirectiveFullCompact
+                full: SystemPromptTemplates.groundingDirectiveFull(names: .gateway),
+                compact: SystemPromptTemplates.groundingDirectiveFullCompact(names: .gateway)
             ),
             Row("grounding(base)", full: SystemPromptTemplates.groundingDirectiveBase),
             Row(
@@ -72,7 +72,7 @@ struct PromptTokenTableTests {
             ),
             Row(
                 "discoveryNudge(non-sandbox)",
-                full: SystemPromptTemplates.capabilityDiscoveryNudge,
+                full: SystemPromptTemplates.capabilityDiscoveryNudge(names: .gateway),
                 compact: ""
             ),
             Row(
@@ -123,7 +123,10 @@ struct PromptTokenTableTests {
                     compact: true
                 )
             ),
-            Row("skillsGovernToolGroups", full: SystemPromptTemplates.skillsGovernToolGroups),
+            Row(
+                "skillsGovernToolGroups",
+                full: SystemPromptTemplates.skillsGovernToolGroups(names: .gateway)
+            ),
             Row(
                 "pluginCreator",
                 full: PluginCreatorGate.section(

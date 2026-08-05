@@ -14,6 +14,17 @@ enum ToolRegistryLogger {
     static let registry = Logger(subsystem: "ai.osaurus", category: "tool.registry")
 }
 
+/// A dynamically registered tool that declares its plugin-group membership
+/// directly instead of deriving it from a loaded plugin/provider instance.
+/// `ToolRegistry.groupName(for:)` honors this after the concrete plugin/MCP/
+/// sandbox casts, so a declared group flows through the same enabled-manifest
+/// grouping and `plugin/<id>` group loading as a real plugin. Used by the
+/// OsaurusEvals fixture tools (`EvalHostBootstrap`), which need a
+/// deterministic multi-tool group without dlopen-ing a dylib.
+protocol ToolGroupDeclaring {
+    var declaredGroupId: String { get }
+}
+
 private let toolBodyTimeoutQueue = DispatchQueue(label: "ai.osaurus.tool-registry.timeout")
 
 private final class ToolBodyRaceState: @unchecked Sendable {
@@ -844,6 +855,30 @@ public final class ToolRegistry: ObservableObject {
         if let scope = ChatExecutionContext.toolExecutionScope, !scope.permits(name) {
             ToolRegistryLogger.registry.error(
                 "refusing '\(name, privacy: .public)': not exposed to this request")
+            // Legacy capability loader names. Chat schemas publish only the
+            // merged `capabilities` gateway; sessions frozen before that
+            // switch, older skill bodies, and models trained on the legacy
+            // pair still call `capabilities_load` / `capabilities_discover`
+            // by name. Those are registered built-ins, so without this
+            // carve-out they fall through to the opaque non-retryable
+            // refusal below and the model gives up one call away from
+            // succeeding (the #2250 calendar regression). Steer to the
+            // gateway with the same argument shape — retryable so the loop
+            // self-heals in one turn.
+            if name == "capabilities_load" || name == "capabilities_discover",
+                scope.permits("capabilities")
+            {
+                return ToolErrorEnvelope(
+                    kind: .toolNotFound,
+                    reason:
+                        "\(name) is not published to this conversation — this session "
+                        + "uses the merged `capabilities` tool instead. Call capabilities "
+                        + "with the same arguments (`{\"query\": \"<what you need>\"}` to "
+                        + "search, `{\"ids\": [...]}` to load), then continue.",
+                    toolName: name,
+                    retryable: true
+                ).toJSONString()
+            }
             // Distinguish "real tool, just never loaded into this
             // conversation" from "withheld". A skill's instructions or the
             // user can name a dynamic tool that was never exposed to the
@@ -897,6 +932,9 @@ public final class ToolRegistry: ObservableObject {
                     retryable: true
                 ).toJSONString()
             }
+            if let groupRescue = groupIdCallRescueEnvelope(for: name) {
+                return groupRescue
+            }
             return ToolErrorEnvelope(
                 kind: .toolNotFound,
                 reason: "\(name) is not available in this conversation.",
@@ -921,6 +959,9 @@ public final class ToolRegistry: ObservableObject {
                     toolName: name,
                     retryable: true
                 ).toJSONString()
+            }
+            if let groupRescue = groupIdCallRescueEnvelope(for: name) {
+                return groupRescue
             }
             // No "did you mean" list on purpose (names trigger invention of
             // siblings) — but a bare dead-end leaves small models apologizing
@@ -2144,6 +2185,56 @@ public final class ToolRegistry: ObservableObject {
         )
     }
 
+    /// Rescue for "called the GROUP id as a tool". The enabled-capabilities
+    /// manifest lists plugin groups as `plugin/<id>` rows; small models
+    /// (live Qwen3-4B shape: `osaurus.eval.calendar({"date":"tomorrow"})`)
+    /// call the group id itself as if it were a callable tool, hit the
+    /// generic dead end, and give up one gateway load away from succeeding.
+    /// When the guessed name exactly matches a registered dynamic-tool
+    /// group — and this agent is actually allowed at least one member tool,
+    /// so the hint never reveals a withheld group — steer to the loader
+    /// with a retryable envelope instead.
+    private func groupIdCallRescueEnvelope(for guessedName: String) -> String? {
+        let bare =
+            guessedName.hasPrefix("plugin/")
+            ? String(guessedName.dropFirst("plugin/".count))
+            : guessedName
+        guard !bare.isEmpty else { return nil }
+        let memberNames = toolsByName.keys.filter { groupName(for: $0) == bare }
+        guard !memberNames.isEmpty else { return nil }
+        let agentAllowed: Set<String>? = ChatExecutionContext.currentAgentId.flatMap {
+            AgentManager.shared.effectiveEnabledToolNames(for: $0).map(Set.init)
+        }
+        guard memberNames.contains(where: { agentAllowed?.contains($0) ?? true }) else {
+            return nil
+        }
+        // Name the loader this request actually exposes (same #2279 logic
+        // as the loadable-tool hint above): hinting a loader outside the
+        // scope would send the model into a second dead end.
+        let scope = ChatExecutionContext.toolExecutionScope
+        let loaderName: String
+        if let scope {
+            if scope.permits("capabilities") {
+                loaderName = "capabilities"
+            } else if scope.permits("capabilities_load") {
+                loaderName = "capabilities_load"
+            } else {
+                return nil
+            }
+        } else {
+            loaderName = "capabilities"
+        }
+        return ToolErrorEnvelope(
+            kind: .toolNotFound,
+            reason:
+                "'\(guessedName)' is a capability group, not a callable tool. "
+                + "Call \(loaderName) with {\"ids\": [\"plugin/\(bare)\"]} to load the "
+                + "group's tools, then call one of the loaded tool names to continue.",
+            toolName: guessedName,
+            retryable: true
+        ).toJSONString()
+    }
+
     /// Returns the plugin or provider name that a tool belongs to, if any.
     func groupName(for toolName: String) -> String? {
         guard let tool = toolsByName[toolName] else { return nil }
@@ -2151,6 +2242,7 @@ public final class ToolRegistry: ObservableObject {
         if let ext = tool as? ExternalTool { return ext.pluginId }
         if let mcp = tool as? MCPProviderTool { return mcp.providerName }
         if let sandbox = tool as? SandboxPluginTool { return sandbox.plugin.id }
+        if let declaring = tool as? ToolGroupDeclaring { return declaring.declaredGroupId }
         return nil
     }
 

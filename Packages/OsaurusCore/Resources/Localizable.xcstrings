@@ -198,314 +198,6 @@
         }
       }
     },
-    "Browser command copied. Run it in a web.whatsapp.com console tab." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Browser-Befehl kopiert. Führe ihn in einem web.whatsapp.com-Konsolen-Tab aus."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "브라우저 명령이 복사되었습니다. web.whatsapp.com 콘솔 탭에서 실행하세요."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Команда для браузера скопирована. Выполните её в консоли вкладки web.whatsapp.com."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "浏览器命令已复制。请在 web.whatsapp.com 的控制台标签页中运行。"
-          }
-        }
-      }
-    },
-    "Check your phone" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Prüfe dein Telefon"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "휴대폰을 확인하세요"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Проверьте телефон"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请查看你的手机"
-          }
-        }
-      }
-    },
-    "Confirm this code matches the one WhatsApp shows on your phone, then continue." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bestätige, dass dieser Code mit dem übereinstimmt, den WhatsApp auf deinem Telefon anzeigt, und fahre dann fort."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이 코드가 휴대폰의 WhatsApp에 표시된 코드와 일치하는지 확인한 후 계속하세요."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Убедитесь, что этот код совпадает с кодом в WhatsApp на вашем телефоне, затем продолжите."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "确认此代码与手机上 WhatsApp 显示的代码一致，然后继续。"
-          }
-        }
-      }
-    },
-    "Confirming..." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wird bestätigt..."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "확인 중..."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Подтверждение..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在确认..."
-          }
-        }
-      }
-    },
-    "Copy Browser Command" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Browser-Befehl kopieren"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "브라우저 명령 복사"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Скопировать команду для браузера"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "复制浏览器命令"
-          }
-        }
-      }
-    },
-    "Passkey response accepted — finishing the link..." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Passkey-Antwort akzeptiert — Verknüpfung wird abgeschlossen..."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "패스키 응답이 수락되었습니다 — 연결을 마무리하는 중..."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ответ ключа доступа принят — завершаем привязку..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通行密钥响应已接受 — 正在完成关联..."
-          }
-        }
-      }
-    },
-    "Submit Passkey Response" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Passkey-Antwort senden"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "패스키 응답 제출"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Отправить ответ ключа доступа"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "提交通行密钥响应"
-          }
-        }
-      }
-    },
-    "Submitting..." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wird gesendet..."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "제출 중..."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Отправка..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在提交..."
-          }
-        }
-      }
-    },
-    "The Codes Match — Continue" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Codes stimmen überein — Weiter"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "코드 일치 — 계속"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Коды совпадают — продолжить"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "代码一致 — 继续"
-          }
-        }
-      }
-    },
-    "This account is protected by a passkey" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dieses Konto ist durch einen Passkey geschützt"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이 계정은 패스키로 보호되어 있습니다"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Этот аккаунт защищён ключом доступа"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此账号受通行密钥保护"
-          }
-        }
-      }
-    },
-    "WhatsApp requires a passkey check to link a new device. In a browser, open web.whatsapp.com, open the developer console (Cmd-Opt-J or F12), run the copied command, approve the passkey prompt, then paste the JSON line it prints below." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp verlangt eine Passkey-Prüfung, um ein neues Gerät zu verknüpfen. Öffne im Browser web.whatsapp.com, öffne die Entwicklerkonsole (Cmd-Opt-J oder F12), führe den kopierten Befehl aus, bestätige die Passkey-Abfrage und füge dann die ausgegebene JSON-Zeile unten ein."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp는 새 기기를 연결할 때 패스키 확인을 요구합니다. 브라우저에서 web.whatsapp.com을 열고 개발자 콘솔(Cmd-Opt-J 또는 F12)을 연 뒤, 복사한 명령을 실행하고 패스키 프롬프트를 승인한 다음, 출력된 JSON 한 줄을 아래에 붙여넣으세요."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp требует проверку ключа доступа для привязки нового устройства. Откройте в браузере web.whatsapp.com, откройте консоль разработчика (Cmd-Opt-J или F12), выполните скопированную команду, подтвердите запрос ключа доступа, затем вставьте выведенную строку JSON ниже."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WhatsApp 要求通过通行密钥验证才能关联新设备。请在浏览器中打开 web.whatsapp.com，打开开发者控制台（Cmd-Opt-J 或 F12），运行复制的命令，通过通行密钥验证，然后将输出的 JSON 行粘贴到下方。"
-          }
-        }
-      }
-    },
     "—" : {
       "comment" : "A placeholder text to indicate missing data.",
       "isCommentAutoGenerated" : true,
@@ -4157,6 +3849,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 個工件"
+          }
+        }
+      }
+    },
+    "%lld assigned tools need macOS permissions: %@" : {
+      "comment" : "A warning line in the Tools tab when an agent's assigned tool needs macOS permissions. The first argument is the number of tools that need permissions. The second argument is a list of permissions, joined by commas.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld assigned tools need macOS permissions: %2$@"
           }
         }
       }
@@ -10341,6 +10045,10 @@
           }
         }
       }
+    },
+    "1 assigned tool needs macOS permissions: %@" : {
+      "comment" : "A warning line in the Tools tab that shows macOS permissions needed for a single tool. The argument is a list of permissions, joined by commas.",
+      "isCommentAutoGenerated" : true
     },
     "1 blocking finding must be fixed before provisioning." : {
       "localizations" : {
@@ -25851,6 +25559,10 @@
         }
       }
     },
+    "Ask macOS for the missing permissions" : {
+      "comment" : "Button label to ask macOS for the missing permissions.",
+      "isCommentAutoGenerated" : true
+    },
     "Ask on first use (default)" : {
       "comment" : "A label for the \"Ask on first use\" option.",
       "isCommentAutoGenerated" : true
@@ -34308,6 +34020,34 @@
         }
       }
     },
+    "Browser command copied. Run it in a web.whatsapp.com console tab." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browser-Befehl kopiert. Führe ihn in einem web.whatsapp.com-Konsolen-Tab aus."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "브라우저 명령이 복사되었습니다. web.whatsapp.com 콘솔 탭에서 실행하세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Команда для браузера скопирована. Выполните её в консоли вкладки web.whatsapp.com."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览器命令已复制。请在 web.whatsapp.com 的控制台标签页中运行。"
+          }
+        }
+      }
+    },
     "Browser Session" : {
       "comment" : "Title of the browser window when it's an active session for a specific agent.",
       "isCommentAutoGenerated" : true,
@@ -40533,6 +40273,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檢查 Webhook"
+          }
+        }
+      }
+    },
+    "Check your phone" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prüfe dein Telefon"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "휴대폰을 확인하세요"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проверьте телефон"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请查看你的手机"
           }
         }
       }
@@ -48445,6 +48213,34 @@
         }
       }
     },
+    "Confirm this code matches the one WhatsApp shows on your phone, then continue." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestätige, dass dieser Code mit dem übereinstimmt, den WhatsApp auf deinem Telefon anzeigt, und fahre dann fort."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 코드가 휴대폰의 WhatsApp에 표시된 코드와 일치하는지 확인한 후 계속하세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Убедитесь, что этот код совпадает с кодом в WhatsApp на вашем телефоне, затем продолжите."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认此代码与手机上 WhatsApp 显示的代码一致，然后继续。"
+          }
+        }
+      }
+    },
     "Confirmation Delay" : {
       "localizations" : {
         "de" : {
@@ -48475,6 +48271,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "確認延遲"
+          }
+        }
+      }
+    },
+    "Confirming..." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird bestätigt..."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "확인 중..."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подтверждение..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在确认..."
           }
         }
       }
@@ -52528,6 +52352,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "複製並粘貼到此處"
+          }
+        }
+      }
+    },
+    "Copy Browser Command" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browser-Befehl kopieren"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "브라우저 명령 복사"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Скопировать команду для браузера"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制浏览器命令"
           }
         }
       }
@@ -87578,6 +87430,10 @@
           }
         }
       }
+    },
+    "Grant missing macOS permission(s): %@" : {
+      "comment" : "A tooltip for the \"Grant\" button in the \"Needs permission\" state of a tool row. The list of permissions is separated by commas.",
+      "isCommentAutoGenerated" : true
     },
     "Grant osaurus access to this folder" : {
       "localizations" : {
@@ -132125,6 +131981,9 @@
         }
       }
     },
+    "Open Permissions" : {
+
+    },
     "Open Remote Providers" : {
       "comment" : "Title for an action that opens the Remote Providers manager.",
       "isCommentAutoGenerated" : true,
@@ -137227,6 +137086,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "傳入 onGenerateTitle 處理器以啓用 /title"
+          }
+        }
+      }
+    },
+    "Passkey response accepted — finishing the link..." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkey-Antwort akzeptiert — Verknüpfung wird abgeschlossen..."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "패스키 응답이 수락되었습니다 — 연결을 마무리하는 중..."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ответ ключа доступа принят — завершаем привязку..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通行密钥响应已接受 — 正在完成关联..."
           }
         }
       }
@@ -167320,6 +167207,10 @@
         }
       }
     },
+    "Review and grant permissions in Settings" : {
+      "comment" : "Button label to open the macOS system permissions UI.",
+      "isCommentAutoGenerated" : true
+    },
     "Review Bundle" : {
       "localizations" : {
         "de" : {
@@ -193924,6 +193815,34 @@
         }
       }
     },
+    "Submit Passkey Response" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkey-Antwort senden"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "패스키 응답 제출"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отправить ответ ключа доступа"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提交通行密钥响应"
+          }
+        }
+      }
+    },
     "Submit selected options" : {
       "localizations" : {
         "de" : {
@@ -193954,6 +193873,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "提交所選選項"
+          }
+        }
+      }
+    },
+    "Submitting..." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird gesendet..."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "제출 중..."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отправка..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在提交..."
           }
         }
       }
@@ -199373,6 +199320,34 @@
         }
       }
     },
+    "The Codes Match — Continue" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codes stimmen überein — Weiter"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "코드 일치 — 계속"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Коды совпадают — продолжить"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码一致 — 继续"
+          }
+        }
+      }
+    },
     "The config file is invalid JSON or has an incompatible shape." : {
       "localizations" : {
         "de" : {
@@ -203355,6 +203330,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "思考開啟"
+          }
+        }
+      }
+    },
+    "This account is protected by a passkey" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Konto ist durch einen Passkey geschützt"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 계정은 패스키로 보호되어 있습니다"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот аккаунт защищён ключом доступа"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此账号受通行密钥保护"
           }
         }
       }
@@ -222292,6 +222295,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "WhatsApp 接收"
+          }
+        }
+      }
+    },
+    "WhatsApp requires a passkey check to link a new device. In a browser, open web.whatsapp.com, open the developer console (Cmd-Opt-J or F12), run the copied command, approve the passkey prompt, then paste the JSON line it prints below." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp verlangt eine Passkey-Prüfung, um ein neues Gerät zu verknüpfen. Öffne im Browser web.whatsapp.com, öffne die Entwicklerkonsole (Cmd-Opt-J oder F12), führe den kopierten Befehl aus, bestätige die Passkey-Abfrage und füge dann die ausgegebene JSON-Zeile unten ein."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp는 새 기기를 연결할 때 패스키 확인을 요구합니다. 브라우저에서 web.whatsapp.com을 열고 개발자 콘솔(Cmd-Opt-J 또는 F12)을 연 뒤, 복사한 명령을 실행하고 패스키 프롬프트를 승인한 다음, 출력된 JSON 한 줄을 아래에 붙여넣으세요."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp требует проверку ключа доступа для привязки нового устройства. Откройте в браузере web.whatsapp.com, откройте консоль разработчика (Cmd-Opt-J или F12), выполните скопированную команду, подтвердите запрос ключа доступа, затем вставьте выведенную строку JSON ниже."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WhatsApp 要求通过通行密钥验证才能关联新设备。请在浏览器中打开 web.whatsapp.com，打开开发者控制台（Cmd-Opt-J 或 F12），运行复制的命令，通过通行密钥验证，然后将输出的 JSON 行粘贴到下方。"
           }
         }
       }

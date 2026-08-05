@@ -497,7 +497,22 @@ public struct SchemaValidator {
             return coerceObject(dict, schemaObject: schemaObject)
         case "array":
             let target = unwrapJSONString(value, expecting: .array) ?? value
-            guard let arr = target as? [Any] else { return target }
+            guard let arr = target as? [Any] else {
+                // Bare string for a string-array parameter: wrap it into a
+                // single-element array. `ArgumentCoercion.stringArray` already
+                // accepts this shape in the tool bodies (the documented
+                // contract is that preflight and tool-side coercion agree),
+                // and local models routinely emit `{"ids": "x"}` for
+                // `{"ids": ["x"]}` — rejecting it at preflight is pure noise.
+                if let s = target as? String,
+                    !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    case .object(let itemsSchema)? = schemaObject["items"],
+                    case .string("string")? = itemsSchema["type"]
+                {
+                    return coerceArray([s], schemaObject: schemaObject)
+                }
+                return target
+            }
             return coerceArray(arr, schemaObject: schemaObject)
         case "integer":
             return coerceScalarString(value) { ArgumentCoercion.int($0) as Any? } ?? value

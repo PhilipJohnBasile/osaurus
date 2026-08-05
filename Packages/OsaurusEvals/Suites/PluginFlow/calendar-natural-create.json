@@ -1,0 +1,25 @@
+{
+  "id": "pluginflow.calendar-natural-create",
+  "domain": "agent_loop",
+  "label": "plugin flow • natural calendar create on the sandbox chat surface",
+  "query": "Add a dinner with Sam to my calendar this Friday at 7pm.",
+  "notes": "Write-path twin of calendar-natural-read: a natural request that requires discovering and loading the plugin group, then calling the WRITE member tool with arguments derived from the request. The args audit pins that the model passed the real event title instead of a placeholder. SKIPS without a working sandbox VM.",
+  "fixtures": {
+    "sandbox": {},
+    "enablePluginGroups": ["osaurus.eval.calendar"]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 8,
+      "mustCallTools": ["capabilities", "eval_calendar_create_event"],
+      "systemPromptContains": [
+        "## Enabled capabilities",
+        "plugin/osaurus.eval.calendar"
+      ],
+      "toolUsageAudit": [
+        { "tool": "eval_calendar_create_event", "argsMustContain": "dinner" }
+      ],
+      "finalTextContains": ["dinner"]
+    }
+  }
+}

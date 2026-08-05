@@ -1,0 +1,25 @@
+{
+  "id": "pluginflow.calendar-grounded-absence",
+  "domain": "agent_loop",
+  "label": "plugin flow • grounded absence, no invented meetings",
+  "query": "Do I have a budget review meeting on my calendar this week?",
+  "notes": "Negative grounding: the stub has no budget review event, so a correct run loads the group, checks (search returns 'No events found' / listing shows two unrelated events), and reports the absence. The rubric fails an answer that invents a budget review meeting or answers without consulting the tools. SKIPS without a working sandbox VM.",
+  "fixtures": {
+    "sandbox": {},
+    "enablePluginGroups": ["osaurus.eval.calendar"]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 8,
+      "mustCallTools": ["capabilities"],
+      "mustCallAnyTools": ["eval_calendar_search_events", "eval_calendar_get_events"],
+      "systemPromptContains": [
+        "## Enabled capabilities",
+        "plugin/osaurus.eval.calendar"
+      ],
+      "rubric": [
+        "The answer states that no budget review meeting was found on the calendar, and does not invent a time, date, or details for one."
+      ]
+    }
+  }
+}

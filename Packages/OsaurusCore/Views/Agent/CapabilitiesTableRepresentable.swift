@@ -45,6 +45,7 @@ enum CapabilityRow: Equatable, Identifiable {
         description: String,
         enabled: Bool,
         availability: ToolAvailability,
+        missingPermissions: [SystemPermission],
         isAgentRestricted: Bool,
         catalogTokens: Int,
         estimatedTokens: Int
@@ -53,7 +54,7 @@ enum CapabilityRow: Equatable, Identifiable {
     var id: String {
         switch self {
         case .groupHeader(let id, _, _, _, _, _): return "gh-\(id)"
-        case .tool(let id, _, _, _, _, _, _, _): return "tool-\(id)"
+        case .tool(let id, _, _, _, _, _, _, _, _): return "tool-\(id)"
         }
     }
 }
@@ -408,6 +409,7 @@ extension CapabilitiesTableRepresentable {
                     let description,
                     let enabled,
                     let availability,
+                    let missingPermissions,
                     let isAgentRestricted,
                     let catalogTokens,
                     let estimatedTokens
@@ -420,6 +422,7 @@ extension CapabilitiesTableRepresentable {
                     description: description,
                     enabled: enabled,
                     availability: availability,
+                    missingPermissions: missingPermissions,
                     isAgentRestricted: isAgentRestricted,
                     catalogTokens: catalogTokens,
                     estimatedTokens: estimatedTokens,
@@ -659,6 +662,10 @@ struct ToolRowCell: View {
     let description: String
     let enabled: Bool
     let availability: ToolAvailability
+    /// Declared macOS permissions the OS has not granted. Non-empty renders
+    /// an inline Grant affordance so the user can fix a blocked tool right
+    /// where the "Needs permission" badge told them about it.
+    let missingPermissions: [SystemPermission]
     let isAgentRestricted: Bool
     let catalogTokens: Int
     let estimatedTokens: Int
@@ -670,6 +677,40 @@ struct ToolRowCell: View {
     private var nameColor: Color {
         if isAgentRestricted { return theme.tertiaryText }
         return enabled ? theme.primaryText : theme.secondaryText
+    }
+
+    /// Inline fixer for the "Needs permission" state: asks macOS for each
+    /// missing permission (TCC prompt on first ask, System Settings when
+    /// the OS won't re-prompt). A child Button wins the hit test over the
+    /// row's toggle tap gesture, so clicking Grant never flips the switch.
+    private var grantPermissionsButton: some View {
+        Button {
+            for permission in missingPermissions {
+                SystemPermissionService.shared.requestPermission(permission)
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "hand.raised")
+                    .font(.system(size: 8, weight: .semibold))
+                Text("Grant", bundle: .module)
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .foregroundColor(theme.warningColor)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(theme.warningColor.opacity(0.12))
+                    .overlay(Capsule().strokeBorder(theme.warningColor.opacity(0.3), lineWidth: 1))
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(
+            L(
+                "Grant missing macOS permission(s): \(missingPermissions.map(\.displayName).joined(separator: ", "))"
+            )
+        )
     }
 
     var body: some View {
@@ -693,6 +734,10 @@ struct ToolRowCell: View {
                     }
 
                     ToolAvailabilityBadge(availability: availability)
+
+                    if !isAgentRestricted, !missingPermissions.isEmpty {
+                        grantPermissionsButton
+                    }
                 }
                 Text(description)
                     .font(.system(size: 10))

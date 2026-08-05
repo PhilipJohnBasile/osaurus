@@ -228,6 +228,9 @@ enum CapabilityRowBuilder {
                         description: tool.description,
                         enabled: input.enabledToolNames.contains(tool.name),
                         availability: availability,
+                        missingPermissions: missingSystemPermissions(
+                            in: ToolRegistry.shared.policyInfo(for: tool.name)
+                        ),
                         // Informational sources were filtered above; every
                         // tool that reaches this point is freely toggleable.
                         isAgentRestricted: false,
@@ -238,6 +241,17 @@ enum CapabilityRowBuilder {
             }
         }
         return rows
+    }
+
+    /// System permissions a tool declares but the OS has not granted,
+    /// sorted for stable row diffing. Pure over the policy snapshot so the
+    /// grant-state contract is directly testable without registry setup.
+    static func missingSystemPermissions(in policy: ToolRegistry.ToolPolicyInfo?) -> [SystemPermission] {
+        guard let policy else { return [] }
+        return policy.systemPermissionStates
+            .filter { !$0.value }
+            .map(\.key)
+            .sorted { $0.rawValue < $1.rawValue }
     }
 
     private static func availability(forTool tool: ToolRegistry.ToolEntry, input: Input) -> ToolAvailability {
@@ -338,6 +352,12 @@ struct AgentCapabilityManagerView: View {
 
     @Environment(\.theme) private var theme
     @ObservedObject private var agentManager = AgentManager.shared
+    /// Observed so the "Needs permission" badges and the header warning
+    /// re-render when a macOS grant lands. The registry's `availability` /
+    /// `policyInfo` read `cachedIsGranted`, which only publishes through
+    /// this service's `permissionStates` — without observing it the badge
+    /// froze at whatever the cache said when the picker last rebuilt.
+    @ObservedObject private var permissionService = SystemPermissionService.shared
 
     let source: Source
     /// When non-nil, a "Done" affordance appears in the sticky header so the
@@ -426,6 +446,15 @@ struct AgentCapabilityManagerView: View {
             loadFromRegistries()
             seedIfNeeded()
             loadInitialState()
+            // Keep OS permission state live while the picker is open so a
+            // grant made in System Settings (or via the row's Grant button)
+            // clears the "Needs permission" badge within a couple seconds.
+            // Same pattern as PermissionsView.
+            permissionService.refreshAllPermissions()
+            permissionService.startPeriodicRefresh(interval: 2.0)
+        }
+        .onDisappear {
+            permissionService.stopPeriodicRefresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: .toolsListChanged)) { _ in
             loadFromRegistries()
@@ -477,9 +506,84 @@ struct AgentCapabilityManagerView: View {
             }
 
             autoDiscoverCard
+
+            let gaps = assignedPermissionGaps
+            if gaps.toolCount > 0 {
+                permissionWarningLine(toolCount: gaps.toolCount, permissions: gaps.permissions)
+            }
         }
         .padding(.horizontal, compact ? 20 : 24)
         .padding(.vertical, 14)
+    }
+
+    /// Assigned tools whose declared macOS permissions are not granted,
+    /// plus the union of those permissions. Drives the sticky-header
+    /// warning so a blocked Calendar plugin is visible even while its
+    /// group is collapsed. Reads the cached grant state only — the
+    /// periodic refresh keeps it fresh while the picker is open.
+    private var assignedPermissionGaps: (toolCount: Int, permissions: [SystemPermission]) {
+        var toolCount = 0
+        var permissions: Set<SystemPermission> = []
+        for tool in visibleTools where enabledToolNames.contains(tool.name) {
+            guard let policy = ToolRegistry.shared.policyInfo(for: tool.name) else { continue }
+            let missing = policy.systemPermissionStates.filter { !$0.value }.map(\.key)
+            guard !missing.isEmpty else { continue }
+            toolCount += 1
+            permissions.formUnion(missing)
+        }
+        return (toolCount, permissions.sorted { $0.rawValue < $1.rawValue })
+    }
+
+    private func permissionWarningLine(toolCount: Int, permissions: [SystemPermission]) -> some View {
+        let permissionNames = permissions.map(\.displayName).joined(separator: ", ")
+        return HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11))
+                .foregroundColor(theme.warningColor)
+            Text(
+                toolCount == 1
+                    ? L("1 assigned tool needs macOS permissions: \(permissionNames)")
+                    : L("\(toolCount) assigned tools need macOS permissions: \(permissionNames)")
+            )
+            .font(.system(size: 11, weight: .medium))
+            .foregroundColor(theme.secondaryText)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 8)
+
+            Button {
+                for permission in permissions {
+                    permissionService.requestPermission(permission)
+                }
+            } label: {
+                Text("Grant", bundle: .module)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(theme.warningColor)
+            }
+            .buttonStyle(.plain)
+            .localizedHelp("Ask macOS for the missing permissions")
+
+            Button {
+                ManagementStateManager.shared.selectedTab = .permissions
+            } label: {
+                Text("Open Permissions", bundle: .module)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(theme.accentColor)
+            }
+            .buttonStyle(.plain)
+            .localizedHelp("Review and grant permissions in Settings")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(theme.warningColor.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(theme.warningColor.opacity(0.25), lineWidth: 1)
+                )
+        )
     }
 
     @ViewBuilder
@@ -872,12 +976,36 @@ struct AgentCapabilityManagerView: View {
 
     private func commit(nextTools: Set<String>) {
         guard nextTools != enabledToolNames else { return }
+        let newlyEnabled = nextTools.subtracting(enabledToolNames)
         enabledToolNames = nextTools
         switch source {
         case .live(let agentId):
             agentManager.updateEnabledToolNames(Array(nextTools), for: agentId)
         case .draft(_, let tools):
             tools.wrappedValue = nextTools
+        }
+        requestMissingSystemPermissions(forNewlyEnabledTools: newlyEnabled)
+    }
+
+    /// Ask macOS for any system permission a just-enabled tool still lacks,
+    /// right at enable time — a Calendar tool that can never run isn't
+    /// "enabled" in any way the user cares about. Only fires on OFF→ON
+    /// transitions (load/seed paths assign `enabledToolNames` directly and
+    /// never come through `commit`), and dedupes across the batch so bulk
+    /// enabling a whole plugin group prompts once per permission, not once
+    /// per tool. `requestPermission` shows the TCC prompt on first ask and
+    /// falls back to opening System Settings when the OS won't re-prompt.
+    private func requestMissingSystemPermissions(forNewlyEnabledTools names: Set<String>) {
+        guard !names.isEmpty else { return }
+        var missing: Set<SystemPermission> = []
+        for name in names {
+            guard let policy = ToolRegistry.shared.policyInfo(for: name) else { continue }
+            for (permission, granted) in policy.systemPermissionStates where !granted {
+                missing.insert(permission)
+            }
+        }
+        for permission in missing.sorted(by: { $0.rawValue < $1.rawValue }) {
+            permissionService.requestPermission(permission)
         }
     }
 

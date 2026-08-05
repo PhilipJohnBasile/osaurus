@@ -1,0 +1,23 @@
+{
+  "id": "pluginflow.calendar-natural-search",
+  "domain": "agent_loop",
+  "label": "plugin flow • natural calendar search on the sandbox chat surface",
+  "query": "Do I have any dentist appointments coming up?",
+  "notes": "Discovery with tool CHOICE inside the loaded group: either the search tool or the listing tool legitimately answers, so the assertion is mustCallAnyTools over the two read tools — what matters is the group was loaded and the answer is grounded in the stub's dentist event, not which read path the model picked. SKIPS without a working sandbox VM.",
+  "fixtures": {
+    "sandbox": {},
+    "enablePluginGroups": ["osaurus.eval.calendar"]
+  },
+  "expect": {
+    "agentLoop": {
+      "maxIterations": 8,
+      "mustCallTools": ["capabilities"],
+      "mustCallAnyTools": ["eval_calendar_search_events", "eval_calendar_get_events"],
+      "systemPromptContains": [
+        "## Enabled capabilities",
+        "plugin/osaurus.eval.calendar"
+      ],
+      "finalTextContains": ["dentist"]
+    }
+  }
+}

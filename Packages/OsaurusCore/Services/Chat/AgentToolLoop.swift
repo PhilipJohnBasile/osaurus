@@ -961,7 +961,7 @@ enum AgentToolLoop {
     /// The iteration-budget warning staged when the remaining budget
     /// drops to the policy threshold.
     static func budgetWarningNotice(remaining: Int, maxIterations: Int) -> String {
-        "[System Notice] Tool call budget: \(remaining) of \(maxIterations) remaining. Wrap up your current work and provide a summary."
+        "[System Notice] Tool call budget: \(remaining) of \(maxIterations) remaining. Wrap up your current work and answer the user in plain text."
     }
 
     /// Final, transient control notice for the one tool-free summarization

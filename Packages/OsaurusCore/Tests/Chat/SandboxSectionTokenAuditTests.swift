@@ -211,13 +211,21 @@ struct SandboxSectionTokenAuditTests {
         #expect(compactLoop.contains("last resort"))
         #expect(compactLoop.contains("fully specified"))
 
-        // Grounding (discovery-aware): compact keeps the capability-claim rule.
+        // Grounding (discovery-aware): compact keeps the capability-claim rule
+        // and names the discovery tool the schema publishes.
         smaller(
-            SystemPromptTemplates.groundingDirectiveFull,
-            SystemPromptTemplates.groundingDirectiveFullCompact,
+            SystemPromptTemplates.groundingDirectiveFull(names: .gateway),
+            SystemPromptTemplates.groundingDirectiveFullCompact(names: .gateway),
             label: "grounding"
         )
-        #expect(SystemPromptTemplates.groundingDirectiveFullCompact.contains("capabilities_discover"))
+        #expect(
+            SystemPromptTemplates.groundingDirectiveFullCompact(names: .gateway)
+                .contains("`capabilities`")
+        )
+        #expect(
+            SystemPromptTemplates.groundingDirectiveFullCompact(names: .legacy)
+                .contains("capabilities_discover")
+        )
 
         // Self-improvement: compact keeps the SOUL.md contract the existing
         // audit pins for the full variant.

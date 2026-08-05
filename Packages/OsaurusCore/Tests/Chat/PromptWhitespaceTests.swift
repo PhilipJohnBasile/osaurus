@@ -85,8 +85,12 @@ struct PromptWhitespaceTests {
     @Test("capabilityDiscoveryNudge has no whitespace continuation artifacts")
     func capabilityNudgeRendersClean() {
         assertNoContinuationLeak(
-            SystemPromptTemplates.capabilityDiscoveryNudge,
-            label: "capabilityDiscoveryNudge"
+            SystemPromptTemplates.capabilityDiscoveryNudge(names: .gateway),
+            label: "capabilityDiscoveryNudge(gateway)"
+        )
+        assertNoContinuationLeak(
+            SystemPromptTemplates.capabilityDiscoveryNudge(names: .legacy),
+            label: "capabilityDiscoveryNudge(legacy)"
         )
     }
 
@@ -109,7 +113,7 @@ struct PromptWhitespaceTests {
     @Test("groundingDirective variants have no whitespace continuation artifacts")
     func groundingDirectiveRendersClean() {
         assertNoContinuationLeak(
-            SystemPromptTemplates.groundingDirectiveFull,
+            SystemPromptTemplates.groundingDirectiveFull(names: .gateway),
             label: "groundingDirectiveFull"
         )
         assertNoContinuationLeak(

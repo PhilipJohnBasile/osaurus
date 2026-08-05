@@ -1,0 +1,5 @@
+{
+  "name": "drop-capability-nudge",
+  "description": "Ablate ONLY the capability-discovery nudge (post-load 'loaded tools are callable NOW' contract + sandbox build ladder) from the restored lean custom-agent/sandbox contract. This is the section whose absence matched the live post-load stall, so it is the axis expected to hurt most on calendar-post-load-continuation.",
+  "dropSections": ["capabilityNudge"]
+}

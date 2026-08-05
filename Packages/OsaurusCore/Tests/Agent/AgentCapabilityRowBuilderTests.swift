@@ -88,7 +88,7 @@ struct AgentCapabilityRowBuilderTests {
             switch row {
             case .groupHeader(let id, _, _, _, _, _):
                 #expect(id != "src:builtin", "Informational built-in group leaked into rows")
-            case .tool(let id, _, _, _, _, _, _, _):
+            case .tool(let id, _, _, _, _, _, _, _, _):
                 #expect(
                     !id.hasPrefix("src:builtin::"),
                     "Tool \(id) under the hidden built-in group leaked into rows"
@@ -150,7 +150,7 @@ struct AgentCapabilityRowBuilderTests {
 
             // Only the matching tool row is emitted, though.
             let toolRowIds = rows.compactMap { row -> String? in
-                guard case .tool(let id, _, _, _, _, _, _, _) = row else { return nil }
+                guard case .tool(let id, _, _, _, _, _, _, _, _) = row else { return nil }
                 return id
             }
             #expect(toolRowIds.count == 1)
@@ -173,6 +173,60 @@ struct AgentCapabilityRowBuilderTests {
                     #expect(totalCount == 2)
                 }
             }
+        }
+    }
+
+    // MARK: - Missing system permissions
+
+    /// The Grant affordance and header warning key off this helper; a nil
+    /// policy (unregistered / non-permissioned tool) must never claim a
+    /// permission gap.
+    @Test func missingSystemPermissionsEmptyWhenPolicyAbsent() {
+        #expect(CapabilityRowBuilder.missingSystemPermissions(in: nil).isEmpty)
+    }
+
+    /// Only ungranted permissions are reported, in stable rawValue order —
+    /// the list feeds `CapabilityRow` equality, so nondeterministic order
+    /// would churn the table diff every rebuild.
+    @Test func missingSystemPermissionsReportsOnlyUngrantedSorted() {
+        let policy = ToolRegistry.ToolPolicyInfo(
+            isPermissioned: true,
+            defaultPolicy: .ask,
+            configuredPolicy: nil,
+            effectivePolicy: .ask,
+            requirements: ["calendar", "contacts", "reminders"],
+            grantsByRequirement: [:],
+            systemPermissions: [.calendar, .contacts, .reminders],
+            systemPermissionStates: [.reminders: false, .contacts: true, .calendar: false]
+        )
+        let missing = CapabilityRowBuilder.missingSystemPermissions(in: policy)
+        #expect(missing == [.calendar, .reminders])
+    }
+
+    /// End-to-end through the registry: a plugin tool that declares
+    /// `"calendar"` while the cached grant state says denied must surface
+    /// `.missingPermission` in `availability` (the row badge) AND a
+    /// non-empty missing-permission list (the Grant affordance). This is
+    /// the exact "toggle on, every call fails" gap users hit with the
+    /// Calendar plugin.
+    @Test func deniedCalendarPermissionSurfacesOnPermissionedPluginTool() {
+        withTempToolConfig {
+            let registry = ToolRegistry.shared
+            let name = "capability_perm_probe_\(UUID().uuidString.prefix(8))"
+            // Pin the cached grant state; under tests the live EventKit
+            // probe reports denied anyway, but the cache is what the UI
+            // paths read.
+            SystemPermissionService.shared.updatePermissionState(.calendar, isGranted: false)
+            registry.registerPluginTool(PermissionedFixtureTool(name: name))
+            defer { registry.unregister(names: [name]) }
+
+            let availability = registry.availability(forTool: name)
+            #expect(availability.reasonCodes.contains(.missingPermission))
+
+            let missing = CapabilityRowBuilder.missingSystemPermissions(
+                in: registry.policyInfo(for: name)
+            )
+            #expect(missing == [.calendar])
         }
     }
 
@@ -202,5 +256,18 @@ struct AgentCapabilityRowBuilderTests {
             enabled: true,
             parameters: nil
         )
+    }
+
+    /// Minimal permissioned tool declaring the EventKit Calendar
+    /// requirement, mirroring how a Calendar plugin's `ExternalTool`
+    /// presents to the registry.
+    private struct PermissionedFixtureTool: OsaurusTool, PermissionedTool {
+        let name: String
+        let description = "permissioned fixture"
+        let parameters: JSONValue? = nil
+        let requirements = [SystemPermission.calendar.rawValue]
+        let defaultPermissionPolicy: ToolPermissionPolicy = .ask
+
+        func execute(argumentsJSON: String) async throws -> String { "{}" }
     }
 }
