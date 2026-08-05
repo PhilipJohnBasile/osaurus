@@ -30,7 +30,7 @@ if [[ ! -x "${BIN}" ]]; then
   exit 2
 fi
 
-cd "${EVALS}"
+cd "${EVALS}" || exit 1
 
 # ── Osaurus lanes (one process per suite, host-folder lanes first) ──
 OSAURUS_EVALS_HARNESS=osaurus "${BIN}" run \
