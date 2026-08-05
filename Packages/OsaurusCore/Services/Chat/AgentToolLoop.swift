@@ -138,6 +138,14 @@ enum AgentLoopModelStep {
     /// `AgentLoopHooks.emitFallbackText` so the user never sees nothing and
     /// the loop can never spin on a deterministically-empty model.
     case emptyResponse
+    /// The stream finished naturally, but the visible text's tail announces
+    /// an action instead of performing or delivering it ("Now searching for
+    /// 'invoice':" → EOS). Small local models stall this way mid multi-step
+    /// task; the empty-turn recovery never fires because the turn has
+    /// content. The driver gives a bounded corrective nudge; on exhaustion
+    /// the turn stands as the final response — the content is real and
+    /// already visible, so nothing is fabricated or retracted.
+    case announcedIntentStall
     /// The runtime reached the configured output-token limit without a tool
     /// call. Visible partial content or reasoning may be present, but the
     /// authoritative terminal reason says generation was incomplete.
@@ -169,7 +177,8 @@ enum AgentLoopModelStep {
         thinkingIsBlank: Bool,
         stopReason: String?,
         unclosedReasoning: Bool = false,
-        requiresVisibleFinalResponse: Bool
+        requiresVisibleFinalResponse: Bool,
+        endsWithAnnouncedIntent: Bool = false
     ) -> Self {
         if stopReason == "length" {
             return .lengthExhausted
@@ -187,7 +196,24 @@ enum AgentLoopModelStep {
         if contentIsBlank, thinkingIsBlank {
             return .emptyResponse
         }
+        if !contentIsBlank, endsWithAnnouncedIntent {
+            return .announcedIntentStall
+        }
         return .finalResponse
+    }
+
+    /// True when a turn's visible content ends by announcing work rather
+    /// than delivering it — the "Now searching for 'invoice':" stall shape
+    /// observed live on small models. A trailing colon or ellipsis after
+    /// trimming is the signal: complete answers end in sentence punctuation,
+    /// a table row, a list item, or a code fence, while a colon/ellipsis
+    /// tail is a narrated next step the model never took. Deliberately
+    /// narrow — a false positive costs one bounded nudge, a false negative
+    /// strands a multi-step task half-done.
+    static func endsWithAnnouncedIntent(_ visibleContent: String) -> Bool {
+        let trimmed = visibleContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return trimmed.hasSuffix(":") || trimmed.hasSuffix("…") || trimmed.hasSuffix("...")
     }
 
     /// Preserve visible partial output, remove only terminal whitespace, and
@@ -888,6 +914,18 @@ enum AgentToolLoop {
     /// an empty turn never surfaces as a silent "No visible text was produced".
     static let emptyTurnFallback =
         "I wasn't able to generate a response to that. Please try rephrasing your request."
+
+    /// Max corrective nudges per run for announced-intent stalls. Cumulative
+    /// (never reset mid-run) so a model that narrates every step costs at
+    /// most this many extra steps; matches the empty-turn retry budget.
+    static let maxAnnouncedIntentRetries = 2
+
+    /// Staged before an announced-intent retry. Mirrors `emptyTurnNotice`:
+    /// a visible, honest history entry that perturbs the prompt out of the
+    /// narrate-then-EOS state — never a synthetic tool call or fabricated
+    /// content.
+    static let announcedIntentNotice =
+        "[System Notice] Your previous message ended by announcing an action without performing it. Do not re-announce. Call the tool that performs the announced step now, or give the final answer if the work is already done."
 
     static let emptyToolTaskFallback =
         "The model returned empty output after tool execution. The agent task may be incomplete; retry with less context or continue from the latest tool result."
@@ -1690,6 +1728,7 @@ enum AgentToolLoop {
         // productive turn; bounds the nudge-and-retry recovery so the loop
         // can never spin on a deterministically-empty model.
         var consecutiveEmptyTurns = 0
+        var announcedIntentRetries = 0
         // Total (not merely consecutive) reasoning-only recovery attempts.
         // A tool call between attempts must not re-arm another potentially
         // huge reasoning cycle in the same logical run.
@@ -1851,6 +1890,22 @@ enum AgentToolLoop {
                 // Recovery exhausted: guarantee a visible message instead of
                 // a silent dead-end, then end the run.
                 await hooks.emitFallbackText?(Self.emptyTurnFallback)
+                return RunResult(exit: .finalResponse, iterations: iteration)
+
+            case .announcedIntentStall:
+                // The model narrated its next step and stopped ("Now
+                // searching for 'invoice':" → EOS) — live stall shape on
+                // small models mid multi-step task, invisible to the
+                // empty-turn recovery because the turn has content. Bounded
+                // nudge like the empty-turn path; on exhaustion the visible
+                // content stands as the final answer — nothing fabricated.
+                announcedIntentRetries += 1
+                if announcedIntentRetries <= Self.maxAnnouncedIntentRetries {
+                    pendingStateNotice = Self.announcedIntentNotice
+                    // Narration isn't tool progress; don't charge the budget.
+                    iteration -= 1
+                    continue
+                }
                 return RunResult(exit: .finalResponse, iterations: iteration)
 
             case .lengthExhausted:

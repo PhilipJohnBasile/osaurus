@@ -1327,7 +1327,10 @@ public enum AgentLoopEvaluator {
                             ).isEmpty,
                             stopReason: terminalStopReason,
                             unclosedReasoning: terminalUnclosedReasoning,
-                            requiresVisibleFinalResponse: true
+                            requiresVisibleFinalResponse: true,
+                            endsWithAnnouncedIntent: AgentLoopModelStep.endsWithAnnouncedIntent(
+                                content
+                            )
                         )
                     } catch let invs as ServiceToolInvocations {
                         recordStepDiagnostic(
@@ -1423,7 +1426,8 @@ public enum AgentLoopEvaluator {
                         thinkingIsBlank: reasoning
                             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                         stopReason: choice.finish_reason,
-                        requiresVisibleFinalResponse: true
+                        requiresVisibleFinalResponse: true,
+                        endsWithAnnouncedIntent: AgentLoopModelStep.endsWithAnnouncedIntent(text)
                     )
                 }
                 recordStepDiagnostic(

@@ -6599,6 +6599,10 @@ final class ChatSession: ObservableObject {
                                                     hasStructuredToolWorkThisRun,
                                                 isRemoteAgentTarget:
                                                     self.isRemoteAgentTarget
+                                            ),
+                                        endsWithAnnouncedIntent:
+                                            AgentLoopModelStep.endsWithAnnouncedIntent(
+                                                assistantTurn.content
                                             )
                                     )
                                 }

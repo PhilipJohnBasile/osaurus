@@ -536,6 +536,94 @@ struct AgentToolLoopTests {
         #expect(surface.builtNotices == [[]])
     }
 
+    @Test func announcedIntentTailClassifiesAsStallNotFinal() {
+        // "Now searching for 'invoice':" → EOS must not end the run as a
+        // completed answer; the driver owes the model a corrective nudge.
+        let step = AgentLoopModelStep.classifyTerminal(
+            contentIsBlank: false,
+            thinkingIsBlank: true,
+            stopReason: "stop",
+            requiresVisibleFinalResponse: true,
+            endsWithAnnouncedIntent: true
+        )
+        guard case .announcedIntentStall = step else {
+            Issue.record("announced-intent tail must classify as a stall, not a final response")
+            return
+        }
+    }
+
+    @Test func announcedIntentFlagNeverOverridesEmptyOrLengthClassification() {
+        let empty = AgentLoopModelStep.classifyTerminal(
+            contentIsBlank: true,
+            thinkingIsBlank: true,
+            stopReason: "stop",
+            requiresVisibleFinalResponse: true,
+            endsWithAnnouncedIntent: true
+        )
+        guard case .emptyResponse = empty else {
+            Issue.record("blank content must stay emptyResponse regardless of the intent flag")
+            return
+        }
+        let length = AgentLoopModelStep.classifyTerminal(
+            contentIsBlank: false,
+            thinkingIsBlank: true,
+            stopReason: "length",
+            requiresVisibleFinalResponse: true,
+            endsWithAnnouncedIntent: true
+        )
+        guard case .lengthExhausted = length else {
+            Issue.record("stop=length stays authoritative over the intent flag")
+            return
+        }
+    }
+
+    @Test func endsWithAnnouncedIntentDetectsStallTailsOnly() {
+        #expect(AgentLoopModelStep.endsWithAnnouncedIntent("Now searching for \"invoice\":"))
+        #expect(AgentLoopModelStep.endsWithAnnouncedIntent("Searching your inbox...\n"))
+        #expect(AgentLoopModelStep.endsWithAnnouncedIntent("Let me check your calendar…"))
+        #expect(!AgentLoopModelStep.endsWithAnnouncedIntent("Here are your 10 messages."))
+        #expect(!AgentLoopModelStep.endsWithAnnouncedIntent("| 10 | Aug 4 | Final Reminder |"))
+        #expect(!AgentLoopModelStep.endsWithAnnouncedIntent("Options:\n1. Reply\n2. Archive"))
+        #expect(!AgentLoopModelStep.endsWithAnnouncedIntent("   \n"))
+        #expect(!AgentLoopModelStep.endsWithAnnouncedIntent(""))
+    }
+
+    @Test func announcedIntentStallNudgesOnceThenContinues() async throws {
+        // Stall on step 1 → uncharged corrective nudge → the model performs
+        // the announced work and finals. The user-visible outcome is one
+        // continuous turn instead of a task stranded at "Now searching:".
+        let surface = ScriptedLoopSurface(steps: [.announcedIntentStall, .finalResponse])
+        let result = try await AgentToolLoop.run(
+            policy: chatPolicy(),
+            state: AgentTaskState(),
+            hooks: surface.makeHooks()
+        )
+        #expect(result == AgentToolLoop.RunResult(exit: .finalResponse, iterations: 1))
+        #expect(surface.builtNotices == [[], [AgentToolLoop.announcedIntentNotice]])
+        #expect(surface.emittedFinalTexts.isEmpty)
+    }
+
+    @Test func announcedIntentStallExhaustsBoundedlyAndEndsHonestly() async throws {
+        // A model that re-announces through every nudge ends the run as a
+        // final response after the bounded budget — visible content stands,
+        // no fallback text is fabricated, and the loop can never spin.
+        let surface = ScriptedLoopSurface(steps: [
+            .announcedIntentStall, .announcedIntentStall, .announcedIntentStall,
+        ])
+        let result = try await AgentToolLoop.run(
+            policy: chatPolicy(),
+            state: AgentTaskState(),
+            hooks: surface.makeHooks()
+        )
+        #expect(result == AgentToolLoop.RunResult(exit: .finalResponse, iterations: 1))
+        #expect(
+            surface.builtNotices == [
+                [], [AgentToolLoop.announcedIntentNotice], [AgentToolLoop.announcedIntentNotice],
+            ]
+        )
+        #expect(surface.emittedFinalTexts.isEmpty)
+    }
+
     @Test func reasoningOnlyLengthIsNotClassifiedAsFinalResponse() {
         let step = AgentLoopModelStep.classifyTerminal(
             contentIsBlank: true,
