@@ -3634,6 +3634,10 @@ final class ChatSession: ObservableObject {
         // transient-session cleanup is observable. Callers and tests use
         // `isStreaming == false` as the completion barrier.
         isStreaming = false
+        // The message thread observes VisibleBlocksStore independently from
+        // ChatSession, so publishing `isStreaming` alone cannot clear the
+        // paragraph/thinking streaming marker captured by the rebuild above.
+        rebuildVisibleBlocks()
         maybeGenerateAutoTitle(
             settingEnabled: completedRunSnapshot?.chatConfiguration.autoGenerateChatTitles,
             source: completedRunSnapshot?.source,

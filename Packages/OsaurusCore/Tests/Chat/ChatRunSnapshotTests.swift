@@ -106,6 +106,19 @@ struct ChatRunSnapshotTests {
             try await waitForSnapshot(timeout: Self.timeout) {
                 !session.isSendActiveForComposer
             }
+            #expect(
+                session.visibleBlocksStore.blocks.allSatisfy { block in
+                    switch block.kind {
+                    case let .paragraph(_, _, isStreaming, _),
+                        let .thinking(_, _, isStreaming, _):
+                        return !isStreaming
+                    case .typingIndicator:
+                        return false
+                    default:
+                        return true
+                    }
+                }
+            )
             _ = await manager.delete(id: agent.id)
         }
     }
