@@ -106,7 +106,7 @@ struct HeadlessLoadIntentTests {
             !chatView.contains("ChatEngine(source: .chatUI)"),
             "the engine must take the session's real source, not a hardcoded .chatUI"
         )
-        #expect(chatView.contains("chatEngineFactory(source.inferenceSource)"))
+        #expect(chatView.contains("chatEngineFactory(runSnapshot.source.inferenceSource)"))
     }
 
     @Test("Autonomous sources map to a provenance that is not chatUI")

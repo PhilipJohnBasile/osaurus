@@ -1188,7 +1188,11 @@ struct RuntimePolicySourceTests {
         #expect(chatEngine.contains("cacheStableSystemPrefix: request.cacheStableSystemPrefix"))
         #expect(chatView.contains("req.cacheStableSystemPrefix ="))
         #expect(chatView.contains("finalReq.cacheStableSystemPrefix ="))
-        #expect(chatView.contains("self.isRemoteAgentTarget ? nil : context.staticPrefix"))
+        #expect(
+            chatView.contains(
+                "runSnapshot.isRemoteAgentTarget ? nil : context.staticPrefix"
+            )
+        )
         #expect(chatWarmup.contains("cacheStableSystemPrefix: context.staticPrefix"))
         #expect(
             warmupController.contains(
@@ -3368,11 +3372,11 @@ struct RuntimePolicySourceTests {
             "Chat UI must freeze prompt-affecting model controls once at send time instead of rereading mutable UI state between tool iterations."
         )
         #expect(
-            chatView.contains("turnGenerationControls.apply(to: &req)"),
+            chatView.contains("runSnapshot.generationControls.apply(to: &req)"),
             "Every normal agent-loop reconstruction must carry the turn's explicit Thinking choice."
         )
         #expect(
-            chatView.contains("turnGenerationControls.apply(to: &finalReq)"),
+            chatView.contains("runSnapshot.generationControls.apply(to: &finalReq)"),
             "The post-budget finalizer must carry the same explicit Thinking choice as the tool loop it closes."
         )
     }

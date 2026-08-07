@@ -3609,7 +3609,6 @@ final class ChatSession: ObservableObject {
     private func completeRunCleanup() {
         let completedRunSnapshot = activeRunSnapshot
         currentTask = nil
-        isStreaming = false
         isPreparingRun = false
         activeRunSnapshot = nil
         sealedRunContext = nil
@@ -3631,6 +3630,10 @@ final class ChatSession: ObservableObject {
         markUnfinishedToolCallsInterrupted()
         rebuildVisibleBlocks()
         save()
+        // Publish run completion only after all synchronous transcript and
+        // transient-session cleanup is observable. Callers and tests use
+        // `isStreaming == false` as the completion barrier.
+        isStreaming = false
         maybeGenerateAutoTitle(
             settingEnabled: completedRunSnapshot?.chatConfiguration.autoGenerateChatTitles,
             source: completedRunSnapshot?.source,
