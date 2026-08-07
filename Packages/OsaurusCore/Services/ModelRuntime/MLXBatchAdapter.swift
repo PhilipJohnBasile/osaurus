@@ -1462,11 +1462,7 @@ struct MLXBatchAdapter {
         // consumers (diffusion decode, image latents), so it is gone.
 
         await MainActor.run {
-            if !generation.suppressProgressUI {
-                InferenceProgressManager.shared.prefillWillStart(
-                    tokenCount: prepared.promptTokens.count
-                )
-            } else {
+            if generation.suppressProgressUI {
                 WarmupProgressHub.shared.prefillWillStart(
                     model: modelName,
                     tokenCount: prepared.promptTokens.count

@@ -153,6 +153,73 @@ struct InferenceProgressManagerTests {
         #expect(state.prefillStartedAt != nil)
     }
 
+    @Test func stepScopedProgress_ignoresStaleAndRegressiveEvents() {
+        let state = InferenceProgressManager._testMake()
+        let firstStep = UUID()
+        let secondStep = UUID()
+
+        state.prefillWillStart(stepID: firstStep, tokenCount: 100)
+        state.prefillDidUpdate(
+            stepID: firstStep,
+            progress: PrefillProgressState(
+                stage: .prefill,
+                completedUnitCount: 40,
+                totalUnitCount: 100,
+                detail: nil
+            )
+        )
+        state.prefillDidUpdate(
+            stepID: firstStep,
+            progress: PrefillProgressState(
+                stage: .prefill,
+                completedUnitCount: 10,
+                totalUnitCount: 100,
+                detail: "late duplicate"
+            )
+        )
+        #expect(state.prefillProgress?.completedUnitCount == 40)
+        state.prefillDidUpdate(
+            stepID: firstStep,
+            progress: PrefillProgressState(
+                stage: .prefill,
+                completedUnitCount: 50,
+                totalUnitCount: 1_000,
+                detail: "regressive fraction"
+            )
+        )
+        #expect(state.prefillProgress?.completedUnitCount == 40)
+        #expect(state.prefillProgress?.totalUnitCount == 100)
+
+        state.prefillWillStart(stepID: secondStep, tokenCount: 200)
+        state.prefillDidUpdate(
+            stepID: secondStep,
+            progress: PrefillProgressState(
+                stage: .cacheLookup,
+                completedUnitCount: 20,
+                totalUnitCount: 200,
+                detail: nil
+            )
+        )
+        state.prefillDidFinish(stepID: firstStep)
+        #expect(state.prefillTokenCount == 200)
+        #expect(state.prefillProgress?.completedUnitCount == 20)
+
+        state.prefillDidUpdate(
+            stepID: firstStep,
+            progress: PrefillProgressState(
+                stage: .complete,
+                completedUnitCount: 100,
+                totalUnitCount: 100,
+                detail: nil
+            )
+        )
+        #expect(state.prefillProgress?.stage == .cacheLookup)
+
+        state.prefillDidFinish(stepID: secondStep)
+        #expect(state.prefillTokenCount == nil)
+        #expect(state.prefillProgress == nil)
+    }
+
     // MARK: modelLoad refcount (regression — stuck-loading-forever bug)
     //
     // Prior to the refcount fix, `isLoadingModel` was a bare `Bool`.

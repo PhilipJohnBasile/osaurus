@@ -378,16 +378,45 @@ final class ChatSession: ObservableObject {
             guard awaitingPreSendHandshake != oldValue else { return }
             publishActivityState(
                 sessionId: sessionId,
-                working: isStreaming || awaitingPreSendHandshake,
+                working: isStreaming || awaitingPreSendHandshake || isPreparingRun,
                 waiting: promptQueue.current != nil || awaitingClarify != nil
             )
+        }
+    }
+    /// True after a run has claimed the session but before its immutable
+    /// composed context and budget snapshot are sealed. Stop/queue remain
+    /// available, while the context popover stays in Estimated mode.
+    private var isPreparingRun = false {
+        didSet {
+            guard isPreparingRun != oldValue else { return }
+            publishActivityState(
+                sessionId: sessionId,
+                working: isStreaming || awaitingPreSendHandshake || isPreparingRun,
+                waiting: promptQueue.current != nil || awaitingClarify != nil
+            )
+            objectWillChange.send()
         }
     }
     /// Composer-facing activity includes the outer warm-up handshake, before
     /// `isStreaming` flips. This keeps Stop/queue behavior available during a
     /// long model switch instead of presenting a second ordinary Send button.
     var isSendActiveForComposer: Bool {
-        isStreaming || awaitingPreSendHandshake
+        isStreaming || awaitingPreSendHandshake || isPreparingRun
+    }
+
+    /// The budget becomes Live only after the authoritative composed context
+    /// is installed. Preparation can be active for UI lifecycle purposes
+    /// without presenting a preview estimate as an in-flight request.
+    var isContextBudgetLive: Bool {
+        isStreaming && budgetTracker.hasActiveSnapshot
+    }
+
+    var activeContextWindowResolution: AgentLoopBudget.ContextWindowResolution? {
+        isContextBudgetLive ? activeRunSnapshot?.contextWindow : nil
+    }
+
+    var activeContextMaxResponseTokens: Int? {
+        isContextBudgetLive ? activeRunSnapshot?.maxResponseTokens : nil
     }
 
     /// Session id whose activity was last pushed to `SessionActivityMonitor`,
@@ -575,6 +604,9 @@ final class ChatSession: ObservableObject {
     private var currentTask: Task<Void, Never>?
     private var activeRunId: UUID?
     private var activeRunContext: RunContext?
+    private var activeRunSnapshot: ChatRunSnapshot?
+    private var sealedRunContext: SealedChatRunContext?
+    private var preparationBudgetBreakdown: ContextBreakdown?
     /// Outer task that parks a send behind an in-flight model-switch/warm-up
     /// handshake. Retaining it is required for lifecycle cancellation: a
     /// fire-and-forget task can otherwise resume after Stop, reset, or a
@@ -717,7 +749,7 @@ final class ChatSession: ObservableObject {
             guard let self else { return }
             self.publishActivityState(
                 sessionId: sessionId,
-                working: isStreaming || self.awaitingPreSendHandshake,
+                working: isStreaming || self.awaitingPreSendHandshake || self.isPreparingRun,
                 waiting: promptItem != nil || clarify != nil
             )
         }
@@ -1762,6 +1794,9 @@ final class ChatSession: ObservableObject {
     }
 
     private var estimatedContextBreakdownImpl: ContextBreakdown {
+        if isPreparingRun, let preparationBudgetBreakdown {
+            return preparationBudgetBreakdown
+        }
         if let active = budgetTracker.activeBreakdown(
             isActive: isStreaming,
             outputTurn: turns.last
@@ -2761,7 +2796,15 @@ final class ChatSession: ObservableObject {
         if !preservingPromptShapeBaseline {
             cachedPreviewContext = nil
         }
-        budgetTracker.clear()
+        // Settings/model notifications may arrive while a run is active. They
+        // invalidate the next-turn preview, but the current run's authoritative
+        // budget snapshot is write-once until `completeRunCleanup()`. Clearing
+        // it here made the live chip fall back to the newly selected model's
+        // preview denominator even though the runtime kept using the sealed
+        // model and context.
+        if activeRunSnapshot == nil {
+            budgetTracker.clear()
+        }
         objectWillChange.send()
     }
 
@@ -3339,6 +3382,7 @@ final class ChatSession: ObservableObject {
         let userContent: String
         let memoryAgentId: String
         let memoryConversationId: String
+        let memoryDisabled: Bool
     }
 
     private func isRunActive(_ runId: UUID) -> Bool {
@@ -3512,9 +3556,17 @@ final class ChatSession: ObservableObject {
         }
     }
 
-    private func beginRun(_ runId: UUID, context: RunContext) {
+    private func beginRun(
+        _ runId: UUID,
+        context: RunContext,
+        snapshot: ChatRunSnapshot
+    ) {
+        preparationBudgetBreakdown = estimatedContextBreakdown
         activeRunId = runId
         activeRunContext = context
+        activeRunSnapshot = snapshot
+        sealedRunContext = nil
+        isPreparingRun = true
     }
 
     /// Best-effort estimate of the execution mode the next send will use.
@@ -3555,8 +3607,13 @@ final class ChatSession: ObservableObject {
     }
 
     private func completeRunCleanup() {
+        let completedRunSnapshot = activeRunSnapshot
         currentTask = nil
         isStreaming = false
+        isPreparingRun = false
+        activeRunSnapshot = nil
+        sealedRunContext = nil
+        preparationBudgetBreakdown = nil
         // Successful run finished — drop the saved draft so a later
         // unrelated cancel doesn't accidentally repopulate the input
         // with a turn the user already sent.
@@ -3574,7 +3631,12 @@ final class ChatSession: ObservableObject {
         markUnfinishedToolCallsInterrupted()
         rebuildVisibleBlocks()
         save()
-        maybeGenerateAutoTitle()
+        maybeGenerateAutoTitle(
+            settingEnabled: completedRunSnapshot?.chatConfiguration.autoGenerateChatTitles,
+            source: completedRunSnapshot?.source,
+            fallbackModel: completedRunSnapshot?.model,
+            useFrozenInputs: completedRunSnapshot != nil
+        )
         if !suppressQueuedSendFlushForCurrentRun {
             flushQueuedSendIfEligible()
         }
@@ -3642,15 +3704,24 @@ final class ChatSession: ObservableObject {
     /// attempt — but a failed generation re-arms it, so a transient miss
     /// (timeout, background-load refusal while another model is resident,
     /// open breaker) gets one fresh attempt on each later clean completion.
-    private func maybeGenerateAutoTitle() {
+    private func maybeGenerateAutoTitle(
+        settingEnabled: Bool? = nil,
+        source frozenSource: SessionSource? = nil,
+        fallbackModel frozenModel: String? = nil,
+        useFrozenInputs: Bool = false
+    ) {
         guard let sid = sessionId else { return }
         let decision = Self.autoTitleDecision(
             alreadyStarted: autoTitleGenerationStarted,
-            settingEnabled: AppConfiguration.shared.chatConfig.autoGenerateChatTitles,
+            settingEnabled:
+                useFrozenInputs
+                ? (settingEnabled ?? false)
+                : AppConfiguration.shared.chatConfig.autoGenerateChatTitles,
             // A cancelled or errored run isn't a representative exchange;
             // wait for the next clean completion.
             runCompletedCleanly: !stopRequested && lastStreamError == nil,
-            isChatSource: source == .chat,
+            isChatSource:
+                (useFrozenInputs ? frozenSource : self.source) == .chat,
             currentTitle: title,
             turns: turns.map { ChatTurnData(from: $0) }
         )
@@ -3661,7 +3732,7 @@ final class ChatSession: ObservableObject {
             autoTitleGenerationStarted = true
         case .generate(let userText, let assistantText, let previewTitle):
             autoTitleGenerationStarted = true
-            let fallbackModel = selectedModel
+            let fallbackModel = useFrozenInputs ? frozenModel : selectedModel
             Task { [weak self] in
                 guard
                     let generated = await ChatTitleService.shared.generateTitle(
@@ -3837,8 +3908,7 @@ final class ChatSession: ObservableObject {
             ? turns.last(where: { $0.role == .assistant })?.content
             : nil
 
-        let agentUUID = UUID(uuidString: context.memoryAgentId) ?? Agent.defaultId
-        let memoryOff = AgentManager.shared.effectiveMemoryDisabled(for: agentUUID)
+        let memoryOff = context.memoryDisabled
 
         if !memoryOff, context.hasContent, let sid = sessionId {
             let convId = sid.uuidString
@@ -3934,12 +4004,24 @@ final class ChatSession: ObservableObject {
     /// none) and decides whether sandbox tools actually came online.
     func prepareChatExecutionMode(agentId: UUID) async -> ExecutionMode {
         let config = AgentManager.shared.effectiveAutonomousExec(for: agentId)
+        return await prepareChatExecutionMode(
+            agentId: agentId,
+            autonomousConfig: config,
+            folderContext: activeFolderContext(for: agentId)
+        )
+    }
+
+    private func prepareChatExecutionMode(
+        agentId: UUID,
+        autonomousConfig config: AutonomousExecConfig?,
+        folderContext: FolderContext?
+    ) async -> ExecutionMode {
         let autonomous = config?.enabled == true
         if autonomous {
             await SandboxToolRegistrar.shared.registerTools(for: agentId)
         }
         return ToolRegistry.shared.resolveExecutionMode(
-            folderContext: activeFolderContext(for: agentId),
+            folderContext: folderContext,
             autonomousEnabled: autonomous,
             allowHostFolderWrites: config?.allowHostFolderWrites == true
         )
@@ -3971,6 +4053,9 @@ final class ChatSession: ObservableObject {
         selectedModel: String?
     ) async throws -> (invocations: [ServiceToolInvocation], finalTurn: ChatTurn) {
         var currentTurn = assistantTurn
+        let prefillStepID = UUID()
+        let inferenceProgress = InferenceProgressManager.shared
+        inferenceProgress.prefillWillStart(stepID: prefillStepID)
         // A continuation or transient retry may reuse this stream processor
         // after the prior assistant step set terminal metadata. Each model
         // generation owns fresh terminal state; carrying `stop` or an
@@ -3984,7 +4069,10 @@ final class ChatSession: ObservableObject {
         // resolved to a committed tool name, so the "Preparing tool call" card
         // can't persist on the finalized turn. No-op for real pending calls
         // (the committed `\u{FFFE}tool:` name overwrites the sentinel first).
-        defer { Self.clearPendingToolCallProgressPlaceholder(on: currentTurn) }
+        defer {
+            inferenceProgress.prefillDidFinish(stepID: prefillStepID)
+            Self.clearPendingToolCallProgressPlaceholder(on: currentTurn)
+        }
         var uiDeltaCount = 0
         var uiReasoningDeltaCount = 0
         var uiToolSentinelCount = 0
@@ -4052,6 +4140,18 @@ final class ChatSession: ObservableObject {
                     currentTurn.finalizeRemoteToolActivity()
                     return ([], currentTurn)
                 }
+                if let progress = StreamingPrefillProgressHint.decode(delta) {
+                    uiPrefillHintCount += 1
+                    inferenceProgress.prefillDidUpdate(
+                        stepID: prefillStepID,
+                        progress: progress
+                    )
+                    continue
+                }
+                // Any non-progress delta means this model step has left
+                // prefill. The step identity prevents this finish from
+                // clearing a newer agent-loop step.
+                inferenceProgress.prefillDidFinish(stepID: prefillStepID)
                 // Mode 2 (remote agent run): the remote device executes the
                 // tools and streams back only a sanitized trace (name + phase +
                 // error state — never raw args/results). Accumulate it into a
@@ -4254,9 +4354,6 @@ final class ChatSession: ObservableObject {
                     // explain the charge. Adopt the server-authoritative output
                     // token count over our rolling estimate.
                     recordRouterBilling(billing, on: currentTurn)
-                } else if let progress = StreamingPrefillProgressHint.decode(delta) {
-                    uiPrefillHintCount += 1
-                    InferenceProgressManager.shared.prefillDidUpdateAsync(progress)
                 } else if let reasoning = StreamingReasoningHint.decode(delta) {
                     uiReasoningDeltaCount += 1
                     let now = Date()
@@ -5178,7 +5275,67 @@ final class ChatSession: ObservableObject {
         // in-flight call write one session while terminal checks read another.
         let todoSessionIdForRun = expectedTodoSessionId
 
-        let memoryAgentId = (agentId ?? Agent.defaultId).uuidString
+        let turnAgentId = agentId ?? Agent.defaultId
+        let selectedModelForRun = selectedModel
+        let selectedModelTypeForRun = selectedPickerItem?.modelType
+        let chatCfg = ChatConfigurationStore.load()
+        let turnGenerationControls = ChatTurnGenerationControls.capture(
+            activeModelOptions: activeModelOptions
+        )
+        let agentConfig = AgentConfigSnapshot.capture(
+            agentId: turnAgentId,
+            requestToolsDisabled: chatCfg.disableTools,
+            modelOverride: selectedModelForRun,
+            modelTypeOverride: selectedModelTypeForRun
+        )
+        let remoteAgentTargetForRun = isRemoteAgentTarget
+        let oneOffSkillIdForRun = pendingOneOffSkillId
+        pendingOneOffSkillId = nil
+        let runSnapshot = ChatRunSnapshot(
+            agentId: turnAgentId,
+            agentConfig: agentConfig,
+            model: selectedModelForRun,
+            modelType: selectedModelTypeForRun,
+            chatConfiguration: chatCfg,
+            generationControls: turnGenerationControls,
+            temperature: AgentManager.shared.effectiveTemperature(for: turnAgentId),
+            maxResponseTokens: AgentManager.shared.effectiveMaxTokens(for: turnAgentId),
+            contextWindow: AgentLoopBudget.resolveContextWindowResolutionSync(
+                modelId: selectedModelForRun ?? "default"
+            ),
+            sessionId: sessionId,
+            source: source,
+            loadIntent: loadIntent,
+            sourcePluginId: sourcePluginId,
+            oneOffSkillId: oneOffSkillIdForRun,
+            isRemoteAgentTarget: remoteAgentTargetForRun,
+            remoteAgentProviderId:
+                remoteAgentTargetForRun
+                ? windowState?.selectedDiscoveredAgentProviderId : nil,
+            remoteAgentLogModel:
+                remoteAgentTargetForRun
+                ? windowState?.pinnedRemoteAgentEffectiveModel : nil,
+            supportsImages:
+                selectedModelForRun.map {
+                    Self.modelSupportsImages(modelId: $0, pickerItems: pickerItems)
+                } ?? false,
+            supportsAudio:
+                selectedModelForRun.map {
+                    ModelMediaCapabilities.from(modelId: $0).supportsAudio
+                } ?? false,
+            supportsVideo:
+                selectedModelForRun.map {
+                    ModelMediaCapabilities.from(modelId: $0).supportsVideo
+                } ?? false,
+            screenContextEnabled:
+                AgentManager.shared.effectiveCapabilities(for: turnAgentId)
+                .screenContextEnabled,
+            enabledToolNames:
+                AgentManager.shared.effectiveEnabledToolNames(for: turnAgentId)
+                .map(Set.init)
+        )
+
+        let memoryAgentId = turnAgentId.uuidString
         let memoryConversationId = (sessionId ?? UUID()).uuidString
 
         let runId = UUID()
@@ -5188,49 +5345,41 @@ final class ChatSession: ObservableObject {
                 hasContent: hasContent,
                 userContent: trimmed,
                 memoryAgentId: memoryAgentId,
-                memoryConversationId: memoryConversationId
-            )
+                memoryConversationId: memoryConversationId,
+                memoryDisabled: runSnapshot.agentConfig.memoryDisabled
+            ),
+            snapshot: runSnapshot
         )
 
-        // Capture the agent binding for the whole turn so every async
-        // step inside this Task — model resolution, system prompt
-        // composition, streaming, tool execution, post-stream
-        // memory writes — sees a single non-shifting `currentAgentId`.
-        // Historically the binding only wrapped the inline tool exec
-        // block below, which meant configure tools dispatched off the
-        // streaming pipeline (e.g. from a sandbox plugin running on a
-        // detached task) couldn't tell what agent they belonged to.
-        let turnAgentId = agentId ?? Agent.defaultId
         let imageSettings = imageComposerSettings
-        // Freeze prompt-affecting model controls at send time. Every model
-        // step in the agent loop reconstructs its request; reading the live UI
-        // dictionary inside that loop can change the prompt halfway through a
-        // run, and carrying only local-only `modelOptions` drops the explicit
-        // Thinking choice on any wire-encoded continuation.
-        let turnGenerationControls = ChatTurnGenerationControls.capture(
-            activeModelOptions: activeModelOptions
-        )
 
         currentTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            var shouldPersistConversationArtifacts = true
+            defer {
+                self.finalizeRun(
+                    runId: runId,
+                    persistConversationArtifacts: shouldPersistConversationArtifacts
+                )
+            }
             guard self.isRunActive(runId) else { return }
+            ServerController.signalGenerationStart()
             // A send issued right after a session switch / app launch can
             // race the fire-and-forget bookmark restore; wait for it so this
             // turn composes WITH the folder instead of silently folder-less.
             // Instant when no restore is pending. Default agent skips — it
             // is folder-less by policy and must not wait on a restore.
-            if turnAgentId != Agent.defaultId {
-                _ = await self.folderState.contextWaitingForRestore()
-            }
+            let turnFolderContext =
+                turnAgentId == Agent.defaultId
+                ? nil : await self.folderState.contextWaitingForRestore()
             guard self.isRunActive(runId) else { return }
             // Bind THIS session's trusted root for the whole turn. A selected
             // folder is intentionally suspended while VM execution is enabled,
             // so sandbox tools cannot inherit a host path even if the user
             // switches modes in another window midway through the run.
-            let sandboxEnabled =
-                AgentManager.shared.effectiveAutonomousExec(for: turnAgentId)?.enabled == true
+            let sandboxEnabled = runSnapshot.agentConfig.autonomousEnabled
             let turnFolderRoot =
-                sandboxEnabled ? nil : self.activeFolderContext(for: turnAgentId)?.rootPath
+                sandboxEnabled ? nil : turnFolderContext?.rootPath
             await ChatExecutionContext.$currentFolderRoot.withValue(turnFolderRoot) { [self] in
             // Typed run provenance for the whole turn. The session's own
             // persisted `source` is authoritative here (a dispatched
@@ -5238,40 +5387,31 @@ final class ChatSession: ObservableObject {
             // dispatcher already bound; a UI chat turn binds `.chat`).
             // Source-scoped capabilities (proactive channel publishing) read
             // this instead of inferring provenance from surface flags.
-            await ChatExecutionContext.$currentSessionSource.withValue(source) { [self] in
+            await ChatExecutionContext.$currentSessionSource.withValue(runSnapshot.source) { [self] in
             await ChatExecutionContext.$currentAgentId.withValue(turnAgentId) { [self] in
             await ChatExecutionContext.$currentUserRequest.withValue(
                 trimmed.isEmpty ? nil : trimmed
             ) { [self] in
             await ChatExecutionContext.$currentModelName.withValue(
-                self.selectedModel
+                runSnapshot.model
             ) { [self] in
             await ChatExecutionContext.$currentEnableThinking.withValue(
-                turnGenerationControls.enableThinking
+                runSnapshot.generationControls.enableThinking
             ) { [self] in
-                debugLog("send: task started runId=\(runId) model=\(self.selectedModel ?? "nil")")
+                debugLog("send: task started runId=\(runId) model=\(runSnapshot.model ?? "nil")")
                 lastStreamError = nil
-                isStreaming = true
-                ServerController.signalGenerationStart()
-                var shouldPersistConversationArtifacts = true
-                defer {
-                    finalizeRun(
-                        runId: runId,
-                        persistConversationArtifacts: shouldPersistConversationArtifacts
-                    )
-                }
 
                 var assistantTurn = ChatTurn(role: .assistant, content: "")
-                turns.append(assistantTurn)
-                // Must refresh block memoizer before first delta — otherwise visibleBlocks stays
-                // user-only while isStreaming is true and the table early-returns without assistant rows.
-                rebuildVisibleBlocks()
 
                 // Image-generation models route through ImageGenerationService
                 // (a second MLX graph, gated exclusive to LLM eval) instead of
                 // the chat engine. The same run lifecycle (defer finalizeRun,
                 // currentTask cancellation) applies.
-                                    if self.isVideoGenerationModel(self.selectedModel) {
+                                    if self.isVideoGenerationModel(runSnapshot.model) {
+                                        self.isPreparingRun = false
+                                        self.isStreaming = true
+                                        self.turns.append(assistantTurn)
+                                        self.rebuildVisibleBlocks()
                                         await self.runVideoGeneration(
                                             prompt: trimmed,
                                             attachments: attachments,
@@ -5281,7 +5421,11 @@ final class ChatSession: ObservableObject {
                                         )
                                         return
                                     }
-                if self.isImageGenerationModel(self.selectedModel) {
+                if self.isImageGenerationModel(runSnapshot.model) {
+                    self.isPreparingRun = false
+                    self.isStreaming = true
+                    self.turns.append(assistantTurn)
+                    self.rebuildVisibleBlocks()
                     await self.runImageGeneration(
                         prompt: trimmed,
                         attachments: attachments,
@@ -5297,6 +5441,10 @@ final class ChatSession: ObservableObject {
                     // model so the tool-call rail animation can be exercised on demand.
                     // Toggle via `MockToolStream.forceEnabled` (or env OSAURUS_MOCK_STREAM=1).
                     if MockToolStream.enabled {
+                        self.isPreparingRun = false
+                        self.isStreaming = true
+                        self.turns.append(assistantTurn)
+                        self.rebuildVisibleBlocks()
                         await streamMockToolTimeline(runId: runId, firstTurn: assistantTurn)
                         return  // `defer { finalizeRun(...) }` handles cleanup
                     }
@@ -5308,8 +5456,7 @@ final class ChatSession: ObservableObject {
                     let ttftTrace: TTFTTrace? = nil
                 #endif
                 do {
-                    let engine = chatEngineFactory(source.inferenceSource)
-                    let chatCfg = ChatConfigurationStore.load()
+                    let engine = chatEngineFactory(runSnapshot.source.inferenceSource)
 
                     // MARK: - Capability Setup
                     // The outer ChatExecutionContext.$currentAgentId binding
@@ -5321,10 +5468,13 @@ final class ChatSession: ObservableObject {
                     // once here so the freeze gate below and the inject gate in
                     // `loopHooks.buildMessages` agree on a single value for the
                     // whole turn.
-                    let screenContextEnabled = AgentManager.shared
-                        .effectiveCapabilities(for: effectiveAgentId).screenContextEnabled
+                    let screenContextEnabled = runSnapshot.screenContextEnabled
                     ttftTrace?.mark("prepare_exec_mode_start")
-                    let executionMode = await prepareChatExecutionMode(agentId: effectiveAgentId)
+                    let executionMode = await prepareChatExecutionMode(
+                        agentId: effectiveAgentId,
+                        autonomousConfig: runSnapshot.agentConfig.autonomousConfig,
+                        folderContext: turnFolderContext
+                    )
                     ttftTrace?.mark("prepare_exec_mode_done")
                     guard isRunActive(runId) else { return }
 
@@ -5339,15 +5489,13 @@ final class ChatSession: ObservableObject {
                     // (executionMode, toolMode) fingerprint flipped since the
                     // last turn — otherwise stale dynamically-loaded tools
                     // would leak into the new mode's schema.
-                                        let liveToolMode = AgentManager.shared.effectiveToolSelectionMode(
-                                            for: effectiveAgentId
-                                        )
+                    let liveToolMode = runSnapshot.agentConfig.toolMode
                     let liveFingerprint = SessionToolState.fingerprint(
                         executionMode: executionMode,
                         toolMode: liveToolMode
                     )
                     let cachedSession: SessionToolState?
-                    if let sid = sessionId {
+                    if let sid = runSnapshot.sessionId {
                         let key = sessionStateKey(sid)
                         // MCP/plugin tools loaded via `capabilities` are
                         // mode-independent; carry them across a mode flip so
@@ -5374,7 +5522,7 @@ final class ChatSession: ObservableObject {
                     // session and injected onto the latest user message — so it
                     // flows through the Privacy Filter — in
                     // `loopHooks.buildMessages` below.
-                    if !isRemoteAgentTarget,
+                    if !runSnapshot.isRemoteAgentTarget,
                         screenContextEnabled,
                         !self.isScreenContextFrozen
                     {
@@ -5398,7 +5546,7 @@ final class ChatSession: ObservableObject {
                     // restart restore: plugin tools/skills are part of the
                     // static prompt and must come from a completed catalog
                     // snapshot, not launch-task timing.
-                    if !isRemoteAgentTarget {
+                    if !runSnapshot.isRemoteAgentTarget {
                         await PluginManager.shared.ensurePromptCatalogReady()
                         guard isRunActive(runId) else { return }
                     }
@@ -5417,15 +5565,13 @@ final class ChatSession: ObservableObject {
                     // must stay bare).
                     var oneOffSkillSection: (name: String, body: String)?
                     var skillReferencedTools: LoadedTools = []
-                    if let skillId = pendingOneOffSkillId {
-                        pendingOneOffSkillId = nil
-                                            if !isRemoteAgentTarget, let skill = SkillManager.shared.skill(for: skillId)
-                                            {
+                    if let skillId = runSnapshot.oneOffSkillId {
+                        if !runSnapshot.isRemoteAgentTarget,
+                            let skill = SkillManager.shared.skill(for: skillId)
+                        {
                             let body = await SkillManager.shared.buildFullInstructions(for: skill)
                             oneOffSkillSection = (skill.name, body)
-                            let granted = AgentManager.shared
-                                .effectiveEnabledToolNames(for: effectiveAgentId)
-                                .map(Set.init)
+                            let granted = runSnapshot.enabledToolNames
                             let dynamicNames = Set(
                                 ToolRegistry.shared.listDynamicTools().map(\.name)
                             ).filter { granted?.contains($0) ?? true }
@@ -5436,20 +5582,23 @@ final class ChatSession: ObservableObject {
                     }
 
                     let context = await SystemPromptComposer.composeChatContext(
-                        agentId: effectiveAgentId,
-                        executionMode: executionMode,
-                        model: selectedModel,
-                        modelType: selectedPickerItem?.modelType,
-                        query: trimmed,
-                        messages: priorUserMessages,
-                        toolsDisabled: chatCfg.disableTools,
-                        additionalToolNames: (cachedSession?.loadedToolNames ?? [])
-                            .union(skillReferencedTools),
-                        frozenAlwaysLoadedNames: cachedSession?.initialAlwaysLoadedNames,
-                        frozenToolSpecs: cachedSession?.initialToolSpecs,
-                        frozenManifest: cachedSession?.frozenManifest,
-                        frozenSoul: cachedSession?.frozenSoul,
-                        trace: ttftTrace
+                        ComposeRequest(
+                            agentId: effectiveAgentId,
+                            agentSnapshot: runSnapshot.agentConfig,
+                            executionMode: executionMode,
+                            model: runSnapshot.model,
+                            modelType: runSnapshot.modelType,
+                            query: trimmed,
+                            messages: priorUserMessages,
+                            toolsDisabled: runSnapshot.chatConfiguration.disableTools,
+                            additionalToolNames: (cachedSession?.loadedToolNames ?? [])
+                                .union(skillReferencedTools),
+                            frozenAlwaysLoadedNames: cachedSession?.initialAlwaysLoadedNames,
+                            frozenToolSpecs: cachedSession?.initialToolSpecs,
+                            frozenManifest: cachedSession?.frozenManifest,
+                            frozenSoul: cachedSession?.frozenSoul,
+                            trace: ttftTrace
+                        )
                     )
                     guard isRunActive(runId) else { return }
 
@@ -5458,7 +5607,7 @@ final class ChatSession: ObservableObject {
                     // the bare conversation server-side, so anything we'd inject
                     // here (local agent prompt, plugin instructions, one-off
                     // skill) would leak the caller's context onto the agent.
-                    var sys = isRemoteAgentTarget ? "" : context.prompt
+                    var sys = runSnapshot.isRemoteAgentTarget ? "" : context.prompt
 
                     // Plugin-dispatched tasks (host->dispatch) carry their
                     // source plugin id on the session. Append that plugin's
@@ -5470,11 +5619,11 @@ final class ChatSession: ObservableObject {
                     // dropped on the dispatch path, leaving the model
                     // unaware of plugin-specific contracts (e.g. Telegram's
                     // `[reply_token …]` / `reply` / `reply_typing` flow).
-                    if !isRemoteAgentTarget,
-                        let pid = sourcePluginId,
+                    if !runSnapshot.isRemoteAgentTarget,
+                        let pid = runSnapshot.sourcePluginId,
                         let pluginInstructions = PluginInstructionsResolver.instructions(
                             pluginId: pid,
-                            agentId: agentId
+                            agentId: runSnapshot.agentId
                         )
                     {
                         sys = sys.isEmpty ? pluginInstructions : sys + "\n\n" + pluginInstructions
@@ -5493,7 +5642,7 @@ final class ChatSession: ObservableObject {
                     // the request schema, even when its schema rides in the tool
                     // result. In Mode 2 we send no tools: the remote agent
                     // advertises and executes its own tools server-side.
-                    let toolSpecs = isRemoteAgentTarget ? [] : context.tools
+                    let toolSpecs = runSnapshot.isRemoteAgentTarget ? [] : context.tools
                     let isManualTools = liveToolMode == .manual
                     cachedContext = context
 
@@ -5511,7 +5660,7 @@ final class ChatSession: ObservableObject {
                     // names already accumulated this session. Stamp the live
                     // fingerprint so the invalidation rule above can detect
                     // a flip on the next turn.
-                    if let sid = sessionId {
+                    if let sid = runSnapshot.sessionId {
                         await SessionToolStateStore.shared.setInitial(
                             sessionStateKey(sid),
                             alwaysLoadedNames: context.alwaysLoadedNames,
@@ -5526,16 +5675,15 @@ final class ChatSession: ObservableObject {
                     // persist them into the session's loaded-tool union (auto
                     // mode only, mirroring the capabilities_load drain path)
                     // so the next turn's frozen schema still contains them.
-                    if !skillReferencedTools.isEmpty, !isManualTools, let sid = sessionId {
+                    if !skillReferencedTools.isEmpty, !isManualTools,
+                        let sid = runSnapshot.sessionId
+                    {
                         await SessionToolStateStore.shared.appendLoadedTools(
                             sessionStateKey(sid),
                             names: Array(skillReferencedTools),
                             fallbackAlwaysLoadedNames: context.alwaysLoadedNames
                         )
                     }
-
-                    budgetTracker.snapshot(context: context)
-                    budgetTracker.updateScreenContext(tokens: cachedScreenContextTokens)
 
                     // Freeze this turn's memory + screen/automation-context prefix into
                     // the turn history BEFORE any messages are rendered: the
@@ -5548,7 +5696,7 @@ final class ChatSession: ObservableObject {
                     // exchange every turn.) Skipped in Mode 2: requests stay
                     // bare and the remote agent applies its own context.
                     let appleScriptWorkingContext =
-                        !isRemoteAgentTarget
+                        !runSnapshot.isRemoteAgentTarget
                         && toolSpecs.contains(where: {
                             $0.function.name == AppleScriptTool.toolName
                         })
@@ -5556,7 +5704,7 @@ final class ChatSession: ObservableObject {
                             appName: FrontmostAppTracker.shared.lastNonSelfAppName
                         )
                         : nil
-                    if !isRemoteAgentTarget {
+                    if !runSnapshot.isRemoteAgentTarget {
                         freezeInjectedContextOntoLatestUserTurn(
                             memorySection: context.memorySection,
                             screenContext: screenContextEnabled ? frozenScreenContext : nil,
@@ -5564,9 +5712,7 @@ final class ChatSession: ObservableObject {
                         )
                     }
 
-                                        let effectiveMaxTokensForAgent = AgentManager.shared.effectiveMaxTokens(
-                                            for: effectiveAgentId
-                                        )
+                    let effectiveMaxTokensForAgent = runSnapshot.maxResponseTokens
 
                     // KV-cache-aware history compaction: shared window
                     // resolution + reservations via `AgentLoopBudget` (parity
@@ -5574,17 +5720,12 @@ final class ChatSession: ObservableObject {
                     // activates once the conversation outgrows the history
                     // budget; the system prefix is never rewritten so paged-KV
                     // reuse survives compaction.
-                    let loopBudgetManager: ContextBudgetManager = await {
-                        let contextWindow = await AgentLoopBudget.resolveContextWindow(
-                            modelId: selectedModel ?? "default"
-                        )
-                        return AgentLoopBudget.makeBudgetManager(
-                            contextWindow: contextWindow,
-                            systemPromptChars: sys.count,
-                            toolTokens: context.toolTokens,
-                            maxResponseTokens: effectiveMaxTokensForAgent
-                        )
-                    }()
+                    let loopBudgetManager = AgentLoopBudget.makeBudgetManager(
+                        contextWindow: runSnapshot.contextWindow.tokens,
+                        systemPromptChars: sys.count,
+                        toolTokens: context.toolTokens,
+                        maxResponseTokens: effectiveMaxTokensForAgent
+                    )
 
                     // Incomplete reasoning attempts remain visible in the
                     // transcript but must not be fed back into the retry.
@@ -5620,9 +5761,9 @@ final class ChatSession: ObservableObject {
                             let base = Self.buildUserChatMessage(
                                 content: t.content,
                                 attachments: t.attachments,
-                                supportsImages: selectedModelSupportsImages,
-                                supportsAudio: selectedModelSupportsAudio,
-                                supportsVideo: selectedModelSupportsVideo
+                                supportsImages: runSnapshot.supportsImages,
+                                supportsAudio: runSnapshot.supportsAudio,
+                                supportsVideo: runSnapshot.supportsVideo
                             )
                             // Replay the frozen memory / screen-context block
                             // this turn was originally sent with, so its wire
@@ -5630,7 +5771,7 @@ final class ChatSession: ObservableObject {
                             // token stream (paged-KV prefix reuse across
                             // turns). Mode 2 requests stay bare — the local
                             // agent's memory must not ride to a remote agent.
-                            if isRemoteAgentTarget { return base }
+                            if runSnapshot.isRemoteAgentTarget { return base }
                             return Self.applyingFrozenInjectedPrefix(
                                 t.injectedContextPrefix,
                                 to: base
@@ -5640,8 +5781,10 @@ final class ChatSession: ObservableObject {
                         }
                     }
 
+                    let summaryForRun = self.conversationSummary
+
                     @MainActor
-                    func buildMessages() -> [ChatMessage] {
+                    func buildInitialMessages() -> [ChatMessage] {
                         var msgs: [ChatMessage] = []
                         if !sys.isEmpty { msgs.append(ChatMessage(role: "system", content: sys)) }
 
@@ -5653,7 +5796,7 @@ final class ChatSession: ObservableObject {
                         // and `CompactionWatermark.validate` resets its sticky
                         // decisions (an implicit rebase at the boundary); the
                         // deterministic trimmer still runs on the remainder.
-                        let summary = self.conversationSummary
+                        let summary = summaryForRun
                         let coveredIds = summary.map { Set($0.coveredTurnIds) } ?? []
                         var summaryInjected = false
 
@@ -5679,7 +5822,86 @@ final class ChatSession: ObservableObject {
                         return msgs
                     }
 
-                    let maxAttempts = max(chatCfg.maxToolAttempts ?? 15, 1)
+                    let initialTurnIds = Set(turns.map(\.id))
+                    let initialMessages = buildInitialMessages()
+                    let sealedContext = SealedChatRunContext(
+                        snapshot: runSnapshot,
+                        composedContext: context,
+                        systemPrompt: sys,
+                        baselineTools: toolSpecs,
+                        executionMode: executionMode,
+                        folderRoot: turnFolderRoot,
+                        initialMessages: initialMessages,
+                        initialTurnIds: initialTurnIds
+                    )
+                    sealedRunContext = sealedContext
+
+                    budgetTracker.snapshot(context: context)
+                    budgetTracker.updateScreenContext(tokens: cachedScreenContextTokens)
+                    if let summaryForRun {
+                        budgetTracker.updateSummary(
+                            tokens: ContextBudgetManager.estimateTokens(
+                                for: summaryForRun.contextMessageText
+                            )
+                        )
+                    }
+                    let currentInjectedTokens =
+                        turns.last(where: { $0.role == .user })?
+                        .injectedContextPrefix
+                        .map { ContextBudgetManager.estimateTokens(for: $0) } ?? 0
+                    let automationContextTokens =
+                        appleScriptWorkingContext.map {
+                            ContextBudgetManager.estimateTokens(for: $0)
+                        } ?? 0
+                    let summaryTokens =
+                        summaryForRun.map {
+                            ContextBudgetManager.estimateTokens(
+                                forMessage: ChatMessage(
+                                    role: "user",
+                                    content: $0.contextMessageText
+                                )
+                            )
+                        } ?? 0
+                    let summaryCoveredIds =
+                        summaryForRun.map { Set($0.coveredTurnIds) } ?? []
+                    let initialAttachmentTokens =
+                        turns
+                        .filter { $0.role == .user && !summaryCoveredIds.contains($0.id) }
+                        .flatMap(\.attachments)
+                        .reduce(0) { $0 + $1.estimatedTokens }
+                    let initialConversationTokens =
+                        initialMessages
+                        .filter { $0.role != "system" }
+                        .reduce(0) {
+                            $0 + ContextBudgetManager.estimateTokens(forMessage: $1)
+                        }
+                        + initialAttachmentTokens
+                        - max(0, currentInjectedTokens - automationContextTokens)
+                        - summaryTokens
+                    budgetTracker.updateConversation(tokens: max(0, initialConversationTokens))
+
+                    isPreparingRun = false
+                    isStreaming = true
+                    turns.append(assistantTurn)
+                    rebuildVisibleBlocks()
+
+                    @MainActor
+                    func buildMessages() -> [ChatMessage] {
+                        var msgs = sealedContext.initialMessages
+                        for (index, turn) in turns.enumerated()
+                        where !sealedContext.initialTurnIds.contains(turn.id) {
+                            let isLastTurn = index == turns.count - 1
+                            if let message = turnToMessage(turn, isLastTurn: isLastTurn) {
+                                msgs.append(message)
+                            }
+                        }
+                        return msgs
+                    }
+
+                    let maxAttempts = max(
+                        runSnapshot.chatConfiguration.maxToolAttempts ?? 15,
+                        1
+                    )
                     // Reset within-message dedupe/bias tracking for this user
                     // turn (lastListing intentionally persists across messages).
                     taskState.beginMessage()
@@ -5693,9 +5915,7 @@ final class ChatSession: ObservableObject {
                     // unrelated future failures get a fresh budget.
                     let maxTransientRetries = 2
                     var transientRetries = 0
-                                        let effectiveTemp = AgentManager.shared.effectiveTemperature(
-                                            for: effectiveAgentId
-                                        )
+                    let effectiveTemp = runSnapshot.temperature
 
                     ttftTrace?.mark("pre_ttft_done")
 
@@ -5853,7 +6073,9 @@ final class ChatSession: ObservableObject {
                             let newTools = await CapabilityLoadBuffer.shared.drain()
                             // Authorize and publish them for the rest of this run.
                             toolScope.activate(newTools)
-                            if !newTools.isEmpty, !isManualTools, let sid = self.sessionId {
+                            if !newTools.isEmpty, !isManualTools,
+                                let sid = runSnapshot.sessionId
+                            {
                                 let names = newTools.map { $0.function.name }
                                 let snapshot = context.alwaysLoadedNames
                                 await SessionToolStateStore.shared.appendLoadedTools(
@@ -6295,7 +6517,7 @@ final class ChatSession: ObservableObject {
                             if savedTokens > 0 {
                                 self.budgetTracker.updateCompaction(savedTokens: savedTokens)
                             }
-                            if let summary = self.conversationSummary {
+                            if let summary = summaryForRun {
                                 self.budgetTracker.updateSummary(
                                     tokens: ContextBudgetManager.estimateTokens(
                                         for: summary.contextMessageText
@@ -6387,15 +6609,29 @@ final class ChatSession: ObservableObject {
                             // `msgs` but has its own budget row (set above), so
                             // exclude it from the Conversation total.
                             let summaryMessageTokens =
-                                self.conversationSummary.map {
-                                    ContextBudgetManager.estimateTokens(for: $0.contextMessageText)
+                                summaryForRun.map {
+                                    ContextBudgetManager.estimateTokens(
+                                        forMessage: ChatMessage(
+                                            role: "user",
+                                            content: $0.contextMessageText
+                                        )
+                                    )
                                 } ?? 0
+                            let attachmentTokens =
+                                self.turns
+                                .filter {
+                                    $0.role == .user
+                                        && !summaryCoveredIds.contains($0.id)
+                                }
+                                .flatMap(\.attachments)
+                                .reduce(0) { $0 + $1.estimatedTokens }
                             let convTokens =
                                 msgs
                                 .filter { $0.role != "system" }
-                                                    .reduce(0) {
-                                                        $0 + ContextBudgetManager.estimateTokens(for: $1.content)
-                                                    }
+                                .reduce(0) {
+                                    $0 + ContextBudgetManager.estimateTokens(forMessage: $1)
+                                }
+                                + attachmentTokens
                                 - max(0, currentInjectedTokens - automationContextTokens)
                                 - summaryMessageTokens
                             self.budgetTracker.updateConversation(
@@ -6449,20 +6685,20 @@ final class ChatSession: ObservableObject {
                                 // by provider id, so don't pass the local
                                 // `selectedModel` — it can lag the async agent pin
                                 // and would only leak a stale prefix internally.
-                                model: self.isRemoteAgentTarget
-                                    ? "default" : (self.selectedModel ?? "default"),
+                                model: runSnapshot.isRemoteAgentTarget
+                                    ? "default" : (runSnapshot.model ?? "default"),
                                 messages: msgs,
                                 temperature: effectiveTemp,
                                 max_tokens: effectiveMaxTokensForAgent,
                                 stream: true,
-                                top_p: chatCfg.topPOverride,
+                                top_p: runSnapshot.chatConfiguration.topPOverride,
                                 frequency_penalty: nil,
                                 presence_penalty: nil,
                                 stop: nil,
                                 n: nil,
                                 tools: iterationToolSpecs.isEmpty ? nil : iterationToolSpecs,
                                 tool_choice: requestedToolChoice,
-                                session_id: self.sessionId?.uuidString
+                                session_id: runSnapshot.sessionId?.uuidString
                             )
                             req.samplingParametersAreImplicit = true
                             // Mode 2 routing signal: tells `RemoteProviderService`
@@ -6473,33 +6709,29 @@ final class ChatSession: ObservableObject {
                             // peer resolves its own live effective model. False =
                             // Mode 1 (plain remote inference via
                             // `/chat/completions`).
-                            req.runAsRemoteAgent = self.isRemoteAgentTarget
+                            req.runAsRemoteAgent = runSnapshot.isRemoteAgentTarget
                             req.cacheStableSystemPrefix =
-                                self.isRemoteAgentTarget ? nil : context.staticPrefix
+                                runSnapshot.isRemoteAgentTarget ? nil : context.staticPrefix
                             // Mode 2 routing: target the selected agent's
                             // provider directly (by id), so a stale
                             // `selectedModel` can never redirect the run to a
                             // different local provider. `ChatEngine` resolves
                             // the service from this id and ignores the model
                             // string for agent runs.
-                            req.remoteAgentProviderId =
-                                self.isRemoteAgentTarget
-                                ? self.windowState?.selectedDiscoveredAgentProviderId : nil
+                            req.remoteAgentProviderId = runSnapshot.remoteAgentProviderId
                             // Insights fidelity: in Mode 2 the wire omits the
                             // model, so log the agent's live effective model
                             // instead of the local prefixed fallback.
-                            req.remoteAgentLogModel =
-                                self.isRemoteAgentTarget
-                                ? self.windowState?.pinnedRemoteAgentEffectiveModel : nil
+                            req.remoteAgentLogModel = runSnapshot.remoteAgentLogModel
                             // Freeze agent semantics for the whole logical run.
                             // Tool schemas stay present on ordinary iterations,
                             // but the cap finalizer below intentionally removes
                             // them; the explicit marker keeps both paths on the
                             // same reasoning policy.
                             req.isAgentRequest =
-                                !iterationToolSpecs.isEmpty || self.isRemoteAgentTarget
-                            turnGenerationControls.apply(to: &req)
-                            req.backgroundModelLoad = (self.loadIntent == .background)
+                                !iterationToolSpecs.isEmpty || runSnapshot.isRemoteAgentTarget
+                            runSnapshot.generationControls.apply(to: &req)
+                            req.backgroundModelLoad = (runSnapshot.loadIntent == .background)
                             req.ttftTrace = ttftTrace
                             // Correlate the Insights log this send produces back to the
                             // assistant turn, so the per-message "Insights" button can
@@ -6538,7 +6770,7 @@ final class ChatSession: ObservableObject {
                             // re-prefilled history tokens per send — which is the
                             // tripwire for cross-turn byte divergence (frozen turn
                             // prefixes keep it near-total reuse).
-                            if let sid = self.sessionId {
+                            if let sid = runSnapshot.sessionId {
                                 await SessionToolStateStore.shared.recordSend(
                                     sessionId: self.sessionStateKey(sid),
                                     cacheHint: context.cacheHint,
@@ -6554,7 +6786,7 @@ final class ChatSession: ObservableObject {
                                     runId: runId,
                                     streamStartTime: streamStartTime,
                                     ttftTrace: ttftTrace,
-                                    selectedModel: self.selectedModel
+                                    selectedModel: runSnapshot.model
                                 )
                                 assistantTurn = finalTurn
                                 // Stream finished naturally without a tool call — reset
@@ -6590,7 +6822,7 @@ final class ChatSession: ObservableObject {
                                                 hasStructuredToolWork:
                                                     hasStructuredToolWorkThisRun,
                                                 isRemoteAgentTarget:
-                                                    self.isRemoteAgentTarget
+                                                    runSnapshot.isRemoteAgentTarget
                                             )
                                     )
                                 }
@@ -6912,7 +7144,8 @@ final class ChatSession: ObservableObject {
                                         to: trimmedFinalMessages
                                     )
                                 var finalReq = ChatCompletionRequest(
-                                    model: selectedModel ?? "default",
+                                    model: runSnapshot.isRemoteAgentTarget
+                                        ? "default" : (runSnapshot.model ?? "default"),
                                     // Same watermark-trimmed view of history the
                                     // loop iterations used — the raw array can
                                     // exceed the window precisely when the cap
@@ -6921,33 +7154,31 @@ final class ChatSession: ObservableObject {
                                     temperature: effectiveTemp,
                                     max_tokens: effectiveMaxTokensForAgent,
                                     stream: true,
-                                    top_p: chatCfg.topPOverride,
+                                    top_p: runSnapshot.chatConfiguration.topPOverride,
                                     frequency_penalty: nil,
                                     presence_penalty: nil,
                                     stop: nil,
                                     n: nil,
                                     tools: nil,
                                     tool_choice: nil,
-                                    session_id: sessionId?.uuidString
+                                    session_id: runSnapshot.sessionId?.uuidString
                                 )
                                 finalReq.samplingParametersAreImplicit = true
-                                finalReq.runAsRemoteAgent = isRemoteAgentTarget
+                                finalReq.runAsRemoteAgent = runSnapshot.isRemoteAgentTarget
                                 finalReq.cacheStableSystemPrefix =
-                                    isRemoteAgentTarget ? nil : context.staticPrefix
+                                    runSnapshot.isRemoteAgentTarget ? nil : context.staticPrefix
                                 // Carry the agent provider id on this path too so
                                 // the route-by-provider invariant holds for *every*
                                 // Mode 2 request — a `runAsRemoteAgent` send with no
                                 // provider id would fall back to model-string
                                 // routing (the exact mis-route this fix removes).
-                                finalReq.remoteAgentProviderId =
-                                    isRemoteAgentTarget
-                                    ? windowState?.selectedDiscoveredAgentProviderId : nil
-                                finalReq.remoteAgentLogModel =
-                                    isRemoteAgentTarget
-                                    ? windowState?.pinnedRemoteAgentEffectiveModel : nil
-                                finalReq.isAgentRequest = !toolSpecs.isEmpty || isRemoteAgentTarget
-                                turnGenerationControls.apply(to: &finalReq)
-                                finalReq.backgroundModelLoad = (loadIntent == .background)
+                                finalReq.remoteAgentProviderId = runSnapshot.remoteAgentProviderId
+                                finalReq.remoteAgentLogModel = runSnapshot.remoteAgentLogModel
+                                finalReq.isAgentRequest =
+                                    !toolSpecs.isEmpty || runSnapshot.isRemoteAgentTarget
+                                runSnapshot.generationControls.apply(to: &finalReq)
+                                finalReq.backgroundModelLoad =
+                                    (runSnapshot.loadIntent == .background)
                                 finalReq.turnId = assistantTurn.id
                                 // Distinct logical step (the post-cap summarizing
                                 // call) so it bills once and dedupes on its own
@@ -6968,7 +7199,7 @@ final class ChatSession: ObservableObject {
                                     runId: runId,
                                     streamStartTime: Date(),
                                     ttftTrace: ttftTrace,
-                                    selectedModel: self.selectedModel
+                                    selectedModel: runSnapshot.model
                                 )
                                 assistantTurn = finalTurn
                             } catch {
@@ -7822,6 +8053,11 @@ struct ChatView: View {
                                 estimatedContextTokens: observedSession.estimatedContextTokens,
                                 appliesAgentReasoningDefault: observedSession.appliesAgentReasoningDefault,
                                 contextBreakdown: observedSession.estimatedContextBreakdown,
+                                isContextBudgetLive: observedSession.isContextBudgetLive,
+                                contextWindowResolutionOverride:
+                                    observedSession.activeContextWindowResolution,
+                                contextMaxResponseTokensOverride:
+                                    observedSession.activeContextMaxResponseTokens,
                                 sessionSpendMicro: observedSession.sessionRouterSpendMicro,
                                 isRouterBilledSession: observedSession.isOsaurusRouterSession,
                                 imageComposerSettings: $observedSession.imageComposerSettings,

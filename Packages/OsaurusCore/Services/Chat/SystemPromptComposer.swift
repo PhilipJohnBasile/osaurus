@@ -140,12 +140,14 @@ public struct SystemPromptComposer: Sendable {
         // One MainActor read services every downstream `effective*`
         // gate. Closes the race window the `PluginCreatorGate.Inputs`
         // comment used to apologise for.
-        let snapshot = AgentConfigSnapshot.capture(
-            agentId: request.agentId,
-            requestToolsDisabled: request.toolsDisabled,
-            modelOverride: request.model,
-            modelTypeOverride: request.modelType
-        )
+        let snapshot =
+            request.agentSnapshot
+            ?? AgentConfigSnapshot.capture(
+                agentId: request.agentId,
+                requestToolsDisabled: request.toolsDisabled,
+                modelOverride: request.model,
+                modelTypeOverride: request.modelType
+            )
         let composer = forChat(
             snapshot: snapshot,
             agentId: request.agentId,

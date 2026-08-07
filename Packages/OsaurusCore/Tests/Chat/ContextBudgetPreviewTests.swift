@@ -1228,4 +1228,27 @@ struct ScreenContextBudgetRowTests {
         #expect(bd?.allEntries.first { $0.id == "screenContext" }?.tokens == 88)
         #expect(bd?.allEntries.first { $0.id == "conversation" }?.tokens == 200)
     }
+
+    @Test("tracker: static rows are write-once until the run clears")
+    func tracker_staticRowsAreWriteOnce() {
+        let tracker = ContextBudgetTracker()
+        tracker.snapshot(manifest: baseManifest(), toolTokens: 11)
+        tracker.updateScreenContext(tokens: 88)
+
+        tracker.snapshot(manifest: PromptManifest(sections: []), toolTokens: 999)
+        tracker.updateScreenContext(tokens: 777)
+        tracker.updateConversation(tokens: 200)
+
+        let active = tracker.activeBreakdown(isActive: true, outputTurn: nil)
+        #expect(active?.allEntries.first { $0.id == "tools" }?.tokens == 11)
+        #expect(active?.allEntries.first { $0.id == "screenContext" }?.tokens == 88)
+        #expect(active?.allEntries.first { $0.id == "conversation" }?.tokens == 200)
+
+        tracker.clear()
+        tracker.snapshot(manifest: baseManifest(), toolTokens: 999)
+        tracker.updateScreenContext(tokens: 777)
+        let nextRun = tracker.activeBreakdown(isActive: true, outputTurn: nil)
+        #expect(nextRun?.allEntries.first { $0.id == "tools" }?.tokens == 999)
+        #expect(nextRun?.allEntries.first { $0.id == "screenContext" }?.tokens == 777)
+    }
 }

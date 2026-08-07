@@ -82,9 +82,7 @@ enum GenerationEventMapper {
             // it: the global HUD for real requests, the per-model warm-up
             // side channel for suppressed (background warm-up) requests.
             func reportPrefillFinished() {
-                if !suppressProgressUI {
-                    InferenceProgressManager.shared.prefillDidFinishAsync()
-                } else {
+                if suppressProgressUI {
                     WarmupProgressHub.shared.finish(model: modelName)
                 }
             }
@@ -152,9 +150,7 @@ enum GenerationEventMapper {
                         totalUnitCount: progress.totalUnitCount,
                         detail: progress.detail
                     )
-                    if !suppressProgressUI {
-                        InferenceProgressManager.shared.prefillDidUpdateAsync(state)
-                    } else {
+                    if suppressProgressUI {
                         WarmupProgressHub.shared.prefillDidUpdate(model: modelName, state: state)
                     }
                     if state.stage.rawValue != lastPrefillStage {
@@ -191,7 +187,7 @@ enum GenerationEventMapper {
                     markFirstModelOutput()
                     if firstChunk {
                         firstChunk = false
-                        InferenceProgressManager.shared.prefillDidFinishAsync()
+                        reportPrefillFinished()
                     }
                     continuation.yield(.toolCallProgress(envelopeDelta))
 

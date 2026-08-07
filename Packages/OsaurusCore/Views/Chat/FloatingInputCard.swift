@@ -39,6 +39,12 @@ struct FloatingInputCard: View {
     let appliesAgentReasoningDefault: Bool
     /// Per-category breakdown of context token usage
     var contextBreakdown: ContextBreakdown = .zero
+    /// True only after the current run's composed request and budget are
+    /// sealed. The broader `isStreaming` flag also covers async preparation.
+    var isContextBudgetLive: Bool = false
+    /// Frozen denominator and response reservation for an active run.
+    var contextWindowResolutionOverride: AgentLoopBudget.ContextWindowResolution?
+    var contextMaxResponseTokensOverride: Int?
     /// Total micro-USD spent on the Osaurus Router this session.
     var sessionSpendMicro: Int = 0
     /// True when this session's spend is billed via the Osaurus Router (the
@@ -148,6 +154,9 @@ struct FloatingInputCard: View {
         estimatedContextTokens: Int,
         appliesAgentReasoningDefault: Bool = false,
         contextBreakdown: ContextBreakdown = .zero,
+        isContextBudgetLive: Bool = false,
+        contextWindowResolutionOverride: AgentLoopBudget.ContextWindowResolution? = nil,
+        contextMaxResponseTokensOverride: Int? = nil,
         sessionSpendMicro: Int = 0,
         isRouterBilledSession: Bool = false,
         imageComposerSettings: Binding<ImageComposerSettings> = .constant(ImageComposerSettings()),
@@ -195,6 +204,9 @@ struct FloatingInputCard: View {
         self.estimatedContextTokens = estimatedContextTokens
         self.appliesAgentReasoningDefault = appliesAgentReasoningDefault
         self.contextBreakdown = contextBreakdown
+        self.isContextBudgetLive = isContextBudgetLive
+        self.contextWindowResolutionOverride = contextWindowResolutionOverride
+        self.contextMaxResponseTokensOverride = contextMaxResponseTokensOverride
         self.sessionSpendMicro = sessionSpendMicro
         self.isRouterBilledSession = isRouterBilledSession
         self._imageComposerSettings = imageComposerSettings
@@ -552,7 +564,10 @@ struct FloatingInputCard: View {
     /// Breakdown augmented with real-time typing tokens
     private var displayContextBreakdown: ContextBreakdown {
         var bd = contextBreakdown
-        if !localText.isEmpty {
+        // Draft/queued text is not part of an already sealed model request.
+        // It joins the budget only when ChatSession commits it at an iteration
+        // boundary (or on the next ordinary send).
+        if !isContextBudgetLive, !localText.isEmpty {
             let typingTokens = TokenEstimator.estimate(localText)
             bd.setTokens(
                 for: "input",
@@ -569,6 +584,7 @@ struct FloatingInputCard: View {
     /// runtime loop uses (`AgentLoopBudget`), so the chip's denominator and
     /// the trim budget never diverge.
     private var contextWindowResolution: AgentLoopBudget.ContextWindowResolution? {
+        if isContextBudgetLive { return contextWindowResolutionOverride }
         guard let model = selectedModel else { return nil }
         return AgentLoopBudget.resolveContextWindowResolutionSync(modelId: model)
     }
@@ -600,7 +616,10 @@ struct FloatingInputCard: View {
         return AgentLoopBudget.assess(
             breakdown: displayContextBreakdown,
             contextWindow: maxCtx,
-            maxResponseTokens: agentManager.effectiveMaxTokens(for: effectiveAgentId)
+            maxResponseTokens:
+                isContextBudgetLive
+                ? contextMaxResponseTokensOverride
+                : agentManager.effectiveMaxTokens(for: effectiveAgentId)
         )
     }
 
@@ -2511,7 +2530,7 @@ extension FloatingInputCard {
                         usableTokens: usableContextTokens,
                         modelMaxTokens: maxContextTokens,
                         windowResolution: contextWindowResolution,
-                        isStreaming: isStreaming,
+                        isStreaming: isContextBudgetLive,
                         isNearLimit: isContextNearLimit,
                         isHardOverflow: isContextHardOverflow,
                         metaCompact: metaCompact,

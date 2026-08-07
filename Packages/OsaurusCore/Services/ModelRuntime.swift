@@ -4804,9 +4804,7 @@ public actor ModelRuntime {
                 maxBatchSize: InferenceFeatureFlags.mlxBatchEngineMaxBatchSize
             )
         } catch {
-            if !parameters.suppressProgressUI {
-                InferenceProgressManager.shared.prefillDidFinishAsync()
-            } else {
+            if parameters.suppressProgressUI {
                 WarmupProgressHub.shared.finish(model: modelName)
             }
             await ModelLease.shared.release(modelName)

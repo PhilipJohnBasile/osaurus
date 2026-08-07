@@ -786,14 +786,17 @@ public struct ContextBudgetManager: Sendable {
 final class ContextBudgetTracker {
     private var breakdown: ContextBreakdown?
     private var cumulativeOutputTokens: Int = 0
+    private var screenContextWasSealed = false
 
     /// Snapshot from a ComposedContext (chat path).
     func snapshot(context: ComposedContext) {
+        guard breakdown == nil else { return }
         breakdown = .from(context: context)
     }
 
     /// Snapshot from a manifest + tool tokens (work path where ComposedContext isn't available).
     func snapshot(manifest: PromptManifest, toolTokens: Int) {
+        guard breakdown == nil else { return }
         breakdown = .from(manifest: manifest, toolTokens: toolTokens)
     }
 
@@ -811,6 +814,8 @@ final class ContextBudgetTracker {
     /// conversation total, measured before the prefix is injected, doesn't
     /// double-count it.
     func updateScreenContext(tokens: Int) {
+        guard !screenContextWasSealed else { return }
+        screenContextWasSealed = true
         breakdown?.setTokens(
             for: "screenContext",
             in: \.context,
@@ -862,6 +867,7 @@ final class ContextBudgetTracker {
     func clear() {
         breakdown = nil
         cumulativeOutputTokens = 0
+        screenContextWasSealed = false
     }
 
     var hasActiveSnapshot: Bool { breakdown != nil }

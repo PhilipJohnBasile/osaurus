@@ -8,7 +8,7 @@
 
 import Foundation
 
-enum PrefillProgressStage: String, Codable, Sendable, Equatable {
+enum PrefillProgressStage: String, Codable, Sendable, Equatable, Hashable {
     case queued
     case cacheLookup
     case cacheRestore
@@ -85,6 +85,9 @@ final class InferenceProgressManager: ObservableObject, @unchecked Sendable {
 
     /// Latest runtime-reported prefill stage. Nil means no prompt prefill is active.
     @MainActor @Published var prefillProgress: PrefillProgressState? = nil
+    /// Identity of the visible ChatSession model step that owns the current
+    /// progress. Late events from a prior agent-loop step are ignored.
+    @MainActor private var activePrefillStepID: UUID?
 
     init() {}
 
@@ -96,6 +99,19 @@ final class InferenceProgressManager: ObservableObject, @unchecked Sendable {
 
     /// Called from the MainActor just before prefill begins.
     @MainActor func prefillWillStart(tokenCount: Int) {
+        activePrefillStepID = nil
+        installPrefillStart(tokenCount: tokenCount)
+    }
+
+    /// Run/step-scoped entry point used by ChatSession. A new model step may
+    /// legitimately start another prefill, but stale updates from the prior
+    /// step can no longer reset this one.
+    @MainActor func prefillWillStart(stepID: UUID, tokenCount: Int = 0) {
+        activePrefillStepID = stepID
+        installPrefillStart(tokenCount: tokenCount)
+    }
+
+    @MainActor private func installPrefillStart(tokenCount: Int) {
         if prefillTokenCount == nil { prefillStartedAt = Date() }
         prefillTokenCount = tokenCount
         prefillProgress = PrefillProgressState(
@@ -108,17 +124,62 @@ final class InferenceProgressManager: ObservableObject, @unchecked Sendable {
 
     /// Called from the MainActor when vmlx reports real prompt-processing progress.
     @MainActor func prefillDidUpdate(_ progress: PrefillProgressState) {
+        activePrefillStepID = nil
+        installPrefillUpdate(progress)
+    }
+
+    @MainActor func prefillDidUpdate(stepID: UUID, progress: PrefillProgressState) {
+        guard activePrefillStepID == stepID else { return }
+        guard !isRegressive(progress, comparedTo: prefillProgress) else { return }
+        installPrefillUpdate(progress)
+        if progress.stage == .complete { activePrefillStepID = nil }
+    }
+
+    @MainActor private func installPrefillUpdate(_ progress: PrefillProgressState) {
         if prefillStartedAt == nil { prefillStartedAt = Date() }
-        prefillTokenCount = progress.totalUnitCount
+        if prefillTokenCount == nil || prefillTokenCount == 0 {
+            prefillTokenCount = progress.totalUnitCount
+        }
         prefillProgress = progress
         if progress.stage == .complete {
-            prefillDidFinish()
+            clearPrefill()
         }
+    }
+
+    @MainActor private func isRegressive(
+        _ next: PrefillProgressState,
+        comparedTo current: PrefillProgressState?
+    ) -> Bool {
+        guard let current else { return false }
+        let order: [PrefillProgressStage: Int] = [
+            .queued: 0,
+            .cacheLookup: 1,
+            .cacheRestore: 2,
+            .prefill: 3,
+            .complete: 4,
+        ]
+        let nextRank = order[next.stage] ?? 0
+        let currentRank = order[current.stage] ?? 0
+        if nextRank < currentRank { return true }
+        guard next.stage == current.stage else { return false }
+        return next.completedUnitCount < current.completedUnitCount
+            || next.fractionCompleted < current.fractionCompleted
     }
 
     /// Called from the MainActor when the first token is generated (prefill done)
     /// or on error / cancellation.
     @MainActor func prefillDidFinish() {
+        activePrefillStepID = nil
+        clearPrefill()
+    }
+
+    @MainActor func prefillDidFinish(stepID: UUID) {
+        guard activePrefillStepID == stepID else { return }
+        activePrefillStepID = nil
+        clearPrefill()
+    }
+
+    @MainActor private func clearPrefill() {
         prefillTokenCount = nil
         prefillStartedAt = nil
         prefillProgress = nil

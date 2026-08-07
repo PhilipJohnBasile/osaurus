@@ -16,6 +16,10 @@ import Foundation
 
 struct ComposeRequest: Sendable {
     let agentId: UUID
+    /// Optional request-scoped agent snapshot captured by the caller before
+    /// any asynchronous preflight. When present, composition must not re-read
+    /// AgentManager or global settings for prompt-shaping decisions.
+    let agentSnapshot: AgentConfigSnapshot?
     let executionMode: ExecutionMode
     let model: String?
     /// Canonical local-bundle `config.json.model_type`, captured with the
@@ -45,6 +49,7 @@ struct ComposeRequest: Sendable {
 
     init(
         agentId: UUID,
+        agentSnapshot: AgentConfigSnapshot? = nil,
         executionMode: ExecutionMode,
         model: String? = nil,
         modelType: String? = nil,
@@ -59,6 +64,7 @@ struct ComposeRequest: Sendable {
         trace: TTFTTrace? = nil
     ) {
         self.agentId = agentId
+        self.agentSnapshot = agentSnapshot
         self.executionMode = executionMode
         self.model = model
         self.modelType = modelType
