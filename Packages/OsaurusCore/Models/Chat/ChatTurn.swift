@@ -129,8 +129,43 @@ final class ChatTurn: ObservableObject, Identifiable {
     var thinkingIsEmpty: Bool { _thinkingLength == 0 }
 
     /// Whether thinking has no renderable text.
+    ///
+    /// Blank means "nothing a reader would call reasoning", which is broader
+    /// than empty. Gemma-4 (and other Harmony-channel models) put the CHANNEL
+    /// NAME on the first line — `<|channel>thought\n…payload…<channel|>` — and
+    /// with thinking OFF the template emits, and the model echoes, a pre-closed
+    /// EMPTY block: token ids [100, 45518, 107, 101] = `<|channel>` / `thought`
+    /// / `\n` / `<channel|>`. vmlx's reasoning parser strips the delimiters and
+    /// reports 0 reasoning chars, but a bare identifier can still reach the UI
+    /// through other derivation paths, and the chrome ("Thought", an expandable
+    /// pane) then renders around nothing.
+    ///
+    /// This is catalog-wide, not one bundle: `think_in_template=false` is the
+    /// canonical stamp for every gemma4 variant, so re-stamping a bundle to
+    /// paper over it would desync that bundle from the rest of the line. The
+    /// guard belongs here — the single predicate every renderer consults via
+    /// `hasRenderableThinking` — so no entry point (cell, activity group,
+    /// subagent feed) can reach the bug independently.
     var thinkingIsBlank: Bool {
-        thinking.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let trimmed = thinking.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+        return Self.isBareChannelIdentifier(trimmed)
+    }
+
+    /// A payload that is nothing but a channel label — one short bare
+    /// identifier such as `thought`, `analysis`, `final`.
+    ///
+    /// Deliberately duplicated rather than imported: vmlx's equivalent
+    /// (`isHarmonyIdentifierChannelName`) is internal to MLXLMCommon, and
+    /// exporting it would make a six-line UI guard a cross-repo pin bump.
+    /// Kept strict — a single token of `[A-Za-z0-9_]`, length-bounded — so real
+    /// one-word reasoning is never suppressed.
+    static func isBareChannelIdentifier(_ text: String) -> Bool {
+        guard text.count <= 32 else { return false }
+        guard !text.isEmpty else { return false }
+        return text.unicodeScalars.allSatisfy { s in
+            CharacterSet.alphanumerics.contains(s) || s == "_"
+        }
     }
 
     /// Efficiently append thinking without triggering immediate UI update.
