@@ -161,11 +161,7 @@ final class ChatTurn: ObservableObject, Identifiable {
     /// Kept strict — a single token of `[A-Za-z0-9_]`, length-bounded — so real
     /// one-word reasoning is never suppressed.
     static func isBareChannelIdentifier(_ text: String) -> Bool {
-        guard text.count <= 32 else { return false }
-        guard !text.isEmpty else { return false }
-        return text.unicodeScalars.allSatisfy { s in
-            CharacterSet.alphanumerics.contains(s) || s == "_"
-        }
+        StringCleaning.isHarmonyChannelLabel(text)
     }
 
     /// Efficiently append thinking without triggering immediate UI update.
@@ -525,8 +521,13 @@ final class ChatTurn: ObservableObject, Identifiable {
     /// structured call.
     var visibleContent: String {
         guard role == .assistant else { return content }
+        // Channel-label strip runs first: the label arrives on the leading line
+        // ahead of anything the other two cleaners look for, so removing it
+        // early keeps their inputs shaped the way they expect.
         return StringCleaning.stripLeakedActionJSON(
-            StringCleaning.stripGeminiDisplayMetadata(content)
+            StringCleaning.stripGeminiDisplayMetadata(
+                StringCleaning.stripLeakedChannelLabel(content)
+            )
         )
     }
 
