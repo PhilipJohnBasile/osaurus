@@ -1,5 +1,5 @@
 {
-  "originHash" : "fe43b0a2e5612b1cd5e92311ec4630c5d3dd6d39f57aadcb4fbaa49cfe443271",
+  "originHash" : "1428a202a5b6549e123c22639b64fc74e44e93fab361e3c0e8e40006c3b8177d",
   "pins" : [
     {
       "identity" : "aachartkit-swift",
@@ -367,14 +367,6 @@
       "location" : "https://github.com/rryam/VecturaKit",
       "state" : {
         "revision" : "3bc52538f16a95d956c575abbc7e0423737dfd64"
-      }
-    },
-    {
-      "identity" : "vmlx-swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/osaurus-ai/vmlx-swift",
-      "state" : {
-        "revision" : "5b2a5266cbd635fadbf0ed1cc1e1370cfc2650d7"
       }
     },
     {
