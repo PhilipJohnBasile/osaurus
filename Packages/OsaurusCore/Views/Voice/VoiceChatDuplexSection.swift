@@ -38,6 +38,7 @@ struct VoiceChatDuplexSection: View {
 
                 bundlePicker
                 audioPicker
+                characterPromptField
                 durationControl
                 runControls
                 statusArea
@@ -70,6 +71,25 @@ struct VoiceChatDuplexSection: View {
             Button(L("Rescan")) { refreshBundles() }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("voicechat-rescan")
+        }
+    }
+
+    /// 🚨 Editable because tuning it is the point.
+    ///
+    /// With this empty the base model refuses the register an avatar speaks
+    /// in: "Can I have a hug? Hugs are my favorite" returns "I cannot provide
+    /// hugs or any form of physical contact". With the default below it
+    /// returns "Oh, absolutely! Big hugs are the best kind of hugs."
+    private var characterPromptField: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("Character", bundle: .module)
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 70, alignment: .leading)
+            TextField("", text: $characterPrompt, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11))
+                .lineLimit(2...4)
+                .accessibilityIdentifier("voicechat-character-prompt")
         }
     }
 
