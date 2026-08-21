@@ -214,9 +214,16 @@ let package = Package(
         // images. Tool schemas now reach `LMInput` on both the text and image
         // paths, and the pythonic parser accepts the `function`/`parameters`
         // spelling this bundle emits, so an offered tool is no longer dropped.
+        // vmlx-swift#283 re-arms the adaptive MTP depth controller upward
+        // (demote-only never recovered a transient dip) and gives restored
+        // sessions a 4x warmup grace window; #284 scopes the hybrid warmup
+        // memo to catastrophic misses only, so a prose-grade first turn can
+        // no longer lock native MTP off for the model's whole residency —
+        // acceptance is content, and only a below-depth-1-floor miss is a
+        // property of the model.
         .package(
             url: "https://github.com/osaurus-ai/vmlx-swift",
-            revision: "16486d6ed13865dc9e820741707f6951c06f26fd"
+            revision: "de4d0f4454dcc75ed2eb224b81869bb36faa8e78"
         ),
         // FluidAudio 0.14.3 added a breaking `language:` parameter to TTS
         // calls that osaurus's `TTSService` doesn't pass. Pinning to the
