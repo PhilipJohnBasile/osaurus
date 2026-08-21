@@ -43,6 +43,10 @@ public struct VoiceChatTurnReport: Sendable, Equatable {
     /// The agent's own speech, read back through its own ASR.
     public let heardBackText: String
     public let heardBackTokenCount: Int
+    /// What the USER's audio transcribes to. Labelled, because as a bare
+    /// "%d asr" count it was mistaken for a measure of the agent's speech —
+    /// it never moves when the model changes, only when the input does.
+    public let userText: String
 
     public var durationSeconds: Double {
         sampleRate > 0 ? Double(sampleCount) / Double(sampleRate) : 0
@@ -63,9 +67,12 @@ public struct VoiceChatTurnReport: Sendable, Equatable {
         let heard = heardBackTokenCount == 0
             ? "heard back: NOTHING"
             : "heard back \(heardBackTokenCount) tok: \u{201C}\(heardBackText)\u{201D}"
+        let you = userText.isEmpty
+            ? "you: (nothing heard)"
+            : "you: \u{201C}\(userText)\u{201D}"
         return String(
-            format: "%@ · %@ · %.2fs out · %d frames · rms %.4f · %d fn",
-            said, heard, durationSeconds, frames, rms, functionTokenCount)
+            format: "%@ · agent: %@ · %@ · %.2fs out · %d frames · rms %.4f · %d fn",
+            you, said, heard, durationSeconds, frames, rms, functionTokenCount)
     }
 }
 
@@ -92,6 +99,7 @@ private struct VoiceChatComputeResult: @unchecked Sendable {
     let spokenText: String
     let heardBackText: String
     let heardBackTokenCount: Int
+    let userText: String
 }
 
 public enum VoiceChatDuplexState: Equatable, Sendable {
@@ -248,18 +256,21 @@ public final class VoiceChatDuplexService: ObservableObject {
                 // babble — or from silence.
                 let heard = Self.transcribeGenerated(
                     generated, sampleRate: result.sampleRate, box: box)
+                let userHeard = Self.decodeRNNT(
+                    box.model.transcribeUser(result), box: box)
 
                 return VoiceChatComputeResult(
                     audio: generated,
                     frames: result.audioFrames,
                     sampleRate: result.sampleRate,
-                    transcriptTokenCount: box.model.transcribeUser(result).count,
+                    transcriptTokenCount: userHeard.tokenCount,
                     functionTokenCount: result.functionTokens.filter {
                         $0 != box.config.padTokenId
                     }.count,
                     spokenText: spoken,
                     heardBackText: heard.text,
-                    heardBackTokenCount: heard.tokenCount)
+                    heardBackTokenCount: heard.tokenCount,
+                    userText: userHeard.text)
             }.value
             let turnSeconds = Date().timeIntervalSince(turnStarted)
 
@@ -279,7 +290,8 @@ public final class VoiceChatDuplexService: ObservableObject {
                 functionTokenCount: report.functionTokenCount,
                 spokenText: report.spokenText,
                 heardBackText: report.heardBackText,
-                heardBackTokenCount: report.heardBackTokenCount)
+                heardBackTokenCount: report.heardBackTokenCount,
+                userText: report.userText)
 
             if playResult {
                 try play(report.audio, sampleRate: report.sampleRate)
@@ -374,6 +386,20 @@ public final class VoiceChatDuplexService: ObservableObject {
         player.prepareToPlay()
         player.play()
         self.player = player
+    }
+
+    /// RNN-T ids -> text, using the bundle's own RNN-T vocabulary.
+    fileprivate nonisolated static func decodeRNNT(
+        _ tokens: [Int], box: VoiceChatModelBox
+    ) -> (text: String, tokenCount: Int) {
+        let vocabulary = box.config.rnntVocabulary ?? []
+        let text = tokens.compactMap { id -> String? in
+            guard id >= 0, id < vocabulary.count else { return nil }
+            return vocabulary[id]
+        }.joined()
+            .replacingOccurrences(of: "\u{2581}", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        return (text, tokens.count)
     }
 
     /// Transcribe the agent's OWN generated speech with the model's own RNN-T.
