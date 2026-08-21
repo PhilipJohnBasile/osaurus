@@ -38,6 +38,11 @@ public struct VoiceChatTurnReport: Sendable, Equatable {
     public let zeroCrossingRate: Float
     public let transcriptTokenCount: Int
     public let functionTokenCount: Int
+    /// What the agent's TEXT channel actually said this turn.
+    public let spokenText: String
+    /// The agent's own speech, read back through its own ASR.
+    public let heardBackText: String
+    public let heardBackTokenCount: Int
 
     public var durationSeconds: Double {
         sampleRate > 0 ? Double(sampleCount) / Double(sampleRate) : 0
@@ -45,10 +50,22 @@ public struct VoiceChatTurnReport: Sendable, Equatable {
 
     /// Human-readable one-liner for the UI.
     public var summary: String {
-        String(
-            format: "%.2fs out · %d frames · rms %.4f · peak %.3f · zcr %.3f · %d asr · %d fn",
-            durationSeconds, frames, rms, peak, zeroCrossingRate, transcriptTokenCount,
-            functionTokenCount)
+        // 🚨 Lead with what the agent SAID and what its own ears heard back.
+        //
+        // This line used to be duration, frames, rms, peak, zcr, a token count
+        // and a tool count — and every one of those is identical for a model
+        // that speaks and a model that is completely silent. Proven live: a
+        // 2-bit bundle whose text channel emitted nothing for the whole turn
+        // rendered "10.08s out · 126 frames · rms 0.0184 · … · 17 asr · 0 fn",
+        // with the HIGHEST rms of the three bundles tested. The "asr" count was
+        // the transcript of the USER's audio, so it never moved either.
+        let said = spokenText.isEmpty ? "(said nothing)" : "\u{201C}\(spokenText)\u{201D}"
+        let heard = heardBackTokenCount == 0
+            ? "heard back: NOTHING"
+            : "heard back \(heardBackTokenCount) tok: \u{201C}\(heardBackText)\u{201D}"
+        return String(
+            format: "%@ · %@ · %.2fs out · %d frames · rms %.4f · %d fn",
+            said, heard, durationSeconds, frames, rms, functionTokenCount)
     }
 }
 
@@ -62,6 +79,7 @@ public struct VoiceChatTurnReport: Sendable, Equatable {
 private struct VoiceChatModelBox: @unchecked Sendable {
     let model: NemotronVoiceChatModel
     let config: NemotronVoiceChatConfiguration
+    let tokenText: [Int: String]
 }
 
 /// Result of one compute task, likewise carried back across the hop.
@@ -71,6 +89,9 @@ private struct VoiceChatComputeResult: @unchecked Sendable {
     let sampleRate: Int
     let transcriptTokenCount: Int
     let functionTokenCount: Int
+    let spokenText: String
+    let heardBackText: String
+    let heardBackTokenCount: Int
 }
 
 public enum VoiceChatDuplexState: Equatable, Sendable {
@@ -95,6 +116,7 @@ public final class VoiceChatDuplexService: ObservableObject {
     private var model: NemotronVoiceChatModel?
     private var config: NemotronVoiceChatConfiguration?
     private var loadedDirectory: URL?
+    private var tokenText: [Int: String] = [:]
     private var player: AVAudioPlayer?
 
     private init() {}
@@ -166,7 +188,7 @@ public final class VoiceChatDuplexService: ObservableObject {
                 let started = Date()
                 let loaded = try await Task.detached(priority: .userInitiated) {
                     let (model, config) = try VoiceChatLoader.load(from: bundle)
-                    return VoiceChatModelBox(model: model, config: config)
+                    return VoiceChatModelBox(model: model, config: config, tokenText: [:])
                 }.value
                 loadSeconds = Date().timeIntervalSince(started)
 
@@ -176,6 +198,10 @@ public final class VoiceChatDuplexService: ObservableObject {
                     throw VoiceChatDuplexError.missingVocabulary(bundleName)
                 }
                 try loaded.model.setVocabulary(vocabulary)
+                // Kept so a finished turn can decode what the agent SAID, not
+                // just how loud it was.
+                tokenText = Dictionary(
+                    vocabulary.map { ($0.value, $0.key) }, uniquingKeysWith: { a, _ in a })
 
                 model = loaded.model
                 config = loaded.config
@@ -194,21 +220,46 @@ public final class VoiceChatDuplexService: ObservableObject {
                 throw VoiceChatDuplexError.emptyInput(audioFile.lastPathComponent)
             }
 
-            let box = VoiceChatModelBox(model: model, config: config)
+            let box = VoiceChatModelBox(model: model, config: config, tokenText: tokenText)
             let turnStarted = Date()
             let report = try await Task.detached(priority: .userInitiated) {
                 let mel = voiceChatLogMelSpectrogram(
                     samples, config: box.config.audioConfig.preprocessor)
                 let (projected, encoded) = box.model.sttModel.perception(mel)
                 let result = box.model.generateTurn(audioEmbeds: projected, asrEmbeds: encoded)
+                let generated = result.audio.asType(.float32).asArray(Float.self)
+
+                // What the agent's text channel decided to say.
+                let special: Set<Int> = [
+                    box.config.padTokenId, box.config.silenceTokenId,
+                    box.config.bosTokenId, box.config.eosTokenId,
+                ]
+                let spoken = result.textTokens
+                    .filter { !special.contains($0) }
+                    .compactMap { box.tokenText[$0] }
+                    .joined()
+                    .replacingOccurrences(of: "\u{2581}", with: " ")
+                    .replacingOccurrences(of: "\u{0120}", with: " ")
+                    .trimmingCharacters(in: .whitespaces)
+
+                // 🚨 Close the loop: put the agent's OWN speech back through its
+                // OWN ears. Energy statistics are satisfied by structured
+                // noise, so nothing else on this report can tell speech from
+                // babble — or from silence.
+                let heard = Self.transcribeGenerated(
+                    generated, sampleRate: result.sampleRate, box: box)
+
                 return VoiceChatComputeResult(
-                    audio: result.audio.asType(.float32).asArray(Float.self),
+                    audio: generated,
                     frames: result.audioFrames,
                     sampleRate: result.sampleRate,
                     transcriptTokenCount: box.model.transcribeUser(result).count,
                     functionTokenCount: result.functionTokens.filter {
                         $0 != box.config.padTokenId
-                    }.count)
+                    }.count,
+                    spokenText: spoken,
+                    heardBackText: heard.text,
+                    heardBackTokenCount: heard.tokenCount)
             }.value
             let turnSeconds = Date().timeIntervalSince(turnStarted)
 
@@ -225,7 +276,10 @@ public final class VoiceChatDuplexService: ObservableObject {
                 peak: stats.peak,
                 zeroCrossingRate: stats.zeroCrossingRate,
                 transcriptTokenCount: report.transcriptTokenCount,
-                functionTokenCount: report.functionTokenCount)
+                functionTokenCount: report.functionTokenCount,
+                spokenText: report.spokenText,
+                heardBackText: report.heardBackText,
+                heardBackTokenCount: report.heardBackTokenCount)
 
             if playResult {
                 try play(report.audio, sampleRate: report.sampleRate)
@@ -320,6 +374,46 @@ public final class VoiceChatDuplexService: ObservableObject {
         player.prepareToPlay()
         player.play()
         self.player = player
+    }
+
+    /// Transcribe the agent's OWN generated speech with the model's own RNN-T.
+    ///
+    /// The generated audio is at the codec's rate and the ASR front end wants
+    /// the input rate, so it is resampled first.
+    fileprivate nonisolated static func transcribeGenerated(
+        _ samples: [Float], sampleRate: Int, box: VoiceChatModelBox
+    ) -> (text: String, tokenCount: Int) {
+        let target = box.config.inputSampleRate
+        var input = samples
+        if sampleRate != target, !samples.isEmpty {
+            let ratio = Double(sampleRate) / Double(target)
+            var out = [Float]()
+            out.reserveCapacity(Int(Double(samples.count) / ratio))
+            var i = 0
+            while true {
+                let position = Double(i) * ratio
+                let index = Int(position)
+                guard index + 1 < samples.count else { break }
+                let fraction = Float(position - Double(index))
+                out.append(samples[index] * (1 - fraction) + samples[index + 1] * fraction)
+                i += 1
+            }
+            input = out
+        }
+        guard input.count > 800 else { return ("", 0) }
+        let mel = voiceChatLogMelSpectrogram(
+            input, config: box.config.audioConfig.preprocessor)
+        let (_, encoded) = box.model.sttModel.perception(mel)
+        var state = VoiceChatRNNTDecodeState()
+        let tokens = box.model.sttModel.transcribe(encoded: encoded, state: &state)
+        let vocabulary = box.config.rnntVocabulary ?? []
+        let text = tokens.compactMap { id -> String? in
+            guard id >= 0, id < vocabulary.count else { return nil }
+            return vocabulary[id]
+        }.joined()
+            .replacingOccurrences(of: "\u{2581}", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        return (text, tokens.count)
     }
 
     /// The tokenizer vocabulary the character-aware speech conditioning needs.
