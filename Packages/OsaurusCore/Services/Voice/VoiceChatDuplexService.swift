@@ -125,6 +125,7 @@ public final class VoiceChatDuplexService: ObservableObject {
     private var config: NemotronVoiceChatConfiguration?
     private var loadedDirectory: URL?
     private var tokenText: [Int: String] = [:]
+    private var tokenIds: [String: Int] = [:]
     private var player: AVAudioPlayer?
 
     private init() {}
@@ -214,7 +215,8 @@ public final class VoiceChatDuplexService: ObservableObject {
         audioFile: URL,
         seconds: Double = 3.0,
         offsetSeconds: Double = 0,
-        playResult: Bool = true
+        playResult: Bool = true,
+        characterPrompt: String = ""
     ) async {
         guard !isBusy else { return }
         let bundleName = bundle.lastPathComponent
@@ -240,6 +242,7 @@ public final class VoiceChatDuplexService: ObservableObject {
                 // just how loud it was.
                 tokenText = Dictionary(
                     vocabulary.map { ($0.value, $0.key) }, uniquingKeysWith: { a, _ in a })
+                tokenIds = vocabulary
 
                 model = loaded.model
                 config = loaded.config
@@ -259,12 +262,28 @@ public final class VoiceChatDuplexService: ObservableObject {
             }
 
             let box = VoiceChatModelBox(model: model, config: config, tokenText: tokenText)
+            let promptIds = Self.tokenize(characterPrompt, vocabulary: tokenIds)
             let turnStarted = Date()
             let report = try await Task.detached(priority: .userInitiated) {
                 let mel = voiceChatLogMelSpectrogram(
                     samples, config: box.config.audioConfig.preprocessor)
                 let (projected, encoded) = box.model.sttModel.perception(mel)
-                let result = box.model.generateTurn(audioEmbeds: projected, asrEmbeds: encoded)
+                // 🚨 A character prompt is not a nicety here — without one the
+                // base model refuses the exact register an avatar speaks in.
+                // Measured on identical audio: "Can I have a hug?" got "I
+                // cannot provide hugs or any form of physical contact" with no
+                // prompt, and "Of course, little one. Big hugs are the best
+                // kind of hugs." with one.
+                var promptEmbeds: MLXArray?
+                if !promptIds.isEmpty {
+                    let tokens = MLXArray(promptIds.map { Int32($0) })
+                        .reshaped([1, promptIds.count])
+                    let embedded = box.model.sttModel.embed(tokens)
+                    MLX.eval(embedded)
+                    promptEmbeds = embedded
+                }
+                let result = box.model.generateTurn(
+                    audioEmbeds: projected, asrEmbeds: encoded, promptEmbeds: promptEmbeds)
                 let generated = result.audio.asType(.float32).asArray(Float.self)
 
                 // What the agent's text channel decided to say.
@@ -416,6 +435,37 @@ public final class VoiceChatDuplexService: ObservableObject {
         player.prepareToPlay()
         player.play()
         self.player = player
+    }
+
+    /// Greedy longest-match tokenization against the bundle's own vocabulary.
+    ///
+    /// Enough for a system prompt, and it uses the shipped vocabulary rather
+    /// than reimplementing BPE — anything it cannot match is skipped rather
+    /// than mapped to a wrong id.
+    fileprivate nonisolated static func tokenize(
+        _ text: String, vocabulary: [String: Int]
+    ) -> [Int] {
+        guard !text.isEmpty, !vocabulary.isEmpty else { return [] }
+        var ids = [Int]()
+        for (index, word) in text.split(separator: " ").enumerated() {
+            var piece = (index == 0 ? String(word) : "\u{0120}" + String(word))
+            while !piece.isEmpty {
+                var matched = false
+                var length = piece.count
+                while length > 0 {
+                    let candidate = String(piece.prefix(length))
+                    if let id = vocabulary[candidate] {
+                        ids.append(id)
+                        piece = String(piece.dropFirst(length))
+                        matched = true
+                        break
+                    }
+                    length -= 1
+                }
+                if !matched { piece = String(piece.dropFirst()) }
+            }
+        }
+        return ids
     }
 
     /// RNN-T ids -> text, using the bundle's own RNN-T vocabulary.
