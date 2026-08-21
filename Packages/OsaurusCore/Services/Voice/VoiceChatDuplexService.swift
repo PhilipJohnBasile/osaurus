@@ -159,7 +159,37 @@ public final class VoiceChatDuplexService: ObservableObject {
                 found.append(child)
             }
         }
-        return found.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        // 🚨 Order by weight size, largest first, so the picker opens on the
+        // highest-fidelity bundle present rather than whichever name sorts
+        // first alphabetically.
+        //
+        // Alphabetical order put a 2-bit bundle at the top, and that bundle is
+        // silent: its text channel emits nothing for an entire turn, so opening
+        // the panel and pressing Speak spent ten seconds to produce
+        // "(said nothing)". Nothing is hidden or blocked by this — every
+        // discovered bundle is still in the list and still selectable. It only
+        // changes which one is offered first.
+        func weightBytes(_ url: URL) -> Int64 {
+            // Resolve symlinks first: a linked-in bundle otherwise measures as
+            // zero bytes and the whole list silently falls back to alphabetical
+            // order, which is the behaviour this is here to replace.
+            let resolved = url.resolvingSymlinksInPath()
+            let files =
+                (try? fm.contentsOfDirectory(
+                    at: resolved, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+            return files
+                .filter { $0.pathExtension == "safetensors" }
+                .reduce(Int64(0)) { total, file in
+                    let size = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+                    return total + Int64(size)
+                }
+        }
+        let sized = found.map { (url: $0, bytes: weightBytes($0)) }
+        return sized.sorted {
+            $0.bytes == $1.bytes
+                ? $0.url.lastPathComponent < $1.url.lastPathComponent
+                : $0.bytes > $1.bytes
+        }.map(\.url)
     }
 
     /// Unload the current model so another bundle (or another feature) can have
