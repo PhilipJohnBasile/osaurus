@@ -7,6 +7,15 @@ import Testing
 
 @Suite("Image generation bridge contract")
 struct ImageGenerationBridgeContractTests {
+
+    /// True when a `Package.resolved` pins `revision` — regardless of how
+    /// SwiftPM spaced the JSON. Collapsing whitespace keeps the assertion
+    /// about the PIN rather than about the serializer's formatting.
+    private func pins(_ resolvedJSON: String, to revision: String) -> Bool {
+        let compact = resolvedJSON.filter { !$0.isWhitespace }
+        return compact.contains("\"revision\":\"\(revision)\"")
+    }
+
     @Test("image models route through the image-generation picker source")
     func imageModelPickerItemUsesImageGenerationSource() {
         let model = ImageModelInfo(
@@ -76,9 +85,16 @@ struct ImageGenerationBridgeContractTests {
 
         let expectedRevision = "2fc5d7bbf2a5baa7868a24631c8d47632c23a9b7"
         #expect(packageSwift.contains(#"revision: "\#(expectedRevision)""#))
-        #expect(packageResolved.contains(#""revision" : "\#(expectedRevision)""#))
-        #expect(workspaceResolved.contains(#""revision" : "\#(expectedRevision)""#))
-        #expect(appResolved.contains(#""revision" : "\#(expectedRevision)""#))
+        // Whitespace-insensitive, because the literal spacing is SwiftPM's to
+        // choose and not part of the contract. `Package.resolved` used to be
+        // written as `"revision" : "…"` and is now written `"revision": "…"`;
+        // an exact-string assertion failed on all three files while every pin
+        // was in fact correct, which reads as a bad repin and is not one.
+        // What this test exists to catch — the pin sites disagreeing — is
+        // fully preserved.
+        #expect(pins(packageResolved, to: expectedRevision))
+        #expect(pins(workspaceResolved, to: expectedRevision))
+        #expect(pins(appResolved, to: expectedRevision))
         #expect(service.contains("import vMLXFlux"))
         #expect(service.contains("await MetalGate.shared.enterImageGeneration()"))
         #expect(service.contains("await MetalGate.shared.exitImageGeneration()"))
