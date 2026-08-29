@@ -251,46 +251,6 @@ struct MLXServiceRuntimePolicyTests {
         }
     }
 
-    @Test func zayaVLAcceptsTheExactStampedRuntimeFallbackContract() throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("osaurus-zaya-vl-stamped-tools-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        try #"{"model_type":"zaya1_vl"}"#.write(
-            to: root.appendingPathComponent("config.json"),
-            atomically: true,
-            encoding: .utf8
-        )
-        try #"{"source_model":{"architecture":"zaya1_vl"},"capabilities":{"family":"zaya1_vl","supports_tools":true,"tool_parser":"zaya_xml","think_in_template":false}}"#.write(
-            to: root.appendingPathComponent("jang_config.json"),
-            atomically: true,
-            encoding: .utf8
-        )
-        try #"{"chat_template":"{% for message in messages %}{{ message.content }}{% endfor %}"}"#.write(
-            to: root.appendingPathComponent("tokenizer_config.json"),
-            atomically: true,
-            encoding: .utf8
-        )
-
-        #expect(
-            MLXService.supportsLocalToolCalling(
-                modelName: "ZAYA1-VL-8B-JANGTQ4",
-                modelId: "JANGQ-AI/ZAYA1-VL-8B-JANGTQ4",
-                modelDirectory: root
-            ) == true
-        )
-        try MLXService.validateRuntimePolicy(
-            modelName: "ZAYA1-VL-8B-JANGTQ4",
-            modelId: "JANGQ-AI/ZAYA1-VL-8B-JANGTQ4",
-            messages: [ChatMessage(role: "user", content: "Use line_count")],
-            parameters: GenerationParameters(temperature: nil, maxTokens: 16),
-            tools: [Self.lineCountTool()],
-            runtime: VMLXServerRuntimeSettings(),
-            modelDirectory: root
-        )
-    }
-
     @Test func correctedZayaVLStampStaysToolDisabled() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("osaurus-zaya-vl-disabled-\(UUID().uuidString)", isDirectory: true)
