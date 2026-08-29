@@ -433,14 +433,19 @@ actor MLXService: ToolCapableService {
         return root["supports_tools"] as? Bool
     }
 
-    /// Compatibility guard for already-published ZAYA1-VL bundles that were
-    /// accidentally stamped with the text model's `supports_tools=true` and
-    /// `zaya_xml` parser. The shipped VL template has no tools input and no
-    /// tool-call output contract; live AgentLoop trials therefore copied the
-    /// schema into malformed arguments instead of executing a call. Require
-    /// both sides of a real template contract. A future repaired VL template
-    /// can opt back in without an app release by carrying `tools` plus a
-    /// `tool_call` emission marker.
+    /// ZAYA1-VL tool capability follows the template that the pinned vMLX
+    /// runtime will actually execute, not only the stale inline tokenizer
+    /// template stored in older bundles. A bundle is capable when either:
+    ///
+    /// - its own template renders both tool declarations and tool calls; or
+    /// - its JANG metadata satisfies vMLX's exact, data-driven substitution
+    ///   contract for `zayaVLVisionToolMinimal`.
+    ///
+    /// The second route deliberately requires every positive stamp. A parser
+    /// name alone is not proof, an absent/true-ish support bit is not proof,
+    /// and `think_in_template` must be explicitly false. This keeps malformed
+    /// legacy bundles blocked while allowing the published ZAYA1-VL JANGTQ
+    /// bundles whose effective runtime template is the tool-aware fallback.
     private nonisolated static func zayaVLTemplateSupportsTools(
         in directory: URL
     ) -> Bool? {
@@ -460,7 +465,27 @@ actor MLXService: ToolCapableService {
             )
         }.joined(separator: "\n")
         let normalized = templates.lowercased()
-        return normalized.contains("tools") && normalized.contains("tool_call")
+        if normalized.contains("tools") && normalized.contains("tool_call") {
+            return true
+        }
+
+        guard
+            let jangData = try? Data(
+                contentsOf: directory.appendingPathComponent("jang_config.json")
+            ),
+            let root = try? JSONSerialization.jsonObject(with: jangData)
+                as? [String: Any],
+            let capabilities = root["capabilities"] as? [String: Any],
+            capabilities["supports_tools"] as? Bool == true,
+            capabilities["think_in_template"] as? Bool == false,
+            let parser = (capabilities["tool_parser"] as? String)?.lowercased(),
+            ["zaya", "zaya_xml", "zyphra", "zyphra_xml"].contains(parser)
+        else { return false }
+
+        let family = (capabilities["family"] as? String)?.lowercased() ?? ""
+        let source = root["source_model"] as? [String: Any]
+        let architecture = (source?["architecture"] as? String)?.lowercased() ?? ""
+        return family.contains("zaya1_vl") || architecture.contains("zaya1_vl")
     }
 
     private nonisolated static func explicitToolFormat(inJangConfig data: Data) -> ToolCallFormat?? {
