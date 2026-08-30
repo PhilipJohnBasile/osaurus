@@ -32,13 +32,6 @@ struct ModelRuntimeRAMFeasibilityTests {
         #expect(
             ModelRuntime.effectiveMLXCacheLimit(
                 dynamicLimit: 1024 * mib,
-                configuredLimits: [nil],
-                admittedCeiling: 16 * 1024 * mib
-            ) == 16 * 1024 * mib
-        )
-        #expect(
-            ModelRuntime.effectiveMLXCacheLimit(
-                dynamicLimit: 1024 * mib,
                 configuredLimits: [1024 * mib, 128 * mib, nil]
             ) == 128 * mib
         )
@@ -47,6 +40,25 @@ struct ModelRuntimeRAMFeasibilityTests {
                 dynamicLimit: 0,
                 configuredLimits: [128 * mib]
             ) == 0
+        )
+    }
+
+    @Test("Admitted allocator ceiling is request-scoped")
+    func admittedAllocatorCeilingIsRequestScoped() {
+        let mib = 1024 * 1024
+        #expect(
+            ModelRuntime.effectiveGenerationMLXCacheLimit(
+                persistentLimit: 128 * mib,
+                admittedMemoryLimit: 16 * 1024 * mib,
+                requiresAdmittedCeiling: true
+            ) == 16 * 1024 * mib
+        )
+        #expect(
+            ModelRuntime.effectiveGenerationMLXCacheLimit(
+                persistentLimit: 128 * mib,
+                admittedMemoryLimit: 16 * 1024 * mib,
+                requiresAdmittedCeiling: false
+            ) == 128 * mib
         )
     }
 

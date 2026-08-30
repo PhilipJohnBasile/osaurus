@@ -2,10 +2,13 @@
 
 ## Status
 
-`PARTIAL` until the exact integrated Osaurus Release app completes the served
-and visible-Chat gates below. The direct runtime A/B is complete and isolates
-the post-load allocator reuse policy without changing prompts, sampling,
-reasoning, cache topology, model tensors, or MTP depth.
+`PARTIAL`. The direct one-request A/B is complete, but the exact integrated
+Release app falsified the original persistent-ceiling policy: physical
+footprint grew from about 51 GiB after the sustained served row to 91 GiB after
+several 4–5k-context Chat/tool iterations. The replacement policy therefore
+uses the admitted ceiling only while a qualifying request is active, drains
+freed buffers at the final producer fence, and restores the user-visible
+persistent cap between requests.
 
 ## Causal A/B
 
@@ -20,8 +23,10 @@ reuse ceiling after load.
 | 128 MiB | 51.5 tok/s | 50,017 MiB | D3, 173/173 D3 accepts, zero AR fallback |
 | admitted 70% ceiling | 66.1 tok/s | 51,417 MiB | D3, 173/173 D3 accepts, zero AR fallback |
 
-The admitted-ceiling row was 28% faster while its peak physical footprint was
-only 1,400 MiB higher. Both rows recorded disk-L2 and SSM companion hits. The
+The admitted-ceiling row was 28% faster while its one-request peak physical
+footprint was only 1,400 MiB higher. That result proves decode-time reuse, not
+safe long-lived retention; the integrated 91 GiB reproduction above is why the
+ceiling is now request-scoped. Both rows recorded disk-L2 and SSM companion hits. The
 Flash-Next PLE reader remained SSD-backed through `pread` with `F_NOCACHE`.
 Both full outputs were byte-identical with SHA-256
 `d4bcb44843ae465851740a4d3aaa34d91d1012271de0f7f0ceb87a980910c655`.
@@ -42,8 +47,11 @@ The runtime decision is based on the resolved decode path, not a bundle or
 model-name allowlist:
 
 - ordinary autoregressive models keep the configured Safe Auto allocator cap;
-- resolved native MTP uses MLX's already-admitted memory ceiling;
-- plain affine DeepSeek-V4 preserves its existing admitted-ceiling behavior;
+- resolved native MTP uses MLX's already-admitted memory ceiling only while a
+  request is active;
+- plain affine DeepSeek-V4 uses the same request-scoped ceiling;
+- the final request fence clears freed MLX buffers and restores Safe Auto's
+  persistent 128 MiB cap without touching weights, KV, disk-L2, or SSM state;
 - no resident model still resolves the cache limit to zero.
 
 ## Required integrated gates
@@ -56,3 +64,6 @@ model-name allowlist:
 4. Drive the same app through visible Chat with one process, Auto selected,
    a tool call approved with **Always Allow**, tool-result continuation, a
    follow-up turn, and no terminal hang or marker leakage.
+5. Repeat enough served/Chat/tool turns to reproduce the old 91 GiB growth;
+   require idle-between-turn `cache_limit=134217728`, bounded
+   `phys_footprint`, retained disk-L2/SSM hits, and no decode regression.

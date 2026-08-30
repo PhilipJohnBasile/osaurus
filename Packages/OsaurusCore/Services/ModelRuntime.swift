@@ -295,10 +295,10 @@ public actor ModelRuntime {
         /// tracked separately
         /// so ordinary models still use Osaurus's dynamic reuse heuristic.
         let allocatorCacheLimitBytes: Int?
-        /// Some decode paths require MLX's already-admitted allocator ceiling
-        /// rather than Osaurus's generic weight-scaled reuse heuristic. Their
-        /// intermediates otherwise churn out of a tiny freed-buffer cache on
-        /// every token even though RAM admission already accepted the model.
+        /// Load-time plain-affine DSV4 fact. Native MTP is deliberately not
+        /// frozen here because MTP Off/Auto/manual depth is request-scoped.
+        /// Both paths may temporarily use the admitted allocator ceiling while
+        /// a generation is active; neither may retain it between requests.
         let requiresAdmittedMLXAllocatorCeiling: Bool
         var cacheTopology: ModelCacheTopologySnapshot?
         init(
@@ -509,6 +509,11 @@ public actor ModelRuntime {
     }
     private var activeGenerationTasks: [UInt64: ActiveGenerationRecord] = [:]
     private var nextGenerationTaskID: UInt64 = 0
+    /// Number of in-flight generations whose resolved decode path needs the
+    /// admitted MLX freed-buffer ceiling. The ceiling is request-scoped: a
+    /// long-lived app must not retain up to the full RAM-admission budget after
+    /// the request ends.
+    private var admittedAllocatorGenerationCount = 0
 
     /// Last request source (chat UI / HTTP API / plugin / P2P) that generated
     /// against each resident model. Read by the chat-window-close path so it
@@ -2410,13 +2415,9 @@ public actor ModelRuntime {
         let byModel = max(totalWeights / 4, 1 * 1024 * 1024 * 1024)
         let bySystem = min(systemRAM / 8, 8 * 1024 * 1024 * 1024)
         let dynamicLimit = min(byModel, bySystem)
-        let admittedCeiling = modelCache.values.contains {
-            $0.requiresAdmittedMLXAllocatorCeiling
-        } ? max(dynamicLimit, Memory.memoryLimit) : nil
         return Self.effectiveMLXCacheLimit(
             dynamicLimit: dynamicLimit,
-            configuredLimits: modelCache.values.map(\.allocatorCacheLimitBytes),
-            admittedCeiling: admittedCeiling
+            configuredLimits: modelCache.values.map(\.allocatorCacheLimitBytes)
         )
     }
 
@@ -2431,23 +2432,62 @@ public actor ModelRuntime {
         isPlainDeepseekV4AffineJANG || usesNativeMTP
     }
 
-    /// Keep Osaurus's weight-scaled reuse heuristic as a ceiling, but never
-    /// exceed the allocator cap visibly resolved for any resident model. The
-    /// previous post-load assignment discarded Safe Auto's 128 MiB cap and
-    /// silently replaced it with at least 1 GiB.
+    /// Persistent, idle-between-requests MLX freed-buffer ceiling. It must
+    /// honor the user-visible cap: retaining the full load-admission budget in
+    /// a server process caused Qwen3.8 2L to grow from ~51 GiB to ~91 GiB over
+    /// a handful of API/chat/tool turns.
     nonisolated static func effectiveMLXCacheLimit(
         dynamicLimit: Int,
-        configuredLimits: [Int?],
-        admittedCeiling: Int? = nil
+        configuredLimits: [Int?]
     ) -> Int {
         guard dynamicLimit > 0 else { return 0 }
-        if let admittedCeiling {
-            return max(dynamicLimit, admittedCeiling)
-        }
         guard let configuredLimit = configuredLimits.compactMap({ $0 }).min() else {
             return dynamicLimit
         }
         return min(dynamicLimit, max(0, configuredLimit))
+    }
+
+    /// Decode-time ceiling. Native MTP / affine DSV4 may reuse large
+    /// intermediates while a request is active, but the admitted ceiling is
+    /// never made the process's persistent freed-buffer cache policy.
+    nonisolated static func effectiveGenerationMLXCacheLimit(
+        persistentLimit: Int,
+        admittedMemoryLimit: Int,
+        requiresAdmittedCeiling: Bool
+    ) -> Int {
+        guard requiresAdmittedCeiling else { return max(0, persistentLimit) }
+        return max(max(0, persistentLimit), max(0, admittedMemoryLimit))
+    }
+
+    private func beginGenerationAllocatorWindowIfNeeded(
+        holder: SessionHolder,
+        requestStrategy: MLXLMCommon.DraftStrategy?
+    ) -> Bool {
+        let usesAdmittedCeiling = Self.requiresAdmittedMLXAllocatorCeiling(
+            isPlainDeepseekV4AffineJANG: holder.requiresAdmittedMLXAllocatorCeiling,
+            usesNativeMTP: requestStrategy?.usesNativeMTP == true
+        )
+        guard usesAdmittedCeiling else { return false }
+        admittedAllocatorGenerationCount += 1
+        Memory.cacheLimit = Self.effectiveGenerationMLXCacheLimit(
+            persistentLimit: mlxCacheLimit(),
+            admittedMemoryLimit: Memory.memoryLimit,
+            requiresAdmittedCeiling: true
+        )
+        return true
+    }
+
+    private func finishGenerationAllocatorWindowIfNeeded(_ active: Bool) {
+        guard active else { return }
+        admittedAllocatorGenerationCount = max(0, admittedAllocatorGenerationCount - 1)
+        guard admittedAllocatorGenerationCount == 0 else { return }
+        // Every producer has reached its engine-owned terminal fence before
+        // this wrapper completes. Drain once more, return only freed buffers,
+        // then restore the persistent user-visible ceiling. Resident weights,
+        // KV state and disk/SSM companion caches are untouched.
+        Stream.gpu.synchronize()
+        Memory.clearCache()
+        Memory.cacheLimit = mlxCacheLimit()
     }
 
     /// Flexible-mode resident-weights soft cap. Also read by
@@ -4076,12 +4116,11 @@ public actor ModelRuntime {
                     .applyAsCacheLimitInt(
                         physicalMemory: ProcessInfo.processInfo.physicalMemory
                     ),
+                // Store the load-time DSV4 fact. Native MTP is resolved per
+                // request so toggling MTP Off cannot keep using the enlarged
+                // request allocator window.
                 requiresAdmittedMLXAllocatorCeiling:
-                    Self.requiresAdmittedMLXAllocatorCeiling(
-                        isPlainDeepseekV4AffineJANG:
-                            loadBundleFacts.isPlainDeepseekV4AffineJANG,
-                        usesNativeMTP: mtpPlan.draftStrategy?.usesNativeMTP == true
-                    )
+                    loadBundleFacts.isPlainDeepseekV4AffineJANG
             )
 
             // Install the cache coordinator before the coalesced load task
@@ -4984,8 +5023,12 @@ public actor ModelRuntime {
         }
 
         let prepared: MLXBatchAdapter.PreparedStream
+        let requestStrategy = Self.requestDraftStrategy(holder.draftStrategy)
+        let usesGenerationAllocatorWindow = beginGenerationAllocatorWindowIfNeeded(
+            holder: holder,
+            requestStrategy: requestStrategy
+        )
         do {
-            let requestStrategy = Self.requestDraftStrategy(holder.draftStrategy)
             prepared = try await MLXBatchAdapter.generate(
                 modelName: modelName,
                 container: holder.container,
@@ -5009,6 +5052,7 @@ public actor ModelRuntime {
             }
             await ModelLease.shared.release(modelName)
             await scheduleIdleResidency(for: modelName)
+            finishGenerationAllocatorWindowIfNeeded(usesGenerationAllocatorWindow)
             throw error
         }
 
@@ -5028,6 +5072,7 @@ public actor ModelRuntime {
             } onCancel: {
                 innerProducer.cancel()
             }
+            finishGenerationAllocatorWindowIfNeeded(usesGenerationAllocatorWindow)
             await ModelLease.shared.release(modelName)
             await self.scheduleIdleResidency(for: modelName)
             self.clearGenerationTask(id: genID)
