@@ -291,14 +291,15 @@ public actor ModelRuntime {
         let nativeMTPReason: String?
         /// Numeric allocator-cache cap resolved from the user-visible
         /// memory-safety plan used for this exact load. `nil` means no numeric
-        /// cap; the family-specific uncapped requirement is tracked separately
+        /// cap; the decode-path-specific admitted-ceiling requirement is
+        /// tracked separately
         /// so ordinary models still use Osaurus's dynamic reuse heuristic.
         let allocatorCacheLimitBytes: Int?
-        /// Plain affine DSV4 requires MLX's admitted allocator ceiling rather
-        /// than Osaurus's generic weight-scaled reuse heuristic. Its routed
-        /// decode intermediates otherwise churn out of the allocator cache on
+        /// Some decode paths require MLX's already-admitted allocator ceiling
+        /// rather than Osaurus's generic weight-scaled reuse heuristic. Their
+        /// intermediates otherwise churn out of a tiny freed-buffer cache on
         /// every token even though RAM admission already accepted the model.
-        let requiresUncappedMLXAllocatorCache: Bool
+        let requiresAdmittedMLXAllocatorCeiling: Bool
         var cacheTopology: ModelCacheTopologySnapshot?
         init(
             name: String,
@@ -311,7 +312,7 @@ public actor ModelRuntime {
             nativeMTPStatus: String? = nil,
             nativeMTPReason: String? = nil,
             allocatorCacheLimitBytes: Int? = nil,
-            requiresUncappedMLXAllocatorCache: Bool = false
+            requiresAdmittedMLXAllocatorCeiling: Bool = false
         ) {
             self.name = name
             self.container = container
@@ -323,7 +324,7 @@ public actor ModelRuntime {
             self.nativeMTPStatus = nativeMTPStatus
             self.nativeMTPReason = nativeMTPReason
             self.allocatorCacheLimitBytes = allocatorCacheLimitBytes
-            self.requiresUncappedMLXAllocatorCache = requiresUncappedMLXAllocatorCache
+            self.requiresAdmittedMLXAllocatorCeiling = requiresAdmittedMLXAllocatorCeiling
         }
     }
 
@@ -2409,14 +2410,25 @@ public actor ModelRuntime {
         let byModel = max(totalWeights / 4, 1 * 1024 * 1024 * 1024)
         let bySystem = min(systemRAM / 8, 8 * 1024 * 1024 * 1024)
         let dynamicLimit = min(byModel, bySystem)
-        let uncappedLimit = modelCache.values.contains {
-            $0.requiresUncappedMLXAllocatorCache
+        let admittedCeiling = modelCache.values.contains {
+            $0.requiresAdmittedMLXAllocatorCeiling
         } ? max(dynamicLimit, Memory.memoryLimit) : nil
         return Self.effectiveMLXCacheLimit(
             dynamicLimit: dynamicLimit,
             configuredLimits: modelCache.values.map(\.allocatorCacheLimitBytes),
-            uncappedLimit: uncappedLimit
+            admittedCeiling: admittedCeiling
         )
+    }
+
+    /// Native MTP and plain affine DSV4 both keep large decode intermediates
+    /// live across repeated forwards. A tiny persistent MLX reuse cache makes
+    /// those buffers churn without lowering physical footprint. This decision
+    /// is based on the resolved runtime path, not a model-name allowlist.
+    nonisolated static func requiresAdmittedMLXAllocatorCeiling(
+        isPlainDeepseekV4AffineJANG: Bool,
+        usesNativeMTP: Bool
+    ) -> Bool {
+        isPlainDeepseekV4AffineJANG || usesNativeMTP
     }
 
     /// Keep Osaurus's weight-scaled reuse heuristic as a ceiling, but never
@@ -2426,11 +2438,11 @@ public actor ModelRuntime {
     nonisolated static func effectiveMLXCacheLimit(
         dynamicLimit: Int,
         configuredLimits: [Int?],
-        uncappedLimit: Int? = nil
+        admittedCeiling: Int? = nil
     ) -> Int {
         guard dynamicLimit > 0 else { return 0 }
-        if let uncappedLimit {
-            return max(dynamicLimit, uncappedLimit)
+        if let admittedCeiling {
+            return max(dynamicLimit, admittedCeiling)
         }
         guard let configuredLimit = configuredLimits.compactMap({ $0 }).min() else {
             return dynamicLimit
@@ -4064,8 +4076,12 @@ public actor ModelRuntime {
                     .applyAsCacheLimitInt(
                         physicalMemory: ProcessInfo.processInfo.physicalMemory
                     ),
-                requiresUncappedMLXAllocatorCache:
-                    loadBundleFacts.isPlainDeepseekV4AffineJANG
+                requiresAdmittedMLXAllocatorCeiling:
+                    Self.requiresAdmittedMLXAllocatorCeiling(
+                        isPlainDeepseekV4AffineJANG:
+                            loadBundleFacts.isPlainDeepseekV4AffineJANG,
+                        usesNativeMTP: mtpPlan.draftStrategy?.usesNativeMTP == true
+                    )
             )
 
             // Install the cache coordinator before the coalesced load task

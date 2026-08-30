@@ -33,7 +33,7 @@ struct ModelRuntimeRAMFeasibilityTests {
             ModelRuntime.effectiveMLXCacheLimit(
                 dynamicLimit: 1024 * mib,
                 configuredLimits: [nil],
-                uncappedLimit: 16 * 1024 * mib
+                admittedCeiling: 16 * 1024 * mib
             ) == 16 * 1024 * mib
         )
         #expect(
@@ -47,6 +47,28 @@ struct ModelRuntimeRAMFeasibilityTests {
                 dynamicLimit: 0,
                 configuredLimits: [128 * mib]
             ) == 0
+        )
+    }
+
+    @Test("Only decode paths that need large reusable intermediates use the admitted ceiling")
+    func admittedAllocatorCeilingIsDecodePathDriven() {
+        #expect(
+            ModelRuntime.requiresAdmittedMLXAllocatorCeiling(
+                isPlainDeepseekV4AffineJANG: false,
+                usesNativeMTP: false
+            ) == false
+        )
+        #expect(
+            ModelRuntime.requiresAdmittedMLXAllocatorCeiling(
+                isPlainDeepseekV4AffineJANG: true,
+                usesNativeMTP: false
+            )
+        )
+        #expect(
+            ModelRuntime.requiresAdmittedMLXAllocatorCeiling(
+                isPlainDeepseekV4AffineJANG: false,
+                usesNativeMTP: true
+            )
         )
     }
 
