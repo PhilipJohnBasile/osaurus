@@ -17,18 +17,23 @@ reuse ceiling after load.
 
 | Persistent reuse ceiling | Decode | Peak physical footprint | MTP result |
 | --- | ---: | ---: | --- |
-| 128 MiB | 50.3 tok/s | 50,371 MiB | D3, 222/223 D3 accepts, zero AR fallback |
-| admitted 70% ceiling | 67.9 tok/s | 51,469 MiB | D3, 173/173 D3 accepts, zero AR fallback |
+| 128 MiB | 51.5 tok/s | 50,017 MiB | D3, 173/173 D3 accepts, zero AR fallback |
+| admitted 70% ceiling | 66.1 tok/s | 51,417 MiB | D3, 173/173 D3 accepts, zero AR fallback |
 
-The admitted-ceiling row was 35% faster while its peak physical footprint was
-only 1,098 MiB higher. Both rows recorded disk-L2 and SSM companion hits. The
+The admitted-ceiling row was 28% faster while its peak physical footprint was
+only 1,400 MiB higher. Both rows recorded disk-L2 and SSM companion hits. The
 Flash-Next PLE reader remained SSD-backed through `pread` with `F_NOCACHE`.
+Both full outputs were byte-identical with SHA-256
+`d4bcb44843ae465851740a4d3aaa34d91d1012271de0f7f0ceb87a980910c655`.
+The Release `RunBench` binary SHA-256 was
+`6d54ee3fac9c0066a0893118d1e9c1a435b6000b1f4986f7d4a23a6422f8f596`
+at vMLX head `fe95824d84e34e38090a3df5610aaa3850ec2902`.
 
 Raw logs:
 
 ```text
-/Users/eric/vmlx-private-evidence/qwen38-auto-d3-20260830/2L-pr368-d3-persistent128m-count200.log
-/Users/eric/vmlx-private-evidence/qwen38-auto-d3-20260830/2L-pr368-d3-persistent-admitted-count200.log
+/Users/eric/vmlx-private-evidence/qwen38-auto-d3-20260830/2L-pr368-final-persistent128m-count200-spaces.log
+/Users/eric/vmlx-private-evidence/qwen38-auto-d3-20260830/2L-pr368-final-persistent-admitted-count200-spaces.log
 ```
 
 ## Source contract
