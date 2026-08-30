@@ -46,19 +46,65 @@ struct ModelRuntimeRAMFeasibilityTests {
     @Test("Admitted allocator ceiling is request-scoped")
     func admittedAllocatorCeilingIsRequestScoped() {
         let mib = 1024 * 1024
+        let gib = 1024 * mib
         #expect(
             ModelRuntime.effectiveGenerationMLXCacheLimit(
                 persistentLimit: 128 * mib,
                 admittedMemoryLimit: 16 * 1024 * mib,
+                modelWeightsBytes: Int64(21 * gib),
+                physicalMemoryBytes: UInt64(128 * gib),
                 requiresAdmittedCeiling: true
-            ) == 16 * 1024 * mib
+            ) == 7 * gib
         )
         #expect(
             ModelRuntime.effectiveGenerationMLXCacheLimit(
                 persistentLimit: 128 * mib,
                 admittedMemoryLimit: 16 * 1024 * mib,
+                modelWeightsBytes: Int64(21 * gib),
+                physicalMemoryBytes: UInt64(128 * gib),
                 requiresAdmittedCeiling: false
             ) == 128 * mib
+        )
+    }
+
+    @Test("Active allocator reuse stays proportional across Mac sizes")
+    func activeAllocatorReuseStaysProportional() {
+        let gib = 1024 * 1024 * 1024
+
+        // A small Mac cannot turn all otherwise-admitted RAM into freed
+        // buffers, even for a model whose weight-scaled allowance is larger.
+        #expect(
+            ModelRuntime.effectiveGenerationMLXCacheLimit(
+                persistentLimit: 128 * 1024 * 1024,
+                admittedMemoryLimit: 11 * gib,
+                modelWeightsBytes: Int64(8 * gib),
+                physicalMemoryBytes: UInt64(16 * gib),
+                requiresAdmittedCeiling: true
+            ) == 2 * gib
+        )
+
+        // A very large model on a large Mac is still capped at 16 GiB rather
+        // than inheriting the whole 70%-of-RAM admission budget.
+        #expect(
+            ModelRuntime.effectiveGenerationMLXCacheLimit(
+                persistentLimit: 128 * 1024 * 1024,
+                admittedMemoryLimit: 96 * gib,
+                modelWeightsBytes: Int64(95 * gib),
+                physicalMemoryBytes: UInt64(128 * gib),
+                requiresAdmittedCeiling: true
+            ) == 16 * gib
+        )
+
+        // The admission result remains a hard upper bound on constrained
+        // machines and an explicit larger persistent cap is never reduced.
+        #expect(
+            ModelRuntime.effectiveGenerationMLXCacheLimit(
+                persistentLimit: 4 * gib,
+                admittedMemoryLimit: 3 * gib,
+                modelWeightsBytes: Int64(21 * gib),
+                physicalMemoryBytes: UInt64(128 * gib),
+                requiresAdmittedCeiling: true
+            ) == 3 * gib
         )
     }
 

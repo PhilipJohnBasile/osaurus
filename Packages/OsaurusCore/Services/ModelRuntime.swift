@@ -2448,15 +2448,37 @@ public actor ModelRuntime {
     }
 
     /// Decode-time ceiling. Native MTP / affine DSV4 may reuse large
-    /// intermediates while a request is active, but the admitted ceiling is
-    /// never made the process's persistent freed-buffer cache policy.
+    /// intermediates while a request is active, but the allocator pool must
+    /// never be allowed to consume the entire load-admission budget. That
+    /// budget includes weights, KV, framework state and OS headroom; treating
+    /// it as a freed-buffer allowance let a 21 GiB Qwen bundle peak near
+    /// 91 GiB during richer chat/tool turns.
+    ///
+    /// The active reuse allowance is therefore bounded twice:
+    /// - one third of the resident model's on-disk weight bytes (activation
+    ///   demand scales with model shape, not total machine RAM); and
+    /// - one eighth of physical RAM, capped at 16 GiB (small Macs retain
+    ///   proportionally less, while large Macs do not turn spare RAM into an
+    ///   unbounded allocator pool).
+    ///
+    /// The already-admitted memory limit remains the final hard ceiling, and
+    /// the user-visible persistent cap remains the floor so this helper never
+    /// lowers an explicit larger setting.
     nonisolated static func effectiveGenerationMLXCacheLimit(
         persistentLimit: Int,
         admittedMemoryLimit: Int,
+        modelWeightsBytes: Int64,
+        physicalMemoryBytes: UInt64,
         requiresAdmittedCeiling: Bool
     ) -> Int {
         guard requiresAdmittedCeiling else { return max(0, persistentLimit) }
-        return max(max(0, persistentLimit), max(0, admittedMemoryLimit))
+        let gib = Int64(1024 * 1024 * 1024)
+        let weightScaled = max(gib, max(0, modelWeightsBytes) / 3)
+        let systemScaled = min(Int64(16) * gib, Int64(physicalMemoryBytes / 8))
+        let boundedReuse = max(0, min(weightScaled, systemScaled))
+        let admitted = max(0, Int64(admittedMemoryLimit))
+        let persistent = max(0, Int64(persistentLimit))
+        return Int(min(Int64(Int.max), min(admitted, max(persistent, boundedReuse))))
     }
 
     private func beginGenerationAllocatorWindowIfNeeded(
@@ -2472,6 +2494,8 @@ public actor ModelRuntime {
         Memory.cacheLimit = Self.effectiveGenerationMLXCacheLimit(
             persistentLimit: mlxCacheLimit(),
             admittedMemoryLimit: Memory.memoryLimit,
+            modelWeightsBytes: holder.weightsSizeBytes,
+            physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory,
             requiresAdmittedCeiling: true
         )
         return true
