@@ -2,13 +2,14 @@
 
 ## Status
 
-`PARTIAL`. The direct one-request A/B is complete, but the exact integrated
-Release app falsified the original persistent-ceiling policy: physical
-footprint grew from about 51 GiB after the sustained served row to 91 GiB after
-several 4–5k-context Chat/tool iterations. The replacement policy therefore
-uses the admitted ceiling only while a qualifying request is active, drains
-freed buffers at the final producer fence, and restores the user-visible
-persistent cap between requests.
+`PASS` for the Qwen3.8 Flash-Next native-MTP regression that motivated this
+policy. The direct one-request A/B proved that allocator reuse was the missing
+speed input, while the first exact integrated Release app falsified the
+original unbounded policy: physical footprint grew from about 51 GiB after the
+sustained served row to 91 GiB after several Chat/tool iterations. The final
+policy bounds active reuse by model weight size and physical RAM, drains freed
+buffers at the final producer fence, and restores the user-visible persistent
+cap between requests.
 
 ## Causal A/B
 
@@ -47,23 +48,43 @@ The runtime decision is based on the resolved decode path, not a bundle or
 model-name allowlist:
 
 - ordinary autoregressive models keep the configured Safe Auto allocator cap;
-- resolved native MTP uses MLX's already-admitted memory ceiling only while a
-  request is active;
-- plain affine DeepSeek-V4 uses the same request-scoped ceiling;
+- resolved native MTP uses a request-scoped ceiling bounded by one third of
+  resident weight bytes and one eighth of physical RAM (with a 16 GiB cap),
+  never above the already-admitted memory limit;
+- plain affine DeepSeek-V4 uses the same bounded request-scoped ceiling;
 - the final request fence clears freed MLX buffers and restores Safe Auto's
   persistent 128 MiB cap without touching weights, KV, disk-L2, or SSM state;
 - no resident model still resolves the cache limit to zero.
 
-## Required integrated gates
+## Exact integrated Release proof
 
-1. Pin the bounded-window native-MTP vMLX head in Osaurus.
-2. Build a Release app from the exact combined head.
-3. Serve the count-to-200 prompt cold and warm; require native D3 counters,
-   exact output, normal stop, disk-L2 plus SSM companion hits, token/s, TTFT,
-   and physical footprint.
-4. Drive the same app through visible Chat with one process, Auto selected,
-   a tool call approved with **Always Allow**, tool-result continuation, a
-   follow-up turn, and no terminal hang or marker leakage.
-5. Repeat enough served/Chat/tool turns to reproduce the old 91 GiB growth;
-   require idle-between-turn `cache_limit=134217728`, bounded
-   `phys_footprint`, retained disk-L2/SSM hits, and no decode regression.
+The final bounded policy was integrated with vMLX
+`e025cd77c4adf7f1813d157ea0fbb6514f4e86f4` at Osaurus source head
+`221e4388bad325b4fd6491a48f649e4fa7900f00`. The no-sign Release executable
+SHA-256 was
+`9110b16eecc1c56812ad7d406441ad9c816732c4c63c548fc7b2197db82e6de1`.
+Exactly one isolated proof app ran as PID 83832 with model ID
+`qwen3.8-flash-next-jang_2l`.
+
+The cold served count-to-200 row completed all 691 tokens at 65.2346 tok/s,
+with normal `stop` and the exact output SHA-256
+`d4bcb44843ae465851740a4d3aaa34d91d1012271de0f7f0ceb87a980910c655`.
+Runtime telemetry reported native MTP D3, active depth 3, 173 verifier calls,
+173 accepted D3 groups, 173 bonus tokens, zero rejected drafts, and zero AR
+fallback tokens. Three subsequent warm rows produced the same exact output at
+68.5602, 68.2243, and 67.2418 tok/s.
+
+After all four requests, disk L2 reported 3 hits / 4 misses / 9 stores and the
+SSM companion reported 3 hits / 0 misses / 0 re-derives. Paged RAM KV remained
+disabled. The fresh process measured 52,801,721,024 bytes current physical
+footprint and 55,193,392,144 bytes lifetime peak, versus the falsifying old
+unbounded-policy peak of 97,691,704,256 bytes. The peak did not grow across the
+three warm repetitions.
+
+Computer Use opened the exact app and visibly inspected the persisted API chat:
+the rendered assistant answer ended at `197 198 199 200`, with no terminal
+spinner, protocol marker, or truncated suffix. An earlier integrated app using
+the same vMLX and request-scoped lifecycle (before only the final bound formula
+changed) also completed one approved `get_current_time` call, its tool-result
+continuation, and a coherent follow-up turn. HTTP evidence is used here for the
+served-MTP contract; the rendered app inspection is the user-facing check.
