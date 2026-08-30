@@ -1846,6 +1846,7 @@ struct RuntimePolicySourceTests {
         #expect(helper.contains("func cancelAll()"))
         #expect(helper.contains("task.cancel()"))
         #expect(handler.contains("private let requestTasks = HTTPRequestTaskRegistry()"))
+        #expect(handler.contains("\"inference_activity\": inferenceActivities.map"))
         #expect(handler.contains("requestTasks.cancelAll()"))
         #expect(handler.contains("private func runRequestTask("))
         #expect(handler.contains("requestTasks.insert(id: id, task: task)"))
@@ -1869,10 +1870,16 @@ struct RuntimePolicySourceTests {
         #expect(handler.contains("if disconnected.value { throw CancellationError() }"))
         #expect(handler.contains("let channelClosed = SendableBool(false)"))
         #expect(handler.contains("let wasResidentBeforeStream = await ModelRuntime.shared.isResident(name: model)"))
-        #expect(handler.contains("let responseFinished = SendableBool(false)"))
-        #expect(handler.contains("let wasResidentBeforeComplete = SendableBool(false)"))
-        #expect(handler.contains("await ModelRuntime.shared.cancelGeneration(name: model)"))
-        #expect(handler.contains("wasResidentBeforeComplete.value = await ModelRuntime.shared.isResident(name: model)"))
+        #expect(
+            !handler.contains("ModelRuntime.shared.cancelGeneration(name:"),
+            "A disconnected HTTP client must not cancel every concurrent request sharing its model"
+        )
+        #expect(
+            handler.contains(
+                "channelCloseFuture.snapshot()?.whenComplete { _ in\n            task.cancel()"
+            ),
+            "Disconnect cancellation must stay scoped to the exact route task"
+        )
         #expect(
             handler.contains(
                 "try Task.checkCancellation()\n                    var resp = try await chatEngine.completeChat(request: enrichedReq)"

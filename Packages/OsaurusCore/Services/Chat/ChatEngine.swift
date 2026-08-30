@@ -17,6 +17,9 @@ actor ChatEngine: Sendable, ChatEngineProtocol {
 
     /// Source of the inference (for logging purposes)
     private var inferenceSource: InferenceSource = .httpAPI
+    /// Display-only producer attribution. Residency continues to use
+    /// `inferenceSource`; delegated helpers are chat-owned but shown as Agent.
+    private let activitySource: InferenceSource?
 
     init(
         services: [ModelService] = [FoundationModelService(), ClaudeCodeService(), MLXService()],
@@ -40,7 +43,8 @@ actor ChatEngine: Sendable, ChatEngineProtocol {
                     ModelOptionsStore.shared.loadOptions(for: modelId)
                 }
             },
-        source: InferenceSource = .httpAPI
+        source: InferenceSource = .httpAPI,
+        activitySource: InferenceSource? = nil
     ) {
         self.services = services
         self.installedModelsProvider = installedModelsProvider
@@ -48,6 +52,7 @@ actor ChatEngine: Sendable, ChatEngineProtocol {
         self.reasoningCapabilityProvider = reasoningCapabilityProvider
         self.agentModelOptionsProvider = agentModelOptionsProvider
         self.inferenceSource = source
+        self.activitySource = activitySource
     }
     /// Errors thrown by `ChatEngine` that carry a classification so the
     /// HTTP layer can emit a proper 4xx/5xx instead of a generic 500.
@@ -249,6 +254,7 @@ actor ChatEngine: Sendable, ChatEngineProtocol {
             jsonMode: isJSONObject,
             modelOptions: modelOptions,
             sessionId: request.session_id,
+            activitySource: activitySource,
             ttftTrace: trace,
             idempotencyKey: request.idempotencyKey,
             runAsRemoteAgent: request.runAsRemoteAgent,

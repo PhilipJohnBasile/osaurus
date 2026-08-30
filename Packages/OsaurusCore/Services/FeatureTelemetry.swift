@@ -502,10 +502,15 @@ enum FeatureTelemetry {
     nonisolated static func sourceToken(_ source: InferenceSource) -> String {
         switch source {
         case .chatUI: return "chat_ui"
+        case .agent: return "agent"
         case .httpAPI: return "http_api"
         case .plugin: return "plugin"
         case .p2p: return "p2p"
         case .scheduled: return "scheduled"
+        case .channel: return "channel"
+        case .schedule: return "schedule"
+        case .watcher: return "watcher"
+        case .selfSchedule: return "self_schedule"
         }
     }
 

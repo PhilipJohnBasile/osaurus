@@ -47,7 +47,10 @@ enum GenerationEventMapper {
         /// reasoning, tool call, or tool-call progress). This is the
         /// boundary the swap-attribution window closes on: prefill and
         /// TTFT work happen before it, decode after.
-        onFirstModelOutput: @escaping @Sendable () -> Void = {}
+        onFirstModelOutput: @escaping @Sendable () -> Void = {},
+        /// Fired when vmlx emits its authoritative terminal stats. Cache
+        /// persistence may still be draining after this boundary.
+        onCompletionInfo: @escaping @Sendable () -> Void = {}
     ) -> AsyncThrowingStream<ModelRuntimeEvent, Error> {
         let (stream, continuation) = AsyncThrowingStream<ModelRuntimeEvent, Error>.makeStream()
         let task = Task {
@@ -97,6 +100,7 @@ enum GenerationEventMapper {
 
             for await event in events {
                 if case .info(let info) = event {
+                    onCompletionInfo()
                     sawCompletionInfo = true
                     terminalInfoAt = CFAbsoluteTimeGetCurrent()
                     finalTokenCount = info.generationTokenCount

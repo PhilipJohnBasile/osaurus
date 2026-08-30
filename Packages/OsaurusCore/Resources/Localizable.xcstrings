@@ -1,6 +1,78 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Generating": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Generierung" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "생성 중" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Генерация" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在生成" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "正在生成" } }
+      }
+    },
+    "Inference now": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aktive Inferenz" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "현재 추론" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Текущая генерация" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前推理" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "目前推理" } }
+      }
+    },
+    "Idle — no active or queued inference": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Inaktiv — keine aktive oder wartende Inferenz" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "유휴 — 활성 또는 대기 중인 추론 없음" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Ожидание — нет активных запросов или очереди" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "空闲 — 没有活动或排队的推理" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "閒置 — 沒有執行中或排隊的推理" } }
+      }
+    },
+    "Loading model": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Modell wird geladen" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "모델 로드 중" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Загрузка модели" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在加载模型" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "正在載入模型" } }
+      }
+    },
+    "Processing prompt": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Eingabe wird verarbeitet" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "프롬프트 처리 중" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Обработка запроса" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在处理提示词" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "正在處理提示詞" } }
+      }
+    },
+    "Saving cache": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Cache wird gespeichert" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "캐시 저장 중" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Сохранение кэша" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在保存缓存" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "正在儲存快取" } }
+      }
+    },
+    "Stopping…": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Wird gestoppt…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "중지 중…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Остановка…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在停止…" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "正在停止…" } }
+      }
+    },
+    "Unloading model": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Modell wird entladen" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "모델 언로드 중" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Выгрузка модели" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在卸载模型" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "正在卸載模型" } }
+      }
+    },
     "Claude Code": {
     },
     "Claude Code couldn't complete the turn: %@": {

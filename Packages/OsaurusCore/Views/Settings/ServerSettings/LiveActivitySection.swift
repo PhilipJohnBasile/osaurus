@@ -13,6 +13,7 @@ struct LiveActivitySection: View {
     @State private var snapshot: BatchDiagnosticsSnapshot?
     @State private var effectiveGeneration:
         [String: MLXBatchAdapter.EffectiveGenerationSettings] = [:]
+    @State private var inferenceActivities: [InferenceActivitySnapshot] = []
     @State private var refreshTimer: Timer?
     @Environment(\.theme) private var theme
 
@@ -26,6 +27,9 @@ struct LiveActivitySection: View {
         ) {
             BatchDiagnosticsView(snapshot: snapshot)
 
+            SettingsDivider()
+            inferenceActivityReadout
+
             if !effectiveGeneration.isEmpty {
                 SettingsDivider()
                 effectiveSamplerReadout
@@ -33,6 +37,52 @@ struct LiveActivitySection: View {
         }
         .onAppear { start() }
         .onDisappear { stop() }
+    }
+
+    private var inferenceActivityReadout: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L("Inference now"))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(theme.secondaryText)
+
+            if inferenceActivities.isEmpty {
+                Text(L("Idle — no active or queued inference"))
+                    .font(.system(size: 10))
+                    .foregroundColor(theme.tertiaryText)
+            }
+
+            ForEach(inferenceActivities) { activity in
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(activity.modelName)
+                            .font(.system(size: 11, weight: .medium))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text(
+                            "\(activity.phase.displayName) · \(activity.source.displayName) · "
+                                + "\(Self.shortID(activity.id))"
+                        )
+                        .font(.system(size: 10).monospacedDigit())
+                        .foregroundColor(theme.tertiaryText)
+                        .textSelection(.enabled)
+                    }
+                    Spacer(minLength: 8)
+                    Button(activity.cancellationRequested ? L("Stopping…") : L("Stop")) {
+                        Task {
+                            _ = await InferenceActivityRegistry.shared.cancel(id: activity.id)
+                            await refreshActivities()
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(!activity.canCancel || activity.cancellationRequested)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private static func shortID(_ id: UUID) -> String {
+        String(id.uuidString.prefix(8)).lowercased()
     }
 
     /// The sampler the model ACTUALLY ran with, per model, after every
@@ -141,6 +191,12 @@ struct LiveActivitySection: View {
             snapshot = await MLXBatchAdapter.snapshotDiagnostics()
             effectiveGeneration =
                 await MLXBatchAdapter.lastEffectiveGenerationSettingsSnapshot()
+            await refreshActivities()
         }
+    }
+
+    @MainActor
+    private func refreshActivities() async {
+        inferenceActivities = await InferenceActivityRegistry.shared.snapshot()
     }
 }

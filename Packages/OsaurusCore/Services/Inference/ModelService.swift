@@ -53,6 +53,14 @@ struct GenerationParameters: Sendable {
     /// MLX cache layer — vmlx's `CacheCoordinator` handles prefix reuse
     /// autonomously via content addressing.
     let sessionId: String?
+    /// Stable identity for one local inference step. Live Activity and
+    /// cancellation use this instead of a model name so disconnecting one
+    /// client cannot stop unrelated requests sharing the same model.
+    let activityID: UUID
+    /// User-visible trigger attribution. Separate from `requestSource`, which
+    /// also controls residency ownership and therefore must remain `.chatUI`
+    /// for delegated handoff/reload semantics.
+    let activitySource: RequestSource
     /// Optional TTFT trace for diagnostic timing instrumentation.
     let ttftTrace: TTFTTrace?
     /// Stable per-logical-step idempotency token. Forwarded only to the
@@ -127,6 +135,8 @@ struct GenerationParameters: Sendable {
         jsonMode: Bool = false,
         modelOptions: [String: ModelOptionValue] = [:],
         sessionId: String? = nil,
+        activityID: UUID = UUID(),
+        activitySource: RequestSource? = nil,
         ttftTrace: TTFTTrace? = nil,
         idempotencyKey: String? = nil,
         runAsRemoteAgent: Bool = false,
@@ -153,6 +163,8 @@ struct GenerationParameters: Sendable {
         self.jsonMode = jsonMode
         self.modelOptions = modelOptions
         self.sessionId = sessionId
+        self.activityID = activityID
+        self.activitySource = activitySource ?? requestSource
         self.ttftTrace = ttftTrace
         self.idempotencyKey = idempotencyKey
         self.runAsRemoteAgent = runAsRemoteAgent

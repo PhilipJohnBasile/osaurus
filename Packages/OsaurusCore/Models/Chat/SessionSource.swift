@@ -151,7 +151,7 @@ extension SessionSource {
         // Imported sessions only reach inference when the user continues
         // them in the chat window, so they carry chat-UI intent.
         //
-        // Delegated sessions also carry chat-UI intent: the orchestrating
+        // Delegated sessions carry chat-UI residency intent: the orchestrating
         // chat turn is synchronously (or via report-back) waiting on them,
         // and the parent's `ChatResidencyHandoff` restore must be able to
         // reclaim the helper's model afterwards — chat-owned residency is
@@ -160,7 +160,10 @@ extension SessionSource {
         case .chat, .imported, .delegation: return .chatUI
         case .http: return .httpAPI
         case .plugin: return .plugin
-        case .channel, .schedule, .watcher, .selfSchedule: return .scheduled
+        case .channel: return .channel
+        case .schedule: return .schedule
+        case .watcher: return .watcher
+        case .selfSchedule: return .selfSchedule
         }
     }
 }

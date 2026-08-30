@@ -930,6 +930,7 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
             let lastMemorySafetyLoadDecision =
                 await ModelRuntime.shared.lastMemorySafetyLoadDecisionSnapshot()
             let batchDiagnostics = await MLXBatchAdapter.snapshotDiagnostics()
+            let inferenceActivities = await InferenceActivityRegistry.shared.snapshot()
             let turboQuantTransitions =
                 await MLXBatchAdapter.turboQuantCacheTransitionsSnapshot()
             let lastEffectiveGenerationSettings =
@@ -1142,6 +1143,17 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
                         memorySafetyPlan.cache.defaultMaxKVSize as Any? ?? NSNull(),
                 ] as [String: Any],
                 "storage_locations": Self.storageLocationsJSONObject(),
+                "inference_activity": inferenceActivities.map { activity in
+                    [
+                        "id": activity.id.uuidString.lowercased(),
+                        "model": activity.modelName,
+                        "source": activity.source.rawValue,
+                        "phase": activity.phase.rawValue,
+                        "started_at": activity.startedAt.ISO8601Format(),
+                        "cancellation_requested": activity.cancellationRequested,
+                        "can_cancel": activity.canCancel,
+                    ] as [String: Any]
+                },
             ]
             if let batchDiagnostics {
                 obj["batch_diagnostics"] =
@@ -5280,16 +5292,13 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
 
         hop { writerBound.value.writeHeaders(ctx.value, extraHeaders: cors) }
 
-        // The model name isn't known until after agent resolution, so the
-        // close hook reads it from a lock-protected box: a client hangup
-        // flips `disconnected` and cancels the resolved model's generation.
+        // Closing this channel cancels the exact `runRequestTask` below. The
+        // stream termination handler then cancels its exact ModelRuntime
+        // wrapper. Never cancel by model name here: concurrent chat/API work
+        // may legitimately share the same resident model.
         let disconnected = SendableBool(false)
-        let cancelModelBox = SendableStringBox()
         context.channel.closeFuture.whenComplete { _ in
             disconnected.value = true
-            if let m = cancelModelBox.value {
-                Task { await ModelRuntime.shared.cancelGeneration(name: m) }
-            }
         }
         // Billing dedupe base for Router-bound loop steps: header-supplied or
         // synthesized. Each loop iteration derives a per-step key from it.
@@ -5326,7 +5335,6 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
             } else {
                 model = req.model
             }
-            cancelModelBox.value = model
 
             // No model on the request and none resolvable for the agent: fail
             // fast with an in-band SSE error (the 200 head is already on the
@@ -8036,7 +8044,7 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
             let writer = SSEResponseWriter()
             let writerBound = NIOLoopBound(writer, eventLoop: loop)
             hop { writerBound.value.writeHeaders(ctx.value, extraHeaders: cors) }
-            let disconnected = installStreamingDisconnectHook(context: context, model: model)
+            let disconnected = installStreamingDisconnectHook(context: context)
             let keepaliveTask = Self.startSSEKeepalive(
                 writer: writerBound,
                 channel: context.channel,
@@ -8915,16 +8923,6 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
             let logMaxTokens = req.resolvedMaxTokens
             let logSelf = self
             let responseFinished = SendableBool(false)
-            let wasResidentBeforeComplete = SendableBool(false)
-            context.channel.closeFuture.whenComplete { _ in
-                guard !responseFinished.value else { return }
-                Task {
-                    await ModelRuntime.shared.cancelGeneration(name: model)
-                    if !wasResidentBeforeComplete.value {
-                        await ModelRuntime.shared.unload(name: model)
-                    }
-                }
-            }
             runRequestTask(priority: .userInitiated) {
                 defer { HTTPInferenceAdmission.shared.release() }
                 // Same menu-bar "generating" dot (non-streaming path).
@@ -8932,7 +8930,6 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
                 defer { ServerController.signalGenerationEnd() }
                 do {
                     httpTrace.mark("http_task_start")
-                    wasResidentBeforeComplete.value = await ModelRuntime.shared.isResident(name: model)
                     let chatEngine = self.chatEngine
                     let enrichedReq = req
                     httpTrace.mark("http_context_passthrough_done")
@@ -9169,7 +9166,7 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
         let logTemperature = req.temperature
         let logMaxTokens = req.resolvedMaxTokens
         let logSelf = self
-        let disconnected = installStreamingDisconnectHook(context: context, model: req.model)
+        let disconnected = installStreamingDisconnectHook(context: context)
         runRequestTask(priority: .userInitiated) {
             defer { admissionToken.release() }
             let wasResidentBeforeStream = await ModelRuntime.shared.isResident(name: req.model)
@@ -9619,7 +9616,7 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
         let logTemperature = chatRequest.temperature
         let logMaxTokens = chatRequest.max_tokens
         let logSelf = self
-        let disconnected = installStreamingDisconnectHook(context: context, model: chatRequest.model)
+        let disconnected = installStreamingDisconnectHook(context: context)
         runRequestTask(priority: .userInitiated) {
             defer { admissionToken.release() }
             do {
@@ -9886,15 +9883,14 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
     /// version for the Anthropic / Responses / Ollama streamers. The streaming
     /// loop must poll the flag and `throw CancellationError()` when it's set.
     private func installStreamingDisconnectHook(
-        context: ChannelHandlerContext,
-        model: String
+        context: ChannelHandlerContext
     ) -> SendableBool {
         let disconnected = SendableBool(false)
         context.channel.closeFuture.whenComplete { _ in
             disconnected.value = true
-            // Cancel decode on hangup so the GPU isn't left generating into a
-            // closed socket. Safe/no-op if generation already finished.
-            Task { await ModelRuntime.shared.cancelGeneration(name: model) }
+            // `runRequestTask` is registered on this same close future and
+            // cancels the route task. AsyncStream termination propagates that
+            // cancellation to the exact ModelRuntime generation wrapper.
         }
         return disconnected
     }
@@ -11263,7 +11259,7 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
         let logRequestBody = requestBodyString
         let logModel = model
         let logSelf = self
-        let disconnected = installStreamingDisconnectHook(context: context, model: model)
+        let disconnected = installStreamingDisconnectHook(context: context)
 
         runRequestTask(priority: .userInitiated) {
             defer { admissionToken.release() }
@@ -12074,7 +12070,7 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
         // the concurrent closures that read/mutate the flag.
         let messageItemOpen = AtomicBoolBox()
         let outputText = LockedStringAccumulator()
-        let disconnected = installStreamingDisconnectHook(context: context, model: model)
+        let disconnected = installStreamingDisconnectHook(context: context)
 
         runRequestTask(priority: .userInitiated) {
             defer { admissionToken.release() }
