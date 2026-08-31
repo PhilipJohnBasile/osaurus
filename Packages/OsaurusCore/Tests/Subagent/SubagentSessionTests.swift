@@ -431,7 +431,7 @@ struct SubagentSessionTests {
             return
         }
         let held = try #require(
-            SubagentSession.holdDurableChild(
+            try SubagentSession.holdDurableChild(
                 prepared,
                 recorder: recorder
             )
@@ -481,7 +481,7 @@ struct SubagentSessionTests {
             return
         }
         let held = try #require(
-            SubagentSession.holdDurableChild(
+            try SubagentSession.holdDurableChild(
                 prepared,
                 recorder: recorder
             )
@@ -527,7 +527,7 @@ struct SubagentSessionTests {
             return
         }
         let held = try #require(
-            SubagentSession.holdDurableChild(
+            try SubagentSession.holdDurableChild(
                 prepared,
                 recorder: recorder
             )
