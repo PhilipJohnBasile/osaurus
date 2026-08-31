@@ -624,6 +624,10 @@ final class ChatSession: ObservableObject {
     private var currentTask: Task<Void, Never>?
     private var activeRunId: UUID?
     private var activeRunContext: RunContext?
+    private var activeRunOwnsDurableLifecycle = false
+    /// Test-replaceable persistence sink. A prebound background run remains
+    /// owned by `BackgroundTaskManager`; direct Chat uses this recorder.
+    var runLifecycleRecorder: any RunLifecycleRecording = SchedulerRunLifecycleRecorder.shared
     /// Outer task that parks a send behind an in-flight model-switch/warm-up
     /// handshake. Retaining it is required for lifecycle cancellation: a
     /// fire-and-forget task can otherwise resume after Stop, reset, or a
@@ -753,6 +757,14 @@ final class ChatSession: ObservableObject {
     #endif
 
     init() {
+        #if DEBUG
+            let testEnvironment = ProcessInfo.processInfo.environment
+            if testEnvironment["XCTestBundlePath"] != nil
+                || testEnvironment["XCTestConfigurationFilePath"] != nil
+            {
+                runLifecycleRecorder = DiscardingRunLifecycleRecorder.shared
+            }
+        #endif
         // Warm the agent-secret account memo off the main thread before the
         // first preview compose reads it synchronously — the Keychain
         // enumeration it performs has otherwise hung the UI on chat open.
@@ -2407,11 +2419,31 @@ final class ChatSession: ObservableObject {
         promptQueue.drainAll()
         stopRequested = true
         let task = currentTask
+        let ownedDurableRunId = activeRunOwnsDurableLifecycle ? activeRunId : nil
         task?.cancel()
         if let runId = activeRunId {
             finalizeRun(runId: runId, persistConversationArtifacts: false)
         } else {
             completeRunCleanup()
+        }
+        if let ownedDurableRunId {
+            let recorder = runLifecycleRecorder
+            Task { @MainActor in
+                _ = await task?.value
+                do {
+                    try recorder.end(
+                        RunLifecycleTerminalReceipt(
+                            runId: ownedDurableRunId,
+                            status: .cancelled
+                        )
+                    )
+                } catch {
+                    print(
+                        "[ChatSession] durable cancellation failed for "
+                            + "\(ownedDurableRunId): \(error)"
+                    )
+                }
+            }
         }
         // A user Stop that cancels the send before the run task appended its
         // assistant turn (the pre-send handshake window, or simply a Stop
@@ -3850,9 +3882,14 @@ final class ChatSession: ObservableObject {
         }
     }
 
-    private func beginRun(_ runId: UUID, context: RunContext) {
+    private func beginRun(
+        _ runId: UUID,
+        context: RunContext,
+        ownsDurableLifecycle: Bool
+    ) {
         activeRunId = runId
         activeRunContext = context
+        activeRunOwnsDurableLifecycle = ownsDurableLifecycle
     }
 
     /// Best-effort estimate of the execution mode the next send will use.
@@ -4273,7 +4310,21 @@ final class ChatSession: ObservableObject {
         }
 
         let context = activeRunContext
+        let ownsDurableLifecycle = activeRunOwnsDurableLifecycle
         let runCompletedCleanly = !stopRequested && lastStreamError == nil
+        let durableTerminalStatus: AgentRunStatus?
+        if stopRequested {
+            // `stop()` waits for the cancelled task to unwind before writing
+            // the terminal receipt, so cleanup ownership has actually settled.
+            durableTerminalStatus = nil
+        } else if !persistConversationArtifacts {
+            durableTerminalStatus = .cancelled
+        } else if lastStreamError != nil {
+            durableTerminalStatus = .error
+        } else {
+            durableTerminalStatus = .success
+        }
+        let durableTerminalError = lastStreamError
 
         // A user Stop leaves the engine reporting its own natural `stop`, so the
         // persisted turn was indistinguishable from one that finished on its own
@@ -4293,7 +4344,22 @@ final class ChatSession: ObservableObject {
 
         activeRunId = nil
         activeRunContext = nil
+        activeRunOwnsDurableLifecycle = false
         completeRunCleanup()
+
+        if ownsDurableLifecycle, let durableTerminalStatus {
+            do {
+                try runLifecycleRecorder.end(
+                    RunLifecycleTerminalReceipt(
+                        runId: runId,
+                        status: durableTerminalStatus,
+                        error: durableTerminalError
+                    )
+                )
+            } catch {
+                print("[ChatSession] durable terminal failed for \(runId): \(error)")
+            }
+        }
 
         guard persistConversationArtifacts, let context else { return }
 
@@ -5774,7 +5840,33 @@ final class ChatSession: ObservableObject {
         let memoryAgentId = (agentId ?? Agent.defaultId).uuidString
         let memoryConversationId = (sessionId ?? UUID()).uuidString
 
-        let runId = UUID()
+        let inheritedRunId = ChatExecutionContext.currentRunId
+        let runId = inheritedRunId ?? UUID()
+        var ownsDurableLifecycle = false
+        if inheritedRunId == nil {
+            let instructions = trimmed.isEmpty
+                ? turns.last(where: { $0.role == .user })?.content ?? "Regenerate response"
+                : trimmed
+            do {
+                try runLifecycleRecorder.admit(
+                    RunLifecycleAdmission(
+                        runId: runId,
+                        agentId: agentId ?? Agent.defaultId,
+                        triggerKind: .user,
+                        triggerPayload: #"{"source":"chat"}"#,
+                        instructions: instructions,
+                        startsImmediately: true,
+                        sessionId: sessionId,
+                        projectId: projectId,
+                        title: title,
+                        modelId: selectedModel
+                    )
+                )
+                ownsDurableLifecycle = true
+            } catch {
+                print("[ChatSession] direct run admission failed for \(runId): \(error)")
+            }
+        }
         beginRun(
             runId,
             context: RunContext(
@@ -5783,7 +5875,8 @@ final class ChatSession: ObservableObject {
                 memoryAgentId: memoryAgentId,
                 memoryConversationId: memoryConversationId,
                 memoryProjectId: projectId
-            )
+            ),
+            ownsDurableLifecycle: ownsDurableLifecycle
         )
 
         // Capture the agent binding for the whole turn so every async
@@ -5805,6 +5898,7 @@ final class ChatSession: ObservableObject {
         let storedTurnModelOptions = turnModelId.flatMap {
             ModelOptionsStore.shared.storedExplicitOptions(for: $0)
         }
+        let turnRootRunId = ChatExecutionContext.currentRootRunId ?? runId
 
         currentTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -5844,6 +5938,8 @@ final class ChatSession: ObservableObject {
                 AgentManager.shared.effectiveAutonomousExec(for: turnAgentId)?.enabled == true
             let turnFolderRoot =
                 sandboxEnabled ? nil : self.activeFolderContext(for: turnAgentId)?.rootPath
+            await ChatExecutionContext.$currentRunId.withValue(runId) { [self] in
+            await ChatExecutionContext.$currentRootRunId.withValue(turnRootRunId) { [self] in
             await ChatExecutionContext.$currentFolderRoot.withValue(turnFolderRoot) { [self] in
             // Typed run provenance for the whole turn. The session's own
             // persisted `source` is authoritative here (a dispatched
@@ -7844,6 +7940,8 @@ final class ChatSession: ObservableObject {
             }  // ChatExecutionContext.$currentChatSessionBox.withValue
             }  // ChatExecutionContext.$currentSessionSource.withValue
             }  // ChatExecutionContext.$currentFolderRoot.withValue
+            }  // ChatExecutionContext.$currentRootRunId.withValue
+            }  // ChatExecutionContext.$currentRunId.withValue
         }
     }
 

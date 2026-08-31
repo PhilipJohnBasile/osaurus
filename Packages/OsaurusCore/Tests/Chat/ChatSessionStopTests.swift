@@ -194,6 +194,55 @@ struct ChatSessionStopTests {
     }
 
     @Test
+    func directChatOwnsOneDurableRunAndBindsItThroughGeneration() async throws {
+        try await ChatHistoryTestStorage.run {
+            let recorder = RecordingRunLifecycleRecorder()
+            let engine = RunIdentityCapturingChatEngine()
+            let session = ChatSession()
+            session.runLifecycleRecorder = recorder
+            session.chatEngineFactory = { _ in engine }
+
+            session.send("Trace this turn")
+            try await waitUntilAsync(timeout: Self.asyncTimeout) {
+                recorder.terminalReceipts.count == 1
+            }
+
+            let admission = try #require(recorder.admissions.first)
+            let terminal = try #require(recorder.terminalReceipts.first)
+            #expect(admission.runId == terminal.runId)
+            #expect(admission.sessionId == session.sessionId)
+            #expect(admission.startsImmediately)
+            #expect(terminal.status == .success)
+            #expect(await engine.capturedRunId == admission.runId)
+            #expect(await engine.capturedRootRunId == admission.runId)
+        }
+    }
+
+    @Test
+    func directChatCancellationWaitsForEngineSettlementBeforeTerminalReceipt() async throws {
+        try await ChatHistoryTestStorage.run {
+            let recorder = RecordingRunLifecycleRecorder()
+            let engine = SettlementGatedChatEngine()
+            let session = ChatSession()
+            session.runLifecycleRecorder = recorder
+            session.chatEngineFactory = { _ in engine }
+
+            session.send("Wait for cleanup")
+            try await waitUntilAsync(timeout: Self.asyncTimeout) { await engine.started }
+            session.stop()
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(recorder.terminalReceipts.isEmpty)
+
+            await engine.release()
+            try await waitUntilAsync(timeout: Self.asyncTimeout) {
+                recorder.terminalReceipts.count == 1
+            }
+            #expect(recorder.terminalReceipts.first?.status == .cancelled)
+            #expect(recorder.admissions.first?.runId == recorder.terminalReceipts.first?.runId)
+        }
+    }
+
+    @Test
     func explicitModelUnloadPreparationUsesStopLifecycle() async throws {
         try await ChatHistoryTestStorage.run {
             let session = ChatSession()
@@ -982,6 +1031,76 @@ private actor IncomingWarmupRecordingEngine: ChatEngineProtocol {
 
     func completeChat(request _: ChatCompletionRequest) async throws -> ChatCompletionResponse {
         throw NSError(domain: "ChatSessionStopTests", code: 6)
+    }
+}
+
+private final class RecordingRunLifecycleRecorder: RunLifecycleRecording, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedAdmissions: [RunLifecycleAdmission] = []
+    private var storedTerminalReceipts: [RunLifecycleTerminalReceipt] = []
+
+    var admissions: [RunLifecycleAdmission] {
+        lock.withLock { storedAdmissions }
+    }
+
+    var terminalReceipts: [RunLifecycleTerminalReceipt] {
+        lock.withLock { storedTerminalReceipts }
+    }
+
+    func admit(_ admission: RunLifecycleAdmission) throws {
+        lock.withLock { storedAdmissions.append(admission) }
+    }
+
+    func append(
+        runId: UUID,
+        kind: RunCenterEventKind,
+        occurredAt: Date,
+        message: String?,
+        metadata: [String: String]
+    ) throws {}
+
+    func end(_ receipt: RunLifecycleTerminalReceipt) throws {
+        lock.withLock { storedTerminalReceipts.append(receipt) }
+    }
+}
+
+private actor RunIdentityCapturingChatEngine: ChatEngineProtocol {
+    private(set) var capturedRunId: UUID?
+    private(set) var capturedRootRunId: UUID?
+
+    func streamChat(request _: ChatCompletionRequest) async throws -> AsyncThrowingStream<String, Error> {
+        capturedRunId = ChatExecutionContext.currentRunId
+        capturedRootRunId = ChatExecutionContext.currentRootRunId
+        return AsyncThrowingStream { continuation in
+            continuation.yield("done")
+            continuation.finish()
+        }
+    }
+
+    func completeChat(request _: ChatCompletionRequest) async throws -> ChatCompletionResponse {
+        throw NSError(domain: "ChatSessionStopTests", code: 8)
+    }
+}
+
+private actor SettlementGatedChatEngine: ChatEngineProtocol {
+    private(set) var started = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func streamChat(request _: ChatCompletionRequest) async throws -> AsyncThrowingStream<String, Error> {
+        started = true
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+        return AsyncThrowingStream { $0.finish() }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+
+    func completeChat(request _: ChatCompletionRequest) async throws -> ChatCompletionResponse {
+        throw NSError(domain: "ChatSessionStopTests", code: 9)
     }
 }
 
