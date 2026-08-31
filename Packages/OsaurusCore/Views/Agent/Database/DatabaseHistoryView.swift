@@ -136,13 +136,22 @@ struct DatabaseHistoryView: View {
     @ViewBuilder
     private func statusIcon(for status: AgentRunStatus) -> some View {
         switch status {
+        case .queued:
+            Image(systemName: "clock")
+                .foregroundColor(.secondary)
         case .running:
             Image(systemName: "arrow.triangle.2.circlepath")
                 .foregroundColor(.blue)
+        case .waitingForInput:
+            Image(systemName: "questionmark.circle.fill")
+                .foregroundColor(.orange)
+        case .review:
+            Image(systemName: "doc.text.magnifyingglass")
+                .foregroundColor(.purple)
         case .success:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundColor(.green)
-        case .error:
+        case .error, .interrupted:
             Image(systemName: "xmark.circle.fill")
                 .foregroundColor(.red)
         case .cancelled:

@@ -326,11 +326,11 @@ public struct ScheduleHistoryService: Sendable {
 extension ScheduleRunStatus {
     init(_ status: AgentRunStatus) {
         switch status {
-        case .running:
+        case .queued, .running, .waitingForInput, .review:
             self = .running
         case .success:
             self = .succeeded
-        case .error:
+        case .error, .interrupted:
             self = .failed
         case .cancelled:
             self = .cancelled

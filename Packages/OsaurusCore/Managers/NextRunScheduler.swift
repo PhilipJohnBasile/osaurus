@@ -376,11 +376,15 @@ public final class NextRunScheduler {
 
     private static func statusPhrase(_ status: AgentRunStatus) -> String {
         switch status {
+        case .queued: return "was queued"
         case .success: return "completed"
         case .error: return "failed"
         case .cancelled: return "was cancelled"
         case .clamped: return "was clamped"
         case .running: return "was still running"
+        case .waitingForInput: return "was waiting for input"
+        case .review: return "was awaiting review"
+        case .interrupted: return "was interrupted"
         }
     }
 
