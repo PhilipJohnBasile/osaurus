@@ -260,8 +260,14 @@ enum AgentDelegationDispatcher {
         // Fan-out is prevented structurally instead: the composer strips
         // every spawn tool from `.delegation`-sourced sessions, and the
         // execution scope rejects tools outside the composed schema.
+        let heldDelegatedRun = SubagentSession.heldDelegatedRun
         let handle = await SubagentSession.$activeKindId.withValue(nil) {
-            await BackgroundTaskManager.shared.dispatchChat(request)
+            if let heldDelegatedRun {
+                return await BackgroundTaskManager.shared.dispatchHeldChat(
+                    heldDelegatedRun
+                )
+            }
+            return await BackgroundTaskManager.shared.dispatchChat(request)
         }
         guard let handle else {
             throw SubagentError.unavailable(

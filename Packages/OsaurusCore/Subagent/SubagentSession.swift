@@ -140,6 +140,12 @@ public enum SubagentSession {
     @TaskLocal static var runLifecycleRecorderOverride:
         (any RunLifecycleRecording)?
 
+    /// Opaque BackgroundTaskManager reservation carried only by a prepared
+    /// batch child. The delegated kind consumes it at its normal dispatcher
+    /// boundary; no generic host code writes that lifecycle.
+    @TaskLocal static var heldDelegatedRun:
+        BackgroundTaskManager.HeldDelegatedRun?
+
     /// True when a subagent kind is currently running on this task tree.
     public static var isActive: Bool { activeKindId != nil }
 
@@ -781,7 +787,9 @@ public enum SubagentSession {
             (@Sendable (PreparedSubagentRun, ResidencyPlan) async -> Int)? = nil,
         runLifecycleRecorder suppliedRunLifecycleRecorder:
             (any RunLifecycleRecording)? = nil,
-        heldDurableChild: DurableChildRun? = nil
+        heldDurableChild: DurableChildRun? = nil,
+        heldDelegatedRun suppliedHeldDelegatedRun:
+            BackgroundTaskManager.HeldDelegatedRun? = nil
     ) async -> String {
         if let active = activeKindId {
             let envelope = ToolEnvelope.failure(
@@ -1529,12 +1537,17 @@ public enum SubagentSession {
                                             resolved: prepared.resolved,
                                             feed: feed
                                         ) {
-                                            let result = try await prepared.kind.run(
-                                                prepared.scope,
-                                                prepared.resolved,
-                                                feed: feed,
-                                                interrupt: interrupt
-                                            )
+                                            let result = try await SubagentSession
+                                                .$heldDelegatedRun.withValue(
+                                                    suppliedHeldDelegatedRun
+                                                ) {
+                                                    try await prepared.kind.run(
+                                                        prepared.scope,
+                                                        prepared.resolved,
+                                                        feed: feed,
+                                                        interrupt: interrupt
+                                                    )
+                                                }
                                             if captureProcessCacheSnapshot,
                                                 prepared.resolved.isLocal
                                             {
@@ -1621,7 +1634,10 @@ public enum SubagentSession {
                 usage: payload["usage"] as? [String: Any],
                 phases: phases
             )
-            return successEnvelope
+            return addingRunIdentity(
+                to: successEnvelope,
+                runId: prepared.scope.runId
+            )
         } catch {
             if admissionHeld {
                 if admissionHeldSlots > 0 {

@@ -129,19 +129,56 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         let input: String
     }
 
+    enum DurableChildReservation: Sendable {
+        case ordinary(SubagentSession.DurableChildRun)
+        case delegated(BackgroundTaskManager.HeldDelegatedRun)
+
+        var runId: UUID {
+            switch self {
+            case .ordinary(let held): return held.runId
+            case .delegated(let held): return held.runId
+            }
+        }
+
+        var isTerminal: Bool {
+            switch self {
+            case .ordinary(let held): return held.isTerminal
+            case .delegated(let held): return held.isTerminal
+            }
+        }
+
+        var ordinary: SubagentSession.DurableChildRun? {
+            guard case .ordinary(let held) = self else { return nil }
+            return held
+        }
+
+        var delegated: BackgroundTaskManager.HeldDelegatedRun? {
+            guard case .delegated(let held) = self else { return nil }
+            return held
+        }
+    }
+
     struct PreparedJob: Sendable {
         let job: Job
         let run: PreparedSubagentRun
-        let heldDurableChild: SubagentSession.DurableChildRun?
+        let heldReservation: DurableChildReservation?
 
         init(
             job: Job,
             run: PreparedSubagentRun,
-            heldDurableChild: SubagentSession.DurableChildRun? = nil
+            heldReservation: DurableChildReservation? = nil
         ) {
             self.job = job
             self.run = run
-            self.heldDurableChild = heldDurableChild
+            self.heldReservation = heldReservation
+        }
+
+        var heldDurableChild: SubagentSession.DurableChildRun? {
+            heldReservation?.ordinary
+        }
+
+        var heldDelegatedRun: BackgroundTaskManager.HeldDelegatedRun? {
+            heldReservation?.delegated
         }
 
         var localGroupingKey: String? {
@@ -181,10 +218,10 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         var errorDescription: String? {
             switch self {
             case .reservation(let message):
-                return "ordinary child reservation failed: \(message)"
+                return "child reservation failed: \(message)"
             case .reservationAndCleanup(let message, let childRunIds):
                 return
-                    "ordinary child reservation failed: \(message); queued child "
+                    "child reservation failed: \(message); queued child "
                     + "cleanup also failed for "
                     + childRunIds.map(\.uuidString).joined(separator: ", ")
             }
@@ -912,13 +949,13 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         )
         let heldPrepared: [PreparedJob]
         do {
-            heldPrepared = try Self.holdOrdinaryDurableChildren(
+            heldPrepared = try await Self.holdDurableChildren(
                 linkedPrepared,
                 recorder: runLifecycleRecorder
             )
         } catch {
             let summary =
-                "The approved batch could not reserve every ordinary child "
+                "The approved batch could not reserve every child "
                 + "durably, so no jobs were started. "
                 + error.localizedDescription
             do {
@@ -1276,16 +1313,98 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
                     handoff: existing.handoff,
                     handoffIsKindOwned: existing.handoffIsKindOwned
                 ),
-                heldDurableChild: preparedJob.heldDurableChild
+                heldReservation: preparedJob.heldReservation
             )
         }
     }
 
-    /// Ask the ordinary child execution owner to reserve every approved job
-    /// before the batch scheduler can refuse or cancel it. True delegated
-    /// agents deliberately remain with BackgroundTaskManager and require its
-    /// separate held-dispatch transfer; SubagentSession never writes their
-    /// lifecycle.
+    /// Ask each child's real execution owner to reserve every approved job
+    /// before the batch scheduler can refuse or cancel it. The returned
+    /// reservation is opaque: ordinary children remain owned by
+    /// SubagentSession and true delegated chats by BackgroundTaskManager.
+    static func holdDurableChildren(
+        _ jobs: [PreparedJob],
+        recorder: any RunLifecycleRecording
+    ) async throws -> [PreparedJob] {
+        var held: [PreparedJob] = []
+        held.reserveCapacity(jobs.count)
+        do {
+            for preparedJob in jobs {
+                let reservation: DurableChildReservation
+                if preparedJob.run.kind.delegatesDurableLifecycle {
+                    guard
+                        let owner = preparedJob.run.kind
+                            as? any SubagentDelegatedRunHolding
+                    else {
+                        throw DurableChildHoldError.reservation(
+                            "delegated kind did not provide its lifecycle owner"
+                        )
+                    }
+                    let child = try await owner.holdDelegatedRun(
+                        scope: preparedJob.run.scope,
+                        resolved: preparedJob.run.resolved
+                    )
+                    reservation = .delegated(child)
+                } else {
+                    guard
+                        let child = try SubagentSession.holdDurableChild(
+                            preparedJob.run,
+                            recorder: recorder
+                        )
+                    else {
+                        throw DurableChildHoldError.reservation(
+                            "ordinary lifecycle owner did not issue a reservation"
+                        )
+                    }
+                    reservation = .ordinary(child)
+                }
+                held.append(
+                    PreparedJob(
+                        job: preparedJob.job,
+                        run: preparedJob.run,
+                        heldReservation: reservation
+                    )
+                )
+            }
+            return held
+        } catch {
+            var cleanupFailures: [UUID] = []
+            for preparedJob in held {
+                guard let reservation = preparedJob.heldReservation else {
+                    continue
+                }
+                let cleanupEnvelope = settleReservation(
+                    reservation,
+                    status: .error,
+                    error: "A sibling child could not be reserved durably.",
+                    envelope: ToolEnvelope.failure(
+                        kind: .executionError,
+                        message: "The approved batch was not started.",
+                        tool: preparedJob.run.tool,
+                        retryable: false
+                    ),
+                    tool: preparedJob.run.tool
+                )
+                if Self.isTerminalWriteFailureEnvelope(cleanupEnvelope) {
+                    cleanupFailures.append(reservation.runId)
+                }
+            }
+            if cleanupFailures.isEmpty {
+                if let holdError = error as? DurableChildHoldError {
+                    throw holdError
+                }
+                throw DurableChildHoldError.reservation(
+                    error.localizedDescription
+                )
+            }
+            throw DurableChildHoldError.reservationAndCleanup(
+                reservation: error.localizedDescription,
+                childRunIds: cleanupFailures
+            )
+        }
+    }
+
+    /// Focused synchronous seam retained for ordinary-owner lifecycle tests.
     static func holdOrdinaryDurableChildren(
         _ jobs: [PreparedJob],
         recorder: any RunLifecycleRecording
@@ -1302,7 +1421,7 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
                     PreparedJob(
                         job: preparedJob.job,
                         run: preparedJob.run,
-                        heldDurableChild: child
+                        heldReservation: child.map(DurableChildReservation.ordinary)
                     )
                 )
             }
@@ -1340,10 +1459,36 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         }
     }
 
-    /// Settle queued ordinary children the batch scheduler never launched and
-    /// add their durable identity to every result. A child that ran has already
-    /// terminalized itself; `settleDurableChild` is exact-once and only adds
-    /// correlation in that case.
+    private static func settleReservation(
+        _ reservation: DurableChildReservation,
+        status: AgentRunStatus,
+        error: String?,
+        envelope: String,
+        tool: String
+    ) -> String {
+        switch reservation {
+        case .ordinary(let held):
+            return SubagentSession.settleDurableChild(
+                held,
+                status: status,
+                error: error,
+                envelope: envelope,
+                tool: tool
+            )
+        case .delegated(let held):
+            return BackgroundTaskManager.settleHeldDelegatedRun(
+                held,
+                status: status,
+                error: error,
+                envelope: envelope,
+                tool: tool
+            )
+        }
+    }
+
+    /// Settle queued children the batch scheduler never launched and add their
+    /// durable identity to every result. A child that ran has already
+    /// terminalized itself; reconciliation then only adds correlation.
     static func settleHeldDurableChildren(
         _ results: [RawJobResult],
         jobs: [PreparedJob],
@@ -1351,19 +1496,19 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
     ) -> [RawJobResult] {
         let heldByJob = Dictionary(
             uniqueKeysWithValues: jobs.compactMap { preparedJob in
-                preparedJob.heldDurableChild.map {
+                preparedJob.heldReservation.map {
                     (preparedJob.job.id, $0)
                 }
             }
         )
         func reconcile(_ result: RawJobResult) -> RawJobResult {
-            guard let held = heldByJob[result.job.id] else { return result }
-            if held.isTerminal {
+            guard let reservation = heldByJob[result.job.id] else { return result }
+            if reservation.isTerminal {
                 return RawJobResult(
                     job: result.job,
                     envelope: SubagentSession.addingRunIdentity(
                         to: result.envelope,
-                        runId: held.runId
+                        runId: reservation.runId
                     )
                 )
             }
@@ -1383,8 +1528,8 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
             }
             let cancelled = Self.isCancelledEnvelope(unsettledEnvelope)
             let message = ToolEnvelope.failureMessage(unsettledEnvelope)
-            let envelope = SubagentSession.settleDurableChild(
-                held,
+            let envelope = settleReservation(
+                reservation,
                 status: cancelled ? .cancelled : .error,
                 error: cancelled ? nil : message,
                 envelope: unsettledEnvelope,
@@ -1395,7 +1540,7 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         var reconciled = results.map(reconcile)
         let returnedJobIds = Set(results.map(\.job.id))
         for preparedJob in jobs
-        where preparedJob.heldDurableChild != nil
+        where preparedJob.heldReservation != nil
             && !returnedJobIds.contains(preparedJob.job.id)
         {
             let envelope = ToolEnvelope.failure(
@@ -2463,7 +2608,8 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
             skipAdmission: skipAdmission,
             handoffOverride: skipAdmission ? PassthroughHandoff() : nil,
             captureProcessCacheSnapshot: false,
-            heldDurableChild: job.heldDurableChild
+            heldDurableChild: job.heldDurableChild,
+            heldDelegatedRun: job.heldDelegatedRun
         )
         relay.stop()
         return RawJobResult(job: job.job, envelope: envelope)

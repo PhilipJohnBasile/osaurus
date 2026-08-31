@@ -478,8 +478,111 @@ struct SpawnBatchToolTests {
         }
     }
 
+    private final class DelegatedHoldingKind:
+        SubagentDelegatedRunHolding, @unchecked Sendable
+    {
+        let capability = SubagentCapability(
+            id: "batch-delegated",
+            toolNames: ["batch-delegated"],
+            gate: .delegation
+        )
+        let manager: BackgroundTaskManager
+        let targetAgentId: UUID
+
+        @MainActor
+        init(
+            manager: BackgroundTaskManager,
+            targetAgentId: UUID = UUID()
+        ) {
+            self.manager = manager
+            self.targetAgentId = targetAgentId
+        }
+
+        var delegatesDurableLifecycle: Bool { true }
+
+        func resolveModel(_ scope: SubagentScope) async throws -> ResolvedModel {
+            ResolvedModel(name: "delegated-model", isLocal: false)
+        }
+
+        func permission(
+            _ scope: SubagentScope,
+            _ resolved: ResolvedModel
+        ) async -> SubagentDecision {
+            .allow
+        }
+
+        @MainActor
+        func holdDelegatedRun(
+            scope: SubagentScope,
+            resolved: ResolvedModel
+        ) throws -> BackgroundTaskManager.HeldDelegatedRun {
+            try manager.holdDelegatedChat(
+                DispatchRequest(
+                    runId: scope.runId,
+                    prompt: "held delegated test",
+                    agentId: targetAgentId,
+                    showToast: false,
+                    source: .delegation,
+                    parentRunId: scope.parentRunId,
+                    rootRunId: scope.rootRunId,
+                    parentSessionId: UUID(uuidString: scope.sessionId),
+                    parentToolCallId: scope.parentToolCallId,
+                    stableJobId: scope.stableJobId
+                ),
+                modelId: resolved.name
+            )
+        }
+
+        func run(
+            _ scope: SubagentScope,
+            _ resolved: ResolvedModel,
+            feed: SubagentFeed,
+            interrupt: InterruptToken
+        ) async throws -> SubagentResult {
+            SubagentResult(payload: ["summary": "unused"])
+        }
+    }
+
     private enum BatchScriptedError: Error {
         case failed
+    }
+
+    @MainActor
+    private func delegatedPrepared(
+        id: String,
+        manager: BackgroundTaskManager
+    ) -> SpawnBatchTool.PreparedJob {
+        let rootRunId = UUID()
+        let parentRunId = UUID()
+        let scope = SubagentScope(
+            sessionId: UUID().uuidString,
+            toolCallId: "call:\(id)",
+            agentId: Agent.defaultId,
+            runId: UUID(),
+            parentRunId: parentRunId,
+            rootRunId: rootRunId,
+            parentToolCallId: "batch-parent",
+            stableJobId: id
+        )
+        return SpawnBatchTool.PreparedJob(
+            job: SpawnBatchTool.Job(
+                index: 0,
+                id: id,
+                targetType: .agent,
+                target: UUID().uuidString,
+                input: "task \(id)"
+            ),
+            run: PreparedSubagentRun(
+                kind: DelegatedHoldingKind(manager: manager),
+                tool: "spawn_batch",
+                scope: scope,
+                resolved: ResolvedModel(
+                    name: "delegated-model",
+                    isLocal: false
+                ),
+                handoff: PassthroughHandoff()
+            )
+        )
     }
 
     private func prepared(
@@ -539,6 +642,87 @@ struct SpawnBatchToolTests {
                 handoff: handoff
             )
         )
+    }
+
+    @Test("delegated batch child is held by BackgroundTaskManager before scheduling")
+    @MainActor
+    func delegatedChildUsesItsRealLifecycleOwner() async throws {
+        let ordinaryLifecycle = HeldBatchLifecycleRecorder()
+        let delegatedLifecycle = HeldBatchLifecycleRecorder()
+        let manager = BackgroundTaskManager.makeForTesting(
+            runLifecycleRecorder: delegatedLifecycle
+        )
+        let original = delegatedPrepared(
+            id: "delegated-held",
+            manager: manager
+        )
+
+        let held = try await SpawnBatchTool.holdDurableChildren(
+            [original],
+            recorder: ordinaryLifecycle
+        )
+
+        #expect(ordinaryLifecycle.admissions.isEmpty)
+        #expect(delegatedLifecycle.admissions.count == 1)
+        #expect(delegatedLifecycle.admissions.first?.startsImmediately == false)
+        #expect(delegatedLifecycle.events.isEmpty)
+        #expect(held.first?.heldDelegatedRun != nil)
+        #expect(held.first?.heldDurableChild == nil)
+        #expect(manager.backgroundTasks.isEmpty)
+
+        let settled = SpawnBatchTool.settleHeldDurableChildren(
+            [],
+            jobs: held,
+            tool: "spawn_batch"
+        )
+
+        #expect(settled.count == 1)
+        #expect(ToolEnvelope.isError(try #require(settled.first?.envelope)))
+        #expect(delegatedLifecycle.events.isEmpty)
+        #expect(delegatedLifecycle.terminals.count == 1)
+        #expect(delegatedLifecycle.terminals.first?.status == .error)
+    }
+
+    @Test("mixed hold failure settles earlier delegated reservations")
+    @MainActor
+    func mixedHoldFailureCleansDelegatedOwner() async throws {
+        let ordinaryLifecycle = HeldBatchLifecycleRecorder(
+            rejectAdmissionAttempt: 1
+        )
+        let delegatedLifecycle = HeldBatchLifecycleRecorder()
+        let manager = BackgroundTaskManager.makeForTesting(
+            runLifecycleRecorder: delegatedLifecycle
+        )
+        let delegated = delegatedPrepared(
+            id: "delegated-first",
+            manager: manager
+        )
+        let ordinary = prepared(
+            index: 1,
+            id: "ordinary-rejected",
+            targetType: .model,
+            target: "remote/model",
+            model: "remote/model",
+            isLocal: false,
+            admission: .remote
+        )
+
+        do {
+            _ = try await SpawnBatchTool.holdDurableChildren(
+                [delegated, ordinary],
+                recorder: ordinaryLifecycle
+            )
+            Issue.record("Expected the ordinary sibling reservation to fail")
+        } catch is SpawnBatchTool.DurableChildHoldError {
+            // Expected.
+        }
+
+        #expect(ordinaryLifecycle.admissions.count == 1)
+        #expect(delegatedLifecycle.admissions.count == 1)
+        #expect(delegatedLifecycle.events.isEmpty)
+        #expect(delegatedLifecycle.terminals.count == 1)
+        #expect(delegatedLifecycle.terminals.first?.status == .error)
+        #expect(manager.backgroundTasks.isEmpty)
     }
 
     @Test("scheduler-refused ordinary child keeps a queued durable row and never starts")

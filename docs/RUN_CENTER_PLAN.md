@@ -199,35 +199,42 @@ write failures now change the caller-visible result instead of being hidden in
 a log. Duplicate SQLite child admission is transactionally rejected without a
 second child row or parent `childLinked` event.
 
-This aggregate slice is deliberately `PARTIAL`: it records the aggregate and
-now asks `SubagentSession` to hold every finally accepted ordinary child as
-queued after authority revalidation and aggregate admission but before batch
-scheduling. A Stop arriving after aggregate admission therefore settles those
-queued rows before the aggregate closes. The same owner appends started immediately before
-execution or terminalizes scheduler refusal, cancellation, authority loss, and
-even a missing scheduler result without a false start. Held terminal retries
-reuse the exact first receipt, including its timestamp, through a bounded
-owner retry, so an uncertain commit cannot create a conflicting terminal fact.
-If success is confirmed only during aggregate reconciliation, the owner restores
-the original successful result rather than reporting a failure against a
-successful ledger row. A partial hold failure starts no
-jobs, attempts to settle every earlier reservation, and surfaces any cleanup
-failure rather than hiding it. True delegated agent jobs still acquire their
-row only when they enter `BackgroundTaskManager`; completing the stated
-one-child-per-stable-job contract therefore still requires an explicit held
-dispatch owned by that manager. Pre-admitting delegated rows in
-`SpawnBatchTool` would create a competing lifecycle writer and is prohibited.
-`BackgroundTaskManager` also performs post-terminal residency acceleration and
-chat warm-up rearming in an asynchronous follow-up. A delegated child's
-completion receipt does not yet prove that follow-up has settled, so complete
-delegated cleanup ordering remains unproven and is part of the held-launch /
-settled-cancellation work rather than this checkpoint.
+This aggregate slice is deliberately `PARTIAL`: after authority revalidation
+and aggregate admission, it now asks every finally accepted child's real
+execution owner to hold a queued durable reservation before batch scheduling.
+`SubagentSession` owns ordinary children; `BackgroundTaskManager` owns true
+delegated chats. The batch tool only carries their opaque reservations, so it
+cannot become a second lifecycle writer. A Stop after the hold barrier settles
+both owner types before the aggregate closes. The owner appends started at the
+actual execution boundary or terminalizes scheduler refusal, cancellation,
+authority loss, a missing scheduler result, and durable-start rejection without
+a false start or child execution. A partial mixed-owner hold failure schedules
+no jobs, settles every earlier reservation, and surfaces cleanup failures.
+
+Held terminal retries reuse the exact first receipt, including its timestamp,
+through a bounded owner retry, so an uncertain commit cannot create a
+conflicting terminal fact. If success is confirmed only during aggregate
+reconciliation, the ordinary owner restores the original successful result
+rather than reporting a failure against a successful ledger row. Delegated
+execution consumes its held token exactly once at the existing dispatcher
+boundary; the generic subagent host never admits, starts, or terminalizes that
+row. `BackgroundTaskManager` still performs post-terminal residency
+acceleration and chat warm-up rearming in an asynchronous follow-up. A
+delegated child's completion receipt does not yet prove that follow-up has
+settled, so complete delegated cleanup ordering remains unproven.
 
 Validation status for this checkpoint remains `PARTIAL` until its exact commit
 passes the pinned Xcode 26.4.1 fork CI and the required Release-app parent/child,
-cancellation, persistence, and relaunch proof. Local Swift parsing and diff
-integrity pass; the local Xcode 27 beta focused-test build is blocked by the
-pre-existing `ChatView` type-check timeout, so it is not counted as a test pass.
+cancellation, persistence, and relaunch proof. The prior exact-SHA CI run made
+six jobs green and exposed one `test-core` failure: a held ordinary child's
+successful envelope omitted the top-level durable run id. That correlation bug
+is repaired here and its exact regression passes locally. Local Swift parsing
+and diff integrity also pass. With a temporary compile-only exclusion for the
+unchanged `ChatView.dispatchSend` expression that times out under the local
+Xcode 27 beta, the production module built and the focused
+`DispatchRunIdentityTests`, `SpawnBatchToolTests`, and held-ordinary regression
+ran 62 tests across three suites with no failures. The exclusion was removed
+and is not part of this checkpoint.
 
 ### Phase 2 — Read-only Run Center
 

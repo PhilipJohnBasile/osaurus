@@ -73,6 +73,80 @@ private final class RejectingRunLifecycleRecorder:
     }
 }
 
+private final class HeldRunLifecycleRecorder:
+    RunLifecycleRecording, @unchecked Sendable
+{
+    private let lock = NSLock()
+    private let rejectsStart: Bool
+    private var terminalFailuresRemaining: Int
+    private var storedAdmissions: [RunLifecycleAdmission] = []
+    private var storedEvents: [(UUID, RunCenterEventKind)] = []
+    private var storedTerminalAttempts: [RunLifecycleTerminalReceipt] = []
+    private var storedTerminals: [RunLifecycleTerminalReceipt] = []
+
+    init(
+        rejectsStart: Bool = false,
+        terminalFailures: Int = 0
+    ) {
+        self.rejectsStart = rejectsStart
+        self.terminalFailuresRemaining = terminalFailures
+    }
+
+    var admissions: [RunLifecycleAdmission] {
+        lock.withLock { storedAdmissions }
+    }
+
+    var events: [(UUID, RunCenterEventKind)] {
+        lock.withLock { storedEvents }
+    }
+
+    var terminalAttempts: [RunLifecycleTerminalReceipt] {
+        lock.withLock { storedTerminalAttempts }
+    }
+
+    var terminals: [RunLifecycleTerminalReceipt] {
+        lock.withLock { storedTerminals }
+    }
+
+    func admit(
+        _ admission: RunLifecycleAdmission
+    ) throws -> RunLifecycleAdmissionReceipt {
+        lock.withLock { storedAdmissions.append(admission) }
+        return RunLifecycleAdmissionReceipt(
+            runId: admission.runId,
+            rootRunId: admission.rootRunId ?? admission.runId
+        )
+    }
+
+    func append(
+        runId: UUID,
+        kind: RunCenterEventKind,
+        occurredAt _: Date,
+        message _: String?,
+        metadata _: [String: String]
+    ) throws {
+        if rejectsStart, kind == .started {
+            throw RejectedAdmission.expected
+        }
+        lock.withLock { storedEvents.append((runId, kind)) }
+    }
+
+    func end(_ receipt: RunLifecycleTerminalReceipt) throws {
+        let shouldFail = lock.withLock { () -> Bool in
+            storedTerminalAttempts.append(receipt)
+            if terminalFailuresRemaining > 0 {
+                terminalFailuresRemaining -= 1
+                return true
+            }
+            storedTerminals.append(receipt)
+            return false
+        }
+        if shouldFail {
+            throw RejectedAdmission.expected
+        }
+    }
+}
+
 @Suite("Dispatch durable run identity", .serialized)
 @MainActor
 struct DispatchRunIdentityTests {
@@ -143,6 +217,14 @@ struct DispatchRunIdentityTests {
             parentSessionId: valid.parentSessionId,
             parentToolCallId: valid.parentToolCallId
         )
+        let missingAgent = DispatchRequest(
+            prompt: valid.prompt,
+            source: .delegation,
+            parentRunId: valid.parentRunId,
+            rootRunId: valid.rootRunId,
+            parentSessionId: valid.parentSessionId,
+            parentToolCallId: valid.parentToolCallId
+        )
         let missingRoot = DispatchRequest(
             prompt: valid.prompt,
             agentId: valid.agentId,
@@ -169,7 +251,13 @@ struct DispatchRunIdentityTests {
             parentToolCallId: "  \n"
         )
 
-        for malformed in [missingParent, missingRoot, missingSession, blankToolCall] {
+        for malformed in [
+            missingAgent,
+            missingParent,
+            missingRoot,
+            missingSession,
+            blankToolCall,
+        ] {
             #expect(!BackgroundTaskManager.isDispatchRequestValid(malformed))
         }
     }
@@ -247,6 +335,208 @@ struct DispatchRunIdentityTests {
         }
         #expect(summary.contains("durable terminal state"))
         #expect(state.agentRunId == runId)
+        #expect(recorder.terminals.isEmpty)
+    }
+
+    @Test func heldDelegationIsQueuedBeforeRegistrationAndCanCancel() throws {
+        let recorder = HeldRunLifecycleRecorder()
+        let manager = BackgroundTaskManager.makeForTesting(
+            runLifecycleRecorder: recorder
+        )
+        let request = DispatchRequest(
+            prompt: "Held delegated child",
+            agentId: UUID(),
+            showToast: false,
+            source: .delegation,
+            parentRunId: UUID(),
+            rootRunId: UUID(),
+            parentSessionId: UUID(),
+            parentToolCallId: "held-delegation",
+            stableJobId: "held-job"
+        )
+
+        let held = try manager.holdDelegatedChat(
+            request,
+            modelId: "test-model"
+        )
+
+        #expect(recorder.admissions.count == 1)
+        #expect(recorder.admissions.first?.runId == request.runId)
+        #expect(recorder.admissions.first?.startsImmediately == false)
+        #expect(recorder.events.isEmpty)
+        #expect(manager.backgroundTasks.isEmpty)
+
+        let cancelled = ToolEnvelope.failure(
+            kind: .userDenied,
+            message: "Batch stopped before launch.",
+            tool: "spawn_batch",
+            retryable: false,
+            metadata: ["cancelled": true]
+        )
+        let envelope = BackgroundTaskManager.settleHeldDelegatedRun(
+            held,
+            status: .cancelled,
+            error: nil,
+            envelope: cancelled,
+            tool: "spawn_batch"
+        )
+
+        #expect(held.isTerminal)
+        #expect(recorder.events.isEmpty)
+        #expect(recorder.terminals.count == 1)
+        #expect(recorder.terminals.first?.status == .cancelled)
+        #expect(envelope.contains(request.runId.uuidString))
+    }
+
+    @Test func heldDelegationDispatchAndStartAreOneShot() throws {
+        let recorder = HeldRunLifecycleRecorder()
+        let manager = BackgroundTaskManager.makeForTesting(
+            runLifecycleRecorder: recorder
+        )
+        let request = DispatchRequest(
+            prompt: "Held delegated child",
+            agentId: UUID(),
+            showToast: false,
+            source: .delegation,
+            parentRunId: UUID(),
+            rootRunId: UUID(),
+            parentSessionId: UUID(),
+            parentToolCallId: "held-one-shot"
+        )
+        let held = try manager.holdDelegatedChat(request, modelId: "test-model")
+
+        #expect(held.claimDispatch())
+        #expect(!held.claimDispatch())
+        try held.start()
+        try held.start()
+
+        #expect(recorder.events.count == 1)
+        #expect(recorder.events.first?.0 == request.runId)
+        #expect(recorder.events.first?.1 == .started)
+    }
+
+    @Test func heldDelegationStartFailureNeverExecutesTheChat() async throws {
+        try await ChatHistoryTestStorage.run {
+            let recorder = HeldRunLifecycleRecorder(rejectsStart: true)
+            let manager = BackgroundTaskManager.makeForTesting(
+                runLifecycleRecorder: recorder
+            )
+            let request = DispatchRequest(
+                prompt: "Held delegated child",
+                agentId: UUID(),
+                showToast: false,
+                source: .delegation,
+                parentRunId: UUID(),
+                rootRunId: UUID(),
+                parentSessionId: UUID(),
+                parentToolCallId: "held-start-failure"
+            )
+            let held = try manager.holdDelegatedChat(
+                request,
+                modelId: "test-model"
+            )
+
+            let handle = try #require(await manager.dispatchHeldChat(held))
+            let state = try #require(manager.backgroundTasks[handle.id])
+
+            guard case .failed(let summary) = state.status else {
+                Issue.record("Expected the rejected durable start to fail the task")
+                return
+            }
+            #expect(summary.contains("was not executed"))
+            #expect(state.chatSession?.isStreaming == false)
+            #expect(state.agentRunId == nil)
+            #expect(held.isTerminal)
+            #expect(recorder.events.isEmpty)
+            #expect(recorder.terminals.count == 1)
+            #expect(recorder.terminals.first?.status == .error)
+            #expect(await manager.dispatchHeldChat(held) == nil)
+
+            manager.finalizeTask(handle.id)
+        }
+    }
+
+    @Test func heldDelegationRetriesTheExactTerminalReceipt() throws {
+        let recorder = HeldRunLifecycleRecorder(terminalFailures: 1)
+        let manager = BackgroundTaskManager.makeForTesting(
+            runLifecycleRecorder: recorder
+        )
+        let request = DispatchRequest(
+            prompt: "Held delegated child",
+            agentId: UUID(),
+            showToast: false,
+            source: .delegation,
+            parentRunId: UUID(),
+            rootRunId: UUID(),
+            parentSessionId: UUID(),
+            parentToolCallId: "held-terminal-retry"
+        )
+        let held = try manager.holdDelegatedChat(request, modelId: "test-model")
+        #expect(held.claimDispatch())
+        try held.start()
+
+        let receipt = RunLifecycleTerminalReceipt(
+            runId: request.runId,
+            status: .success,
+            endedAt: Date(timeIntervalSince1970: 1234),
+            tokensIn: 12,
+            tokensOut: 34
+        )
+        try held.end(receipt)
+
+        #expect(held.isTerminal)
+        #expect(recorder.terminalAttempts == [receipt, receipt])
+        #expect(recorder.terminals == [receipt])
+    }
+
+    @Test func uncertainSuccessIntentIsNotOverwrittenByReconciliation() throws {
+        let recorder = HeldRunLifecycleRecorder(terminalFailures: 2)
+        let manager = BackgroundTaskManager.makeForTesting(
+            runLifecycleRecorder: recorder
+        )
+        let request = DispatchRequest(
+            prompt: "Held delegated child",
+            agentId: UUID(),
+            showToast: false,
+            source: .delegation,
+            parentRunId: UUID(),
+            rootRunId: UUID(),
+            parentSessionId: UUID(),
+            parentToolCallId: "held-terminal-uncertain"
+        )
+        let held = try manager.holdDelegatedChat(request, modelId: "test-model")
+        #expect(held.claimDispatch())
+        try held.start()
+        do {
+            try held.end(
+                RunLifecycleTerminalReceipt(
+                    runId: request.runId,
+                    status: .success
+                )
+            )
+            Issue.record("Expected terminal acknowledgement to remain uncertain")
+        } catch {}
+
+        let envelope = BackgroundTaskManager.settleHeldDelegatedRun(
+            held,
+            status: .error,
+            error: "scheduler returned no result",
+            envelope: ToolEnvelope.failure(
+                kind: .executionError,
+                message: "scheduler returned no result",
+                tool: "spawn_batch",
+                retryable: false
+            ),
+            tool: "spawn_batch"
+        )
+        let payload = try #require(
+            try JSONSerialization.jsonObject(with: Data(envelope.utf8))
+                as? [String: Any]
+        )
+
+        #expect(payload["terminal_write_failed"] as? Bool == true)
+        #expect(recorder.terminalAttempts.count == 2)
+        #expect(recorder.terminalAttempts.allSatisfy { $0.status == .success })
         #expect(recorder.terminals.isEmpty)
     }
 }

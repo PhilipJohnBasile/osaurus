@@ -76,6 +76,127 @@ private struct RetainedNotchTabRecord: Codable {
 public final class BackgroundTaskManager: ObservableObject {
     public static let shared = BackgroundTaskManager()
 
+    /// Opaque lifecycle reservation for one true delegated chat. The batch
+    /// scheduler may carry this handle, but only BackgroundTaskManager creates
+    /// it and uses it to start or terminalize the accepted child run.
+    final class HeldDelegatedRun: @unchecked Sendable {
+        private enum State: Equatable {
+            case held
+            case dispatched
+            case started
+            case terminal
+        }
+
+        let request: DispatchRequest
+        let runId: UUID
+        let rootRunId: UUID
+
+        private let recorder: any RunLifecycleRecording
+        private let lock = NSLock()
+        private var state: State = .held
+        private var terminalReceipt: RunLifecycleTerminalReceipt?
+
+        init(
+            request: DispatchRequest,
+            receipt: RunLifecycleAdmissionReceipt,
+            recorder: any RunLifecycleRecording
+        ) {
+            self.request = request
+            self.runId = receipt.runId
+            self.rootRunId = receipt.rootRunId
+            self.recorder = recorder
+        }
+
+        var isTerminal: Bool {
+            lock.withLock { state == .terminal }
+        }
+
+        /// A terminal write was attempted but its acknowledgement remains
+        /// uncertain. Callers that no longer possess the original successful
+        /// result must not overwrite that first intent with a different one.
+        var hasUnconfirmedTerminalIntent: Bool {
+            lock.withLock { state != .terminal && terminalReceipt != nil }
+        }
+
+        func claimDispatch() -> Bool {
+            lock.withLock {
+                guard state == .held else { return false }
+                state = .dispatched
+                return true
+            }
+        }
+
+        func start() throws {
+            try lock.withLock {
+                switch state {
+                case .dispatched:
+                    try recorder.append(
+                        runId: runId,
+                        kind: .started,
+                        occurredAt: Date(),
+                        message: nil,
+                        metadata: [:]
+                    )
+                    state = .started
+                case .started:
+                    return
+                case .held:
+                    throw HeldDelegatedRunError.invalidTransition(
+                        "cannot start before the held run is dispatched"
+                    )
+                case .terminal:
+                    throw HeldDelegatedRunError.invalidTransition(
+                        "cannot start a terminal held run"
+                    )
+                }
+            }
+        }
+
+        func end(_ proposedReceipt: RunLifecycleTerminalReceipt) throws {
+            try lock.withLock {
+                guard state != .terminal else { return }
+                guard proposedReceipt.runId == runId else {
+                    throw HeldDelegatedRunError.invalidTransition(
+                        "terminal receipt run id does not match the held run"
+                    )
+                }
+                let receipt = terminalReceipt ?? proposedReceipt
+                if terminalReceipt == nil {
+                    terminalReceipt = receipt
+                }
+                var finalError: (any Error)?
+                for _ in 0..<2 {
+                    do {
+                        try recorder.end(receipt)
+                        state = .terminal
+                        return
+                    } catch {
+                        finalError = error
+                    }
+                }
+                throw HeldDelegatedRunError.terminal(
+                    finalError?.localizedDescription
+                        ?? "unknown terminal write failure"
+                )
+            }
+        }
+    }
+
+    private enum HeldDelegatedRunError: LocalizedError {
+        case invalidRequest(String)
+        case invalidTransition(String)
+        case terminal(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidRequest(let message),
+                .invalidTransition(let message),
+                .terminal(let message):
+                return message
+            }
+        }
+    }
+
     // MARK: - Published State
 
     /// All background tasks keyed by task ID
@@ -119,6 +240,10 @@ public final class BackgroundTaskManager: ObservableObject {
     /// Write-only durable lifecycle sink. Runtime state remains owned here;
     /// the recorder never schedules, cancels, or otherwise drives execution.
     private let runLifecycleRecorder: any RunLifecycleRecording
+
+    /// Dispatched held delegations keyed by the live background task id.
+    /// The opaque handle remains the exact terminal writer after registration.
+    private var heldDelegatedRuns: [UUID: HeldDelegatedRun] = [:]
 
     /// Tasks whose dispatch() hasn't returned to the plugin yet; events are
     /// buffered in `heldTaskEvents` until `releaseEventsForDispatch` flushes them.
@@ -495,8 +620,9 @@ public final class BackgroundTaskManager: ObservableObject {
             var durableTerminalFailure: String?
             if let runId = state.agentRunId {
                 do {
-                    try runLifecycleRecorder.end(
-                        RunLifecycleTerminalReceipt(runId: runId, status: .cancelled)
+                    try endDurableLifecycle(
+                        RunLifecycleTerminalReceipt(runId: runId, status: .cancelled),
+                        for: state
                     )
                 } catch {
                     let message =
@@ -512,6 +638,7 @@ public final class BackgroundTaskManager: ObservableObject {
                 if durableTerminalFailure == nil {
                     state.chatSession?.clearBackgroundRunLifecycle(runId: runId)
                     state.agentRunId = nil
+                    heldDelegatedRuns.removeValue(forKey: state.id)
                 }
             }
             if let durableTerminalFailure {
@@ -557,6 +684,7 @@ public final class BackgroundTaskManager: ObservableObject {
         // Drop any deferred start so a finalized queued task can't launch.
         queuedOrder.removeAll { $0 == backgroundId }
         pendingStarts.removeValue(forKey: backgroundId)
+        heldDelegatedRuns.removeValue(forKey: backgroundId)
 
         state.releaseReferences()
 
@@ -649,7 +777,7 @@ public final class BackgroundTaskManager: ObservableObject {
                 errorMessage: cancelError
             )
             do {
-                try runLifecycleRecorder.end(
+                try endDurableLifecycle(
                     RunLifecycleTerminalReceipt(
                         runId: runId,
                         status: .cancelled,
@@ -658,7 +786,8 @@ public final class BackgroundTaskManager: ObservableObject {
                         tokensOut: state.tokensOut > 0 ? state.tokensOut : nil,
                         costUSD: state.costUSD > 0 ? state.costUSD : nil,
                         error: cancelError
-                    )
+                    ),
+                    for: state
                 )
             } catch {
                 var message =
@@ -686,6 +815,7 @@ public final class BackgroundTaskManager: ObservableObject {
             if durableTerminalFailure == nil {
                 state.chatSession?.clearBackgroundRunLifecycle(runId: runId)
                 state.agentRunId = nil
+                heldDelegatedRuns.removeValue(forKey: state.id)
             }
         }
         resumeCompletion(for: backgroundId, result: resultFromState(state))
@@ -908,8 +1038,144 @@ public final class BackgroundTaskManager: ObservableObject {
         source == .delegation
     }
 
+    /// Reserve a true delegated chat as queued without registering, enqueuing,
+    /// or starting its execution context. The returned token is the only path
+    /// that may later dispatch or settle this child.
+    func holdDelegatedChat(
+        _ request: DispatchRequest,
+        modelId: String?
+    ) throws -> HeldDelegatedRun {
+        guard request.source == .delegation else {
+            throw HeldDelegatedRunError.invalidRequest(
+                "only true delegation can use held dispatch"
+            )
+        }
+        guard
+            Agent.rejectBuiltInForExternalSurface(
+                request.agentId,
+                source: "background/holdDelegatedChat"
+            ) == nil,
+            Self.isDispatchRequestValid(request),
+            let agentId = request.agentId
+        else {
+            throw HeldDelegatedRunError.invalidRequest(
+                "delegated dispatch request is invalid"
+            )
+        }
+        let receipt = try runLifecycleRecorder.admit(
+            RunLifecycleAdmission(
+                runId: request.runId,
+                agentId: agentId,
+                triggerKind: Self.triggerKind(for: request.source),
+                triggerPayload: Self.triggerPayload(for: request),
+                instructions: request.prompt,
+                startsImmediately: false,
+                sessionId: request.id,
+                parentRunId: request.parentRunId,
+                rootRunId: request.rootRunId,
+                title: request.title,
+                modelId: modelId
+            )
+        )
+        return HeldDelegatedRun(
+            request: request,
+            receipt: receipt,
+            recorder: runLifecycleRecorder
+        )
+    }
+
+    /// Consume a held delegation exactly once and route it through the normal
+    /// background-chat runtime without a second durable admission.
+    func dispatchHeldChat(_ held: HeldDelegatedRun) async -> DispatchHandle? {
+        guard held.claimDispatch() else { return nil }
+        if let handle = await dispatchChat(
+            held.request,
+            heldDelegatedRun: held
+        ) {
+            return handle
+        }
+        try? held.end(
+            RunLifecycleTerminalReceipt(
+                runId: held.runId,
+                status: .error,
+                error: "The held delegated chat could not be dispatched."
+            )
+        )
+        return nil
+    }
+
+    /// Settle a held child that the batch scheduler never launched. If the
+    /// owner already attempted a different terminal receipt after execution,
+    /// preserve that uncertainty instead of inventing a contradictory result.
+    nonisolated static func settleHeldDelegatedRun(
+        _ held: HeldDelegatedRun,
+        status: AgentRunStatus,
+        error: String?,
+        envelope: String,
+        tool: String
+    ) -> String {
+        if held.isTerminal {
+            return SubagentSession.addingRunIdentity(
+                to: envelope,
+                runId: held.runId
+            )
+        }
+        guard !held.hasUnconfirmedTerminalIntent else {
+            return heldTerminalFailureEnvelope(
+                "The delegated lifecycle owner could not confirm its original terminal receipt.",
+                tool: tool,
+                runId: held.runId
+            )
+        }
+        do {
+            try held.end(
+                RunLifecycleTerminalReceipt(
+                    runId: held.runId,
+                    status: status,
+                    error: error
+                )
+            )
+            return SubagentSession.addingRunIdentity(
+                to: envelope,
+                runId: held.runId
+            )
+        } catch {
+            return heldTerminalFailureEnvelope(
+                error.localizedDescription,
+                tool: tool,
+                runId: held.runId
+            )
+        }
+    }
+
+    nonisolated private static func heldTerminalFailureEnvelope(
+        _ message: String,
+        tool: String,
+        runId: UUID
+    ) -> String {
+        ToolEnvelope.failure(
+            kind: .executionError,
+            message:
+                "The delegated child settled, but its durable terminal state "
+                + "could not be recorded: \(message)",
+            tool: tool,
+            retryable: false,
+            metadata: [
+                "run_id": runId.uuidString,
+                "terminal_write_failed": true,
+            ]
+        )
+    }
+
     /// Dispatch a chat task for background execution.
     public func dispatchChat(_ request: DispatchRequest) async -> DispatchHandle? {
+        await dispatchChat(request, heldDelegatedRun: nil)
+    }
+
+    private func dispatchChat(
+        _ request: DispatchRequest,
+        heldDelegatedRun: HeldDelegatedRun?
+    ) async -> DispatchHandle? {
         // Background dispatch is an external surface (HTTP / plugins /
         // schedules). Built-in agents (the Default agent) are only
         // reachable from the in-app Chat — refuse to route any non-Chat
@@ -1003,32 +1269,40 @@ public final class BackgroundTaskManager: ObservableObject {
         // queued cancellation both have a durable lifecycle.
         var admittedRunId: UUID?
         var admittedRootRunId: UUID?
-        do {
-            let receipt = try runLifecycleRecorder.admit(
-                RunLifecycleAdmission(
-                    runId: request.runId,
-                    agentId: context.agentId,
-                    triggerKind: Self.triggerKind(for: request.source),
-                    triggerPayload: Self.triggerPayload(for: request),
-                    instructions: request.prompt,
-                    startsImmediately: startsImmediately,
-                    sessionId: context.id,
-                    projectId: context.chatSession.projectId,
-                    parentRunId: request.parentRunId,
-                    rootRunId: request.rootRunId,
-                    title: context.title ?? request.title,
-                    modelId: context.chatSession.selectedModel
-                )
-            )
-            admittedRunId = receipt.runId
-            admittedRootRunId = receipt.rootRunId
-        } catch {
-            print(
-                "[BackgroundTaskManager] run admission failed for "
-                    + "\(request.runId): \(error)"
-            )
-            if Self.requiresDurableAdmission(for: request.source) {
+        if let heldDelegatedRun {
+            guard heldDelegatedRun.request.runId == request.runId else {
                 return nil
+            }
+            admittedRunId = heldDelegatedRun.runId
+            admittedRootRunId = heldDelegatedRun.rootRunId
+        } else {
+            do {
+                let receipt = try runLifecycleRecorder.admit(
+                    RunLifecycleAdmission(
+                        runId: request.runId,
+                        agentId: context.agentId,
+                        triggerKind: Self.triggerKind(for: request.source),
+                        triggerPayload: Self.triggerPayload(for: request),
+                        instructions: request.prompt,
+                        startsImmediately: startsImmediately,
+                        sessionId: context.id,
+                        projectId: context.chatSession.projectId,
+                        parentRunId: request.parentRunId,
+                        rootRunId: request.rootRunId,
+                        title: context.title ?? request.title,
+                        modelId: context.chatSession.selectedModel
+                    )
+                )
+                admittedRunId = receipt.runId
+                admittedRootRunId = receipt.rootRunId
+            } catch {
+                print(
+                    "[BackgroundTaskManager] run admission failed for "
+                        + "\(request.runId): \(error)"
+                )
+                if Self.requiresDurableAdmission(for: request.source) {
+                    return nil
+                }
             }
         }
 
@@ -1046,6 +1320,9 @@ public final class BackgroundTaskManager: ObservableObject {
             showToast: request.showToast
         )
         state.agentRunId = admittedRunId
+        if let heldDelegatedRun {
+            heldDelegatedRuns[context.id] = heldDelegatedRun
+        }
         if let admittedRunId, let admittedRootRunId {
             context.chatSession.bindBackgroundRunLifecycle(
                 runId: admittedRunId,
@@ -1083,7 +1360,18 @@ public final class BackgroundTaskManager: ObservableObject {
         let startWork: @MainActor () async -> Void = { [weak state] in
             guard let state else { return }
 
-            if !startsImmediately, let runId = state.agentRunId {
+            if let heldDelegatedRun {
+                do {
+                    try heldDelegatedRun.start()
+                } catch {
+                    self.failHeldDelegatedStart(
+                        state,
+                        held: heldDelegatedRun,
+                        error: error
+                    )
+                    return
+                }
+            } else if !startsImmediately, let runId = state.agentRunId {
                 do {
                     try self.runLifecycleRecorder.append(
                         runId: runId,
@@ -1159,6 +1447,78 @@ public final class BackgroundTaskManager: ObservableObject {
         // Return the resolved task id (may differ from request.id after a
         // reattach) so callers awaiting completion poll the actual live task.
         return DispatchHandle(id: context.id, runId: request.runId, request: request)
+    }
+
+    /// Route terminalization through the held token when this task originated
+    /// from a batch reservation. Every other dispatch keeps the existing
+    /// manager-owned recorder path.
+    private func endDurableLifecycle(
+        _ receipt: RunLifecycleTerminalReceipt,
+        for state: BackgroundTaskState
+    ) throws {
+        if let held = heldDelegatedRuns[state.id] {
+            try held.end(receipt)
+        } else {
+            try runLifecycleRecorder.end(receipt)
+        }
+    }
+
+    /// A held delegation must never execute after its queued→started event
+    /// fails. Settle the same owner token as an error and wake the awaiting
+    /// orchestrator with a durable failure instead.
+    private func failHeldDelegatedStart(
+        _ state: BackgroundTaskState,
+        held: HeldDelegatedRun,
+        error: any Error
+    ) {
+        let endedAt = Date()
+        var summary =
+            "The delegated child could not record its durable start and was not executed: "
+            + error.localizedDescription
+        do {
+            try held.end(
+                RunLifecycleTerminalReceipt(
+                    runId: held.runId,
+                    status: .error,
+                    endedAt: endedAt,
+                    error: summary
+                )
+            )
+            state.chatSession?.clearBackgroundRunLifecycle(runId: held.runId)
+            state.agentRunId = nil
+            heldDelegatedRuns.removeValue(forKey: state.id)
+        } catch {
+            summary +=
+                " The durable terminal state also could not be recorded: "
+                + error.localizedDescription
+        }
+        state.status = .failed(summary: summary)
+        state.currentStep = nil
+        state.captureContextPreview()
+        state.executionContext?.chatSession.save()
+        Self.writeRunTrace(
+            runId: held.runId,
+            state: state,
+            status: .error,
+            endedAt: endedAt,
+            errorMessage: summary
+        )
+        resumeCompletion(for: state.id, result: .failed(summary))
+        emitPluginEvent(
+            state,
+            type: .failed,
+            json: PluginHostContext.serializeCompletedEvent(
+                success: false,
+                summary: summary,
+                sessionId: state.executionContext?.id,
+                taskTitle: state.taskTitle,
+                outputText: state.chatSession?.turns.last?.content
+            )
+        )
+        scheduleAutoFinalize(state.id)
+        persistRetainedTabs()
+        recomputeSortedToastTasks()
+        pumpQueue()
     }
 
     /// Returns an existing persisted session for this dispatch when the
@@ -1257,7 +1617,8 @@ public final class BackgroundTaskManager: ObservableObject {
         // creating a context or touching the ledger; otherwise malformed
         // callers could silently admit the prepared child ID as a root run.
         if request.source == .delegation {
-            guard request.parentRunId != nil,
+            guard request.agentId != nil,
+                request.parentRunId != nil,
                 request.rootRunId != nil,
                 request.parentSessionId != nil,
                 let parentToolCallId = request.parentToolCallId?
@@ -1559,7 +1920,7 @@ public final class BackgroundTaskManager: ObservableObject {
                 errorMessage: errorMessage
             )
             do {
-                try runLifecycleRecorder.end(
+                try endDurableLifecycle(
                     RunLifecycleTerminalReceipt(
                         runId: runId,
                         status: endStatus,
@@ -1568,7 +1929,8 @@ public final class BackgroundTaskManager: ObservableObject {
                         tokensOut: state.tokensOut > 0 ? state.tokensOut : nil,
                         costUSD: state.costUSD > 0 ? state.costUSD : nil,
                         error: errorMessage
-                    )
+                    ),
+                    for: state
                 )
             } catch {
                 terminalWriteSucceeded = false
@@ -1597,6 +1959,7 @@ public final class BackgroundTaskManager: ObservableObject {
             if terminalWriteSucceeded {
                 state.chatSession?.clearBackgroundRunLifecycle(runId: runId)
                 state.agentRunId = nil
+                heldDelegatedRuns.removeValue(forKey: state.id)
             }
         }
         resumeCompletion(for: state.id, result: resultFromState(state))

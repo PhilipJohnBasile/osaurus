@@ -27,7 +27,8 @@
 import Foundation
 
 final class TextSubagentKind:
-    SubagentKind, SubagentPostAdmissionResidencyPlanning, @unchecked Sendable
+    SubagentKind, SubagentPostAdmissionResidencyPlanning,
+    SubagentDelegatedRunHolding, @unchecked Sendable
 {
     let capability = SubagentCapabilityRegistry.spawn
 
@@ -375,6 +376,33 @@ final class TextSubagentKind:
     /// delegated chat. The SubagentSession host supplies its preallocated
     /// child ID but does not create a second ledger row for it.
     var delegatesDurableLifecycle: Bool { isDelegatedAgentTarget }
+
+    @MainActor
+    func holdDelegatedRun(
+        scope: SubagentScope,
+        resolved: ResolvedModel
+    ) throws -> BackgroundTaskManager.HeldDelegatedRun {
+        guard isDelegatedAgentTarget,
+            let targetAgentId = resolvedAgentId,
+            let delegatedContract
+        else {
+            throw SubagentError.unavailable(
+                "The delegated child contract was not resolved before batch admission."
+            )
+        }
+        let request = AgentDelegationDispatcher.dispatchRequest(
+            targetAgentId: targetAgentId,
+            input: input,
+            scope: scope,
+            maxResponseTokens: delegatedContract.responseTokens,
+            maxAssistantTurns: delegatedContract.assistantTurns,
+            maxContextPositions: delegatedContract.contextPositions
+        )
+        return try BackgroundTaskManager.shared.holdDelegatedChat(
+            request,
+            modelId: resolved.id ?? resolved.name
+        )
+    }
 
     func resolveModel(_ scope: SubagentScope) async throws -> ResolvedModel {
         let resolved = try await resolveCurrentModel(scope)

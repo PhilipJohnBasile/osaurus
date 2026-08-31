@@ -115,6 +115,17 @@ protocol SubagentPostAdmissionResidencyPlanning: SubagentKind {
     ) async throws -> ResidencyPlan
 }
 
+/// A true delegated kind whose durable child lifecycle is owned by
+/// BackgroundTaskManager. Batch execution asks this narrow capability for an
+/// opaque queued reservation before the scheduler may launch or refuse it.
+protocol SubagentDelegatedRunHolding: SubagentKind {
+    @MainActor
+    func holdDelegatedRun(
+        scope: SubagentScope,
+        resolved: ResolvedModel
+    ) throws -> BackgroundTaskManager.HeldDelegatedRun
+}
+
 extension SubagentKind {
     func admissionRequestEstimate() -> SubagentChildRequestEstimate? { nil }
 
