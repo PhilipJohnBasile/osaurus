@@ -707,6 +707,212 @@ struct SchedulerRunLedgerTests {
         #expect(all.first(where: { $0.id == secondRun })?.rootRunId == secondRun)
     }
 
+    @Test func transactionalBoardAndDetailFactsBackTheReadOnlyBoard() throws {
+        let database = SchedulerDatabase()
+        try database.openInMemory()
+        defer { database.close() }
+
+        let rootRunId = UUID()
+        let childRunId = UUID()
+        let unrelatedRunId = UUID()
+        let agentId = UUID()
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        try database.recordRunStart(
+            agentId: agentId,
+            triggerKind: .user,
+            instructions: "Root",
+            startedAt: startedAt,
+            id: rootRunId
+        )
+        try database.recordRunStart(
+            agentId: agentId,
+            triggerKind: .user,
+            instructions: "Child",
+            startedAt: startedAt.addingTimeInterval(1),
+            id: childRunId,
+            parentRunId: rootRunId,
+            rootRunId: rootRunId
+        )
+        try database.recordRunStart(
+            agentId: agentId,
+            triggerKind: .watcher,
+            instructions: "Unrelated",
+            startedAt: startedAt.addingTimeInterval(2),
+            id: unrelatedRunId
+        )
+        _ = try database.appendRunEvent(
+            runId: childRunId,
+            kind: .waitingForInput,
+            message: "Choose a target"
+        )
+        try database.recordRunEnd(
+            runId: unrelatedRunId,
+            status: .success,
+            endedAt: startedAt.addingTimeInterval(3)
+        )
+
+        let exact = try #require(try database.run(id: childRunId))
+        let missing = try database.run(id: UUID())
+        let tree = try database.runTree(rootRunId: rootRunId)
+        let events = try database.events(
+            runIds: [childRunId, rootRunId, childRunId]
+        )
+        let board = try database.runCenterBoardFacts(recentTerminalLimit: 1)
+        let detail = try #require(
+            try database.runCenterDetailFacts(runId: childRunId)
+        )
+
+        #expect(exact.parentRunId == rootRunId)
+        #expect(missing == nil)
+        #expect(tree.map(\.id) == [rootRunId, childRunId])
+        #expect(events[rootRunId]?.map(\.kind) == [.started, .childLinked])
+        #expect(events[childRunId]?.map(\.kind) == [.started, .waitingForInput])
+        #expect(events[unrelatedRunId] == nil)
+        #expect(try database.events(runIds: []).isEmpty)
+        #expect(Set(board.runs.map(\.id)) == [rootRunId, childRunId, unrelatedRunId])
+        #expect(board.eventsByRunId[childRunId]?.last?.kind == .waitingForInput)
+        #expect(detail.run.id == childRunId)
+        #expect(detail.tree.map(\.id) == [rootRunId, childRunId])
+        #expect(detail.eventsByRunId[rootRunId]?.map(\.kind) == [.started, .childLinked])
+    }
+
+    @Test func boardFactsKeepEveryActiveRunAndBoundTerminalHistory() throws {
+        let database = SchedulerDatabase()
+        try database.openInMemory()
+        defer { database.close() }
+
+        let agentId = UUID()
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        let oldWaiting = try database.recordRunStart(
+            agentId: agentId,
+            triggerKind: .user,
+            instructions: "Old but waiting",
+            startedAt: base
+        )
+        _ = try database.appendRunEvent(
+            runId: oldWaiting,
+            kind: .waitingForInput,
+            occurredAt: base.addingTimeInterval(1)
+        )
+        let olderTerminal = try database.recordRunStart(
+            agentId: agentId,
+            triggerKind: .user,
+            instructions: "Older terminal",
+            startedAt: base.addingTimeInterval(2)
+        )
+        try database.recordRunEnd(
+            runId: olderTerminal,
+            status: .success,
+            endedAt: base.addingTimeInterval(3)
+        )
+        let newerTerminal = try database.recordRunStart(
+            agentId: agentId,
+            triggerKind: .user,
+            instructions: "Newer terminal",
+            startedAt: base.addingTimeInterval(4)
+        )
+        try database.recordRunEnd(
+            runId: newerTerminal,
+            status: .error,
+            endedAt: base.addingTimeInterval(5)
+        )
+
+        let board = try database.runCenterBoardFacts(recentTerminalLimit: 1)
+
+        #expect(Set(board.runs.map(\.id)) == [oldWaiting, newerTerminal])
+        #expect(board.runs.contains { $0.id == olderTerminal } == false)
+        #expect(board.eventsByRunId[oldWaiting]?.last?.kind == .waitingForInput)
+        #expect(board.eventsByRunId[newerTerminal]?.last?.kind == .failed)
+        #expect(board.eventsByRunId[olderTerminal] == nil)
+
+        let activeOnly = try database.runCenterBoardFacts(recentTerminalLimit: 0)
+        #expect(activeOnly.runs.map(\.id) == [oldWaiting])
+        #expect(activeOnly.eventsByRunId[oldWaiting]?.last?.kind == .waitingForInput)
+    }
+
+    @Test func detailFactsRejectContradictoryRootMembership() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("osaurus-run-tree-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("scheduler.sqlite").path
+
+        let database = SchedulerDatabase()
+        try database.openForTesting(path: path)
+        let firstRoot = try database.recordRunStart(
+            agentId: UUID(),
+            triggerKind: .user,
+            instructions: "First root"
+        )
+        let child = try database.recordRunStart(
+            agentId: UUID(),
+            triggerKind: .user,
+            instructions: "Child",
+            parentRunId: firstRoot
+        )
+        let secondRoot = try database.recordRunStart(
+            agentId: UUID(),
+            triggerKind: .user,
+            instructions: "Second root"
+        )
+        database.close()
+
+        let connection = try EncryptedSQLiteOpener.open(
+            path: path,
+            key: nil,
+            applyPerfPragmas: false
+        )
+        try execute(
+            "UPDATE agent_runs SET root_run_id = '\(secondRoot.uuidString)' "
+                + "WHERE id = '\(child.uuidString)'",
+            on: connection
+        )
+        sqlite3_close(connection)
+
+        try database.openForTesting(path: path)
+        defer { database.close() }
+        #expect(throws: SchedulerDatabaseError.self) {
+            _ = try database.runCenterDetailFacts(runId: child)
+        }
+    }
+
+    @Test func v3MigrationInstallsRunCenterReadIndexes() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("osaurus-run-indexes-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("scheduler.sqlite").path
+
+        let database = SchedulerDatabase()
+        try database.openForTesting(path: path)
+        #expect(try database.schemaVersionForTesting() == 3)
+        database.close()
+
+        let connection = try EncryptedSQLiteOpener.open(
+            path: path,
+            key: nil,
+            applyPerfPragmas: false
+        )
+        defer { sqlite3_close(connection) }
+        let indexes = try queryStrings(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%'",
+            on: connection
+        )
+
+        #expect(indexes.isSuperset(of: [
+            "idx_runs_status_updated_id",
+            "idx_runs_parent_started_id",
+            "idx_runs_root_started_id",
+            "idx_run_events_recent",
+        ]))
+    }
+
     @Test func crossAgentPaginationDoesNotSkipSameSecondRuns() throws {
         let database = SchedulerDatabase()
         try database.openInMemory()
@@ -945,7 +1151,7 @@ struct SchedulerRunLedgerTests {
         let migrated = try #require(
             database.allRuns().first(where: { $0.id == runId })
         )
-        #expect(try database.schemaVersionForTesting() == 2)
+        #expect(try database.schemaVersionForTesting() == 3)
         #expect(migrated.id == runId)
         #expect(migrated.sessionId == sessionId)
         #expect(migrated.projectId == nil)
@@ -1207,7 +1413,7 @@ struct SchedulerRunLedgerTests {
         try database.openForTesting(path: path)
         defer { database.close() }
         #expect(database.isOpen)
-        #expect(try database.schemaVersionForTesting() == 2)
+        #expect(try database.schemaVersionForTesting() == 3)
     }
 
     @Test func corruptRunStatusFailsClosed() throws {
@@ -1356,5 +1562,32 @@ struct SchedulerRunLedgerTests {
                 message.map { String(cString: $0) } ?? "unknown fixture error"
             )
         }
+    }
+
+    private func queryStrings(_ sql: String, on connection: OpaquePointer) throws -> Set<String> {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK,
+            let statement
+        else {
+            throw SchedulerDatabaseError.failedToPrepare(
+                String(cString: sqlite3_errmsg(connection))
+            )
+        }
+        defer { sqlite3_finalize(statement) }
+
+        var values: Set<String> = []
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw SchedulerDatabaseError.failedToExecute(
+                    "fixture query failed with SQLite status \(result)"
+                )
+            }
+            if let text = sqlite3_column_text(statement, 0) {
+                values.insert(String(cString: text))
+            }
+        }
+        return values
     }
 }

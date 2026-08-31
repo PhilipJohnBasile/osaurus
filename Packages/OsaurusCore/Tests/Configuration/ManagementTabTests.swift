@@ -80,4 +80,11 @@ struct ManagementTabTests {
         #expect(ManagementTab.settings.rawValue == "settings")
         #expect(ManagementTab.settings.label == "General")
     }
+
+    @Test func runCenterLeadsTheAgentsSectionAndRoundTrips() {
+        #expect(ManagementSection.agents.tabs.first == .runCenter)
+        #expect(ManagementTab.runCenter.section == .agents)
+        #expect(ManagementTab.runCenter.rawValue == "runCenter")
+        #expect(ManagementTab.resolved(from: "runCenter") == .runCenter)
+    }
 }

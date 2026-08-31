@@ -737,6 +737,7 @@ struct FeatureTelemetryEventTests {
         #expect(FeatureTelemetry.settingsTabToken(.computerUse) == "computer_use")
         #expect(FeatureTelemetry.settingsTabToken(.imageGeneration) == "image_generation")
         #expect(FeatureTelemetry.settingsTabToken(.agentChannels) == "agent_channels")
+        #expect(FeatureTelemetry.settingsTabToken(.runCenter) == "run_center")
     }
 
     // MARK: - Hardware RAM bucket (attached to every event)

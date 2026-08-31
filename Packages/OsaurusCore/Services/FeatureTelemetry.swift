@@ -399,6 +399,7 @@ enum FeatureTelemetry {
         case .chat: return "chat"
         case .voice: return "voice"
         case .themes: return "themes"
+        case .runCenter: return "run_center"
         case .orchestrator: return "orchestrator"
         case .models: return "models"
         case .providers: return "providers"

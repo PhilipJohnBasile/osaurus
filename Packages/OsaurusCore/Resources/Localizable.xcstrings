@@ -1,6 +1,54 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Approval needed": {
+    },
+    "Clarification needed": {
+    },
+    "In Review": {
+    },
+    "Needs You": {
+    },
+    "No terminal run trace is available": {
+    },
+    "No canonical conversation is available for this run.": {
+    },
+    "No durable proof contract or evidence association is captured for this run.": {
+    },
+    "No durable test or evaluation artifacts are associated with this run.": {
+    },
+    "Not captured": {
+    },
+    "Not linked": {
+    },
+    "Proven": {
+    },
+    "Proof contract not recorded": {
+    },
+    "Ready to resume": {
+    },
+    "Resolved generation and cache settings are not durably captured yet.": {
+    },
+    "Run %@ could not be projected: %@": {
+    },
+    "Run %@ was not found.": {
+    },
+    "Run Center": {
+    },
+    "Run detail is unavailable": {
+    },
+    "Run-specific artifacts are not durably associated with this run.": {
+    },
+    "The canonical conversation is unavailable.": {
+    },
+    "The run trace could not be decoded": {
+    },
+    "The trace identity does not match this run": {
+    },
+    "This run has no canonical conversation.": {
+    },
+    "Untitled run": {
+    },
     "Claude Code": {
     },
     "Claude Code couldn't complete the turn: %@": {

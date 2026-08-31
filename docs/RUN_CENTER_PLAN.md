@@ -1,6 +1,6 @@
 # Osaurus Run Center
 
-Status: implementation plan
+Status: implementation in progress
 Owner: Osaurus
 Foundation branch: `codex/run-center-foundation`
 
@@ -223,18 +223,16 @@ acceleration and chat warm-up rearming in an asynchronous follow-up. A
 delegated child's completion receipt does not yet prove that follow-up has
 settled, so complete delegated cleanup ordering remains unproven.
 
-Validation status for this checkpoint remains `PARTIAL` until its exact commit
-passes the pinned Xcode 26.4.1 fork CI and the required Release-app parent/child,
-cancellation, persistence, and relaunch proof. The prior exact-SHA CI run made
-six jobs green and exposed one `test-core` failure: a held ordinary child's
-successful envelope omitted the top-level durable run id. That correlation bug
-is repaired here and its exact regression passes locally. Local Swift parsing
-and diff integrity also pass. With a temporary compile-only exclusion for the
-unchanged `ChatView.dispatchSend` expression that times out under the local
-Xcode 27 beta, the production module built and the focused
+Validation status for this checkpoint remains `PARTIAL` until the required
+Release-app parent/child, cancellation, persistence, and relaunch proof. Exact
+SHA `94efc4e106e5ad58ff336b4e1fcfd39154a1d404` passed all seven pinned fork CI
+jobs, including `test-core`, `test-evals`, package, CLI, lint, and shell gates.
+Local Swift parsing and diff integrity also pass. With a temporary compile-only
+exclusion for the unchanged `ChatView.dispatchSend` expression that times out
+under the local Xcode 27 beta, the production module built and the focused
 `DispatchRunIdentityTests`, `SpawnBatchToolTests`, and held-ordinary regression
 ran 62 tests across three suites with no failures. The exclusion was removed
-and is not part of this checkpoint.
+and is not part of the checkpoint.
 
 ### Phase 2 — Read-only Run Center
 
@@ -246,6 +244,39 @@ and is not part of this checkpoint.
 
 Exit gate: live Release-app UI proof across navigation, persistence, relaunch,
 and complete terminal-state settlement.
+
+Implemented read-only checkpoint: Run Center is the first item in the native
+Management Agents section, leaving Chat and Projects unchanged. Its horizontal
+six-lane board is projected only from durable rows and matching complete event
+streams captured in one SQLite read transaction. Every nonterminal run remains
+eligible regardless of age; terminal history is bounded and indexed. Projection
+or lineage corruption is shown outside the lanes as unavailable rather than
+misclassified as failure. The global Needs You count distinguishes approval,
+clarification, and ready-to-resume facts. Completed runs remain In Review while
+the durable proof contract is unavailable; the UI never infers Proven or Done
+from a terminal status alone.
+
+Detail reads capture the exact selected row, recursively validated parent/root
+tree, and per-run event streams from one snapshot. Events retain their durable
+per-run sequence and expose only an allowlisted metadata subset. Conversation
+text is labeled as whole-conversation context because chat turns have no
+per-turn run identity. Only the selected run's `RunTrace` contributes token and
+tool summaries; missing, corrupt, and identity-mismatched traces are distinct.
+Run-specific artifacts, proof contracts, tests/evals, and resolved runtime
+settings stay visibly unavailable until later phases create durable bindings.
+The view model performs ledger and history reads off the main actor, rejects
+stale refresh/detail completions, polls only while visible, supports manual
+refresh and retry, and opens the existing canonical conversation.
+
+This Phase 2 source checkpoint is `PARTIAL`. With the temporary local Xcode 27
+compile exclusion described above, 38 focused tests across the ledger,
+projection, read-model, view-model, navigation, and telemetry suites pass. The
+V3 migration/index, bounded-terminal/unbounded-active, corrupt-lineage,
+stale-refresh, missing-detail, and navigation contracts are covered, and the
+localization/catalog lint passes. The exclusion has again been removed. A fresh
+exact-SHA pinned fork CI run plus the required isolated Release-app navigation,
+refresh, selection, conversation handoff, persistence/relaunch, and fully
+settled terminal-state UI proof remain before this phase can be called complete.
 
 ### Phase 3 — Safe controls
 

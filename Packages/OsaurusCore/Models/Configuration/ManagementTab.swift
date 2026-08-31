@@ -40,7 +40,7 @@ public enum ManagementSection: String, CaseIterable, Identifiable, Sendable {
         case .general:
             [.settings, .chat, .voice, .themes, .credits, .identity, .permissions, .privacy]
         case .models: [.models, .providers, .imageGeneration]
-        case .agents: [.orchestrator, .agents, .agentChannels]
+        case .agents: [.runCenter, .orchestrator, .agents, .agentChannels]
         case .capabilities: [.search, .knowledge, .memory, .tools, .skills, .commands]
         case .automation: [.schedules, .watchers, .computerUse, .browser]
         case .developers: [.server, .sandbox, .insights]
@@ -56,6 +56,7 @@ public enum ManagementTab: String, CaseIterable, Identifiable, Sendable {
     case chat
     case voice
     case themes
+    case runCenter
     case orchestrator
     case models
     case providers
@@ -93,7 +94,7 @@ public enum ManagementTab: String, CaseIterable, Identifiable, Sendable {
         case .settings, .chat, .voice, .themes, .credits, .identity, .permissions, .privacy:
             .general
         case .models, .providers, .imageGeneration: .models
-        case .orchestrator, .agents, .agentChannels: .agents
+        case .runCenter, .orchestrator, .agents, .agentChannels: .agents
         case .search, .knowledge, .memory, .tools, .skills, .commands: .capabilities
         case .schedules, .watchers, .computerUse, .browser: .automation
         case .server, .sandbox, .insights: .developers
@@ -140,6 +141,7 @@ public enum ManagementTab: String, CaseIterable, Identifiable, Sendable {
         case .identity: "person.badge.key.fill"
         case .chat: "text.bubble.fill"
         case .settings: "gearshape.fill"
+        case .runCenter: "rectangle.3.group.fill"
         case .orchestrator: "point.3.connected.trianglepath.dotted"
         }
     }
@@ -172,6 +174,7 @@ public enum ManagementTab: String, CaseIterable, Identifiable, Sendable {
         case .identity: L("Identity")
         case .chat: L("Chat")
         case .settings: L("General")
+        case .runCenter: L("Run Center")
         case .orchestrator: L("Orchestrator")
         }
     }

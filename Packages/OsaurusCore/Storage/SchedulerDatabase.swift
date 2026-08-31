@@ -293,6 +293,41 @@ public struct RunCenterRunCursor: Codable, Sendable, Equatable {
     }
 }
 
+/// A board-sized set of durable run facts captured from one SQLite read
+/// transaction. Consumers must project every run from the matching complete
+/// event stream in this value; composing independent row and event reads can
+/// observe different commits.
+public struct RunCenterBoardFacts: Sendable, Equatable {
+    public let runs: [AgentRunRecord]
+    public let eventsByRunId: [UUID: [RunCenterEvent]]
+
+    public init(
+        runs: [AgentRunRecord],
+        eventsByRunId: [UUID: [RunCenterEvent]]
+    ) {
+        self.runs = runs
+        self.eventsByRunId = eventsByRunId
+    }
+}
+
+/// Exact run, complete parent/child graph, and complete event streams captured
+/// from one SQLite read transaction for the Run Center detail surface.
+public struct RunCenterDetailFacts: Sendable, Equatable {
+    public let run: AgentRunRecord
+    public let tree: [AgentRunRecord]
+    public let eventsByRunId: [UUID: [RunCenterEvent]]
+
+    public init(
+        run: AgentRunRecord,
+        tree: [AgentRunRecord],
+        eventsByRunId: [UUID: [RunCenterEvent]]
+    ) {
+        self.run = run
+        self.tree = tree
+        self.eventsByRunId = eventsByRunId
+    }
+}
+
 /// One row in `agent_pause`. Transient operational state (not exportable
 /// config), so this lives here rather than in `Agent.json`.
 public struct AgentPauseRecord: Codable, Sendable, Equatable {
@@ -312,7 +347,7 @@ public struct AgentPauseRecord: Codable, Sendable, Equatable {
 public final class SchedulerDatabase: @unchecked Sendable {
     public static let shared = SchedulerDatabase()
 
-    private static let schemaVersion = 2
+    private static let schemaVersion = 3
 
     private var db: OpaquePointer?
     private let queue = DispatchQueue(label: "ai.osaurus.scheduler.database")
@@ -443,6 +478,7 @@ public final class SchedulerDatabase: @unchecked Sendable {
         let current = try getSchemaVersion()
         if current < 1 { try migrateToV1() }
         if current < 2 { try migrateToV2() }
+        if current < 3 { try migrateToV3() }
     }
 
     private func getSchemaVersion() throws -> Int {
@@ -605,6 +641,43 @@ public final class SchedulerDatabase: @unchecked Sendable {
                 )
             }
             try setSchemaVersion(2)
+            try executeRaw("COMMIT")
+        } catch {
+            try? executeRaw("ROLLBACK")
+            throw error
+        }
+    }
+
+    /// Read-model indexes only. Lanes, pending flags, and evidence state stay
+    /// derived from the append-only stream and are never materialized here.
+    private func migrateToV3() throws {
+        try executeRaw("BEGIN IMMEDIATE TRANSACTION")
+        do {
+            try executeRaw(
+                """
+                    CREATE INDEX IF NOT EXISTS idx_runs_status_updated_id
+                    ON agent_runs(status, updated_at DESC, id DESC)
+                """
+            )
+            try executeRaw(
+                """
+                    CREATE INDEX IF NOT EXISTS idx_runs_parent_started_id
+                    ON agent_runs(parent_run_id, started_at ASC, id ASC)
+                """
+            )
+            try executeRaw(
+                """
+                    CREATE INDEX IF NOT EXISTS idx_runs_root_started_id
+                    ON agent_runs(root_run_id, started_at ASC, id ASC)
+                """
+            )
+            try executeRaw(
+                """
+                    CREATE INDEX IF NOT EXISTS idx_run_events_recent
+                    ON run_events(occurred_at DESC, run_id DESC, sequence DESC)
+                """
+            )
+            try setSchemaVersion(3)
             try executeRaw("COMMIT")
         } catch {
             try? executeRaw("ROLLBACK")
@@ -1316,6 +1389,135 @@ public final class SchedulerDatabase: @unchecked Sendable {
         return records
     }
 
+    /// Capture every nonterminal run plus a bounded recent terminal window
+    /// and all of their complete event streams from one deferred read
+    /// transaction. Nonterminal rows are intentionally unbounded: an old run
+    /// can begin waiting long after admission and must remain visible in the
+    /// global Needs You inbox.
+    public func runCenterBoardFacts(
+        recentTerminalLimit: Int = 200
+    ) throws -> RunCenterBoardFacts {
+        try inTransaction { _ in
+            let activeRuns = try self.readRunsTransactionally(
+                """
+                    SELECT id, agent_id, trigger_kind, trigger_payload, instructions,
+                           started_at, ended_at, status, tokens_in, tokens_out,
+                           cost_usd, error, session_id, project_id, parent_run_id,
+                           root_run_id, title, model_id, updated_at, event_baseline_state
+                    FROM agent_runs
+                    WHERE status IN ('queued', 'running', 'waiting_for_input', 'review')
+                    ORDER BY updated_at DESC, id DESC
+                """
+            )
+            let terminalLimit = min(
+                max(recentTerminalLimit, 0),
+                Int(Int32.max)
+            )
+            var terminalRuns: [AgentRunRecord] = []
+            if terminalLimit > 0 {
+                terminalRuns = try self.readRunsTransactionally(
+                    """
+                        SELECT id, agent_id, trigger_kind, trigger_payload, instructions,
+                               started_at, ended_at, status, tokens_in, tokens_out,
+                               cost_usd, error, session_id, project_id, parent_run_id,
+                               root_run_id, title, model_id, updated_at, event_baseline_state
+                        FROM agent_runs
+                        WHERE status NOT IN ('queued', 'running', 'waiting_for_input', 'review')
+                        ORDER BY updated_at DESC, id DESC
+                        LIMIT ?1
+                    """,
+                    bind: { statement in
+                        sqlite3_bind_int(statement, 1, Int32(terminalLimit))
+                    }
+                )
+            }
+            let runs = (activeRuns + terminalRuns).sorted {
+                if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+                return $0.id.uuidString > $1.id.uuidString
+            }
+            let events = try self.runEventsTransactionally(runIds: runs.map(\.id))
+            return RunCenterBoardFacts(runs: runs, eventsByRunId: events)
+        }
+    }
+
+    /// Capture one run's exact row, complete validated lineage, and complete
+    /// streams from the same SQLite snapshot. A missing run returns nil;
+    /// malformed or contradictory lineage fails the whole detail read.
+    public func runCenterDetailFacts(runId: UUID) throws -> RunCenterDetailFacts? {
+        try inTransaction { _ in
+            guard let run = try self.readExactRunTransactionally(id: runId) else {
+                return nil
+            }
+            let rootRunId = run.rootRunId ?? run.id
+            let tree = try self.readRunTreeTransactionally(rootRunId: rootRunId)
+            guard tree.contains(where: { $0.id == run.id }) else {
+                throw SchedulerDatabaseError.invalidRunRelationship(
+                    run.id,
+                    "declared root \(rootRunId.uuidString) does not contain the run"
+                )
+            }
+            let events = try self.runEventsTransactionally(runIds: tree.map(\.id))
+            return RunCenterDetailFacts(
+                run: run,
+                tree: tree,
+                eventsByRunId: events
+            )
+        }
+    }
+
+    /// Load one exact durable run for the Run Center detail projection.
+    public func run(id: UUID) throws -> AgentRunRecord? {
+        var record: AgentRunRecord?
+        try prepareAndExecute(
+            """
+                SELECT id, agent_id, trigger_kind, trigger_payload, instructions,
+                       started_at, ended_at, status, tokens_in, tokens_out,
+                       cost_usd, error, session_id, project_id, parent_run_id,
+                       root_run_id, title, model_id, updated_at, event_baseline_state
+                FROM agent_runs
+                WHERE id = ?1
+                LIMIT 1
+            """,
+            bind: { stmt in
+                Self.bindText(stmt, index: 1, value: id.uuidString)
+            },
+            process: { stmt in
+                let result = sqlite3_step(stmt)
+                if result == SQLITE_ROW {
+                    record = try Self.readRun(stmt)
+                } else if result != SQLITE_DONE {
+                    throw SchedulerDatabaseError.failedToExecute(
+                        "exact run read failed with SQLite status \(result)"
+                    )
+                }
+            }
+        )
+        return record
+    }
+
+    /// Load the complete persisted tree for a root. The explicit `id` check
+    /// keeps migrated roots visible even when their legacy row has no
+    /// `root_run_id`; descendants still join through the canonical root id.
+    public func runTree(rootRunId: UUID) throws -> [AgentRunRecord] {
+        try inTransaction { _ in
+            try self.readRunTreeTransactionally(rootRunId: rootRunId)
+        }
+    }
+
+    /// Bulk event read for board refreshes. Run Center asks for up to a few
+    /// hundred cards at once; grouping their streams in bounded SQL chunks
+    /// avoids one queue hop and statement per card while staying under
+    /// SQLite's host-parameter limit.
+    public func events(runIds: [UUID]) throws -> [UUID: [RunCenterEvent]] {
+        let uniqueIds = Array(Set(runIds)).sorted {
+            $0.uuidString < $1.uuidString
+        }
+        guard !uniqueIds.isEmpty else { return [:] }
+        return try inTransaction { _ in
+            try self.runEventsTransactionally(runIds: uniqueIds)
+        }
+    }
+
     /// Count of runs in the rolling window ending `now` that we should
     /// charge against `daily_run_cap`. Per spec §16 Q3, only `success`
     /// and `error` runs count; clamped/cancelled scheduling attempts
@@ -1606,22 +1808,27 @@ public final class SchedulerDatabase: @unchecked Sendable {
 
     private static func readRunEvent(
         _ stmt: OpaquePointer,
-        runId: UUID
+        runId: UUID,
+        columnOffset: Int32 = 0
     ) throws -> RunCenterEvent {
-        let idString = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+        let idString = sqlite3_column_text(stmt, columnOffset)
+            .map { String(cString: $0) } ?? ""
         guard let id = UUID(uuidString: idString) else {
             throw SchedulerDatabaseError.corruptRunEvent(runId, "invalid event id \(idString)")
         }
-        let sequence = Int(sqlite3_column_int64(stmt, 1))
-        let kindString = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+        let sequence = Int(sqlite3_column_int64(stmt, columnOffset + 1))
+        let kindString = sqlite3_column_text(stmt, columnOffset + 2)
+            .map { String(cString: $0) } ?? ""
         guard let kind = RunCenterEventKind(rawValue: kindString) else {
             throw SchedulerDatabaseError.corruptRunEvent(
                 runId,
                 "unsupported event type \(kindString) at sequence \(sequence)"
             )
         }
-        let message = sqlite3_column_text(stmt, 3).map { String(cString: $0) }
-        let metadataJSON = sqlite3_column_text(stmt, 4).map { String(cString: $0) } ?? "{}"
+        let message = sqlite3_column_text(stmt, columnOffset + 3)
+            .map { String(cString: $0) }
+        let metadataJSON = sqlite3_column_text(stmt, columnOffset + 4)
+            .map { String(cString: $0) } ?? "{}"
         guard let metadata = jsonDecode([String: String].self, from: metadataJSON) else {
             throw SchedulerDatabaseError.corruptRunEvent(
                 runId,
@@ -1629,7 +1836,9 @@ public final class SchedulerDatabase: @unchecked Sendable {
             )
         }
         let occurredAt = Date(
-            timeIntervalSince1970: TimeInterval(sqlite3_column_int64(stmt, 5))
+            timeIntervalSince1970: TimeInterval(
+                sqlite3_column_int64(stmt, columnOffset + 5)
+            )
         )
         return RunCenterEvent(
             id: id,
@@ -1884,6 +2093,226 @@ public final class SchedulerDatabase: @unchecked Sendable {
             sqlite3_bind_int64(stmt, 7, Int64(event.occurredAt.timeIntervalSince1970))
         }
         return event
+    }
+
+    /// Must be called from inside `inTransaction` while `queue` is held.
+    private func readRunsTransactionally(
+        _ sql: String,
+        bind: (OpaquePointer) -> Void = { _ in }
+    ) throws -> [AgentRunRecord] {
+        var statement: OpaquePointer?
+        guard
+            sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK,
+            let statement
+        else {
+            throw SchedulerDatabaseError.failedToPrepare(
+                String(cString: sqlite3_errmsg(db))
+            )
+        }
+        defer { sqlite3_finalize(statement) }
+        bind(statement)
+
+        var records: [AgentRunRecord] = []
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw SchedulerDatabaseError.failedToExecute(
+                    "transactional run read failed with SQLite status \(result)"
+                )
+            }
+            records.append(try Self.readRun(statement))
+        }
+        return records
+    }
+
+    /// Must be called from inside `inTransaction` while `queue` is held.
+    private func readExactRunTransactionally(id: UUID) throws -> AgentRunRecord? {
+        try readRunsTransactionally(
+            """
+                SELECT id, agent_id, trigger_kind, trigger_payload, instructions,
+                       started_at, ended_at, status, tokens_in, tokens_out,
+                       cost_usd, error, session_id, project_id, parent_run_id,
+                       root_run_id, title, model_id, updated_at, event_baseline_state
+                FROM agent_runs
+                WHERE id = ?1
+                LIMIT 1
+            """,
+            bind: { statement in
+                Self.bindText(statement, index: 1, value: id.uuidString)
+            }
+        ).first
+    }
+
+    /// Follow real parent links from the root, then compare the result with
+    /// every row that declares that root. This catches wrong roots, dangling
+    /// parents, self-parenting, and cycles instead of silently omitting a
+    /// malformed descendant from the detail graph.
+    /// Must be called from inside `inTransaction` while `queue` is held.
+    private func readRunTreeTransactionally(
+        rootRunId: UUID
+    ) throws -> [AgentRunRecord] {
+        let selection =
+            """
+                id, agent_id, trigger_kind, trigger_payload, instructions,
+                started_at, ended_at, status, tokens_in, tokens_out,
+                cost_usd, error, session_id, project_id, parent_run_id,
+                root_run_id, title, model_id, updated_at, event_baseline_state
+            """
+        let traversed = try readRunsTransactionally(
+            """
+                WITH RECURSIVE run_tree AS (
+                    SELECT \(selection)
+                    FROM agent_runs
+                    WHERE id = ?1
+                    UNION
+                    SELECT
+                        child.id, child.agent_id, child.trigger_kind,
+                        child.trigger_payload, child.instructions,
+                        child.started_at, child.ended_at, child.status,
+                        child.tokens_in, child.tokens_out, child.cost_usd,
+                        child.error, child.session_id, child.project_id,
+                        child.parent_run_id, child.root_run_id, child.title,
+                        child.model_id, child.updated_at,
+                        child.event_baseline_state
+                    FROM agent_runs AS child
+                    JOIN run_tree AS parent
+                      ON child.parent_run_id = parent.id
+                )
+                SELECT \(selection)
+                FROM run_tree
+                ORDER BY started_at ASC, id ASC
+            """,
+            bind: { statement in
+                Self.bindText(statement, index: 1, value: rootRunId.uuidString)
+            }
+        )
+        guard let root = traversed.first(where: { $0.id == rootRunId }) else {
+            throw SchedulerDatabaseError.runNotFound(rootRunId)
+        }
+        guard root.parentRunId == nil else {
+            throw SchedulerDatabaseError.invalidRunRelationship(
+                root.id,
+                "declared root has parent \(root.parentRunId?.uuidString ?? "unknown")"
+            )
+        }
+        guard root.rootRunId == nil || root.rootRunId == rootRunId else {
+            throw SchedulerDatabaseError.invalidRunRelationship(
+                root.id,
+                "root declares a different root"
+            )
+        }
+
+        let declared = try readRunsTransactionally(
+            """
+                SELECT \(selection)
+                FROM agent_runs
+                WHERE id = ?1 OR root_run_id = ?1
+                ORDER BY started_at ASC, id ASC
+            """,
+            bind: { statement in
+                Self.bindText(statement, index: 1, value: rootRunId.uuidString)
+            }
+        )
+        let traversedIds = Set(traversed.map(\.id))
+        let declaredIds = Set(declared.map(\.id))
+        guard traversedIds == declaredIds else {
+            throw SchedulerDatabaseError.invalidRunRelationship(
+                rootRunId,
+                "declared root membership does not match parent-linked descendants"
+            )
+        }
+        for record in traversed where record.id != rootRunId {
+            guard let parentRunId = record.parentRunId,
+                parentRunId != record.id,
+                traversedIds.contains(parentRunId),
+                record.rootRunId == rootRunId
+            else {
+                throw SchedulerDatabaseError.invalidRunRelationship(
+                    record.id,
+                    "descendant has invalid parent or root linkage"
+                )
+            }
+        }
+        return traversed
+    }
+
+    /// Must be called from inside `inTransaction` while `queue` is held.
+    private func runEventsTransactionally(
+        runIds: [UUID]
+    ) throws -> [UUID: [RunCenterEvent]] {
+        let uniqueIds = Array(Set(runIds)).sorted {
+            $0.uuidString < $1.uuidString
+        }
+        guard !uniqueIds.isEmpty else { return [:] }
+
+        var grouped = Dictionary(
+            uniqueKeysWithValues: uniqueIds.map { ($0, [RunCenterEvent]()) }
+        )
+        for chunkStart in stride(from: 0, to: uniqueIds.count, by: 400) {
+            let chunkEnd = min(chunkStart + 400, uniqueIds.count)
+            let chunk = Array(uniqueIds[chunkStart..<chunkEnd])
+            let placeholders = chunk.indices.map { "?\($0 + 1)" }
+                .joined(separator: ", ")
+            let sql =
+                """
+                    SELECT run_id, id, sequence, event_type, message, metadata,
+                           occurred_at
+                    FROM run_events
+                    WHERE run_id IN (\(placeholders))
+                    ORDER BY run_id ASC, sequence ASC
+                """
+            var statement: OpaquePointer?
+            guard
+                sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK,
+                let statement
+            else {
+                throw SchedulerDatabaseError.failedToPrepare(
+                    String(cString: sqlite3_errmsg(db))
+                )
+            }
+            defer { sqlite3_finalize(statement) }
+            for (offset, runId) in chunk.enumerated() {
+                Self.bindText(
+                    statement,
+                    index: offset + 1,
+                    value: runId.uuidString
+                )
+            }
+
+            var expectedSequenceByRun: [UUID: Int] = [:]
+            while true {
+                let result = sqlite3_step(statement)
+                if result == SQLITE_DONE { break }
+                guard result == SQLITE_ROW else {
+                    throw SchedulerDatabaseError.failedToExecute(
+                        "bulk run event read failed with SQLite status \(result)"
+                    )
+                }
+                let runIdString = sqlite3_column_text(statement, 0)
+                    .map { String(cString: $0) } ?? ""
+                guard let runId = UUID(uuidString: runIdString) else {
+                    throw SchedulerDatabaseError.corruptRun(
+                        "run event has invalid run id \(runIdString)"
+                    )
+                }
+                let event = try Self.readRunEvent(
+                    statement,
+                    runId: runId,
+                    columnOffset: 1
+                )
+                let expectedSequence = expectedSequenceByRun[runId] ?? 1
+                guard event.sequence == expectedSequence else {
+                    throw SchedulerDatabaseError.corruptRunEvent(
+                        runId,
+                        "expected sequence \(expectedSequence), found \(event.sequence)"
+                    )
+                }
+                expectedSequenceByRun[runId] = expectedSequence + 1
+                grouped[runId, default: []].append(event)
+            }
+        }
+        return grouped
     }
 
     /// Must be called from inside `inTransaction` while `queue` is held.
