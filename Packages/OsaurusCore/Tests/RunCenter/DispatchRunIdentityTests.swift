@@ -8,7 +8,54 @@ import Testing
 
 @testable import OsaurusCore
 
-@Suite("Dispatch durable run identity")
+private enum RejectedAdmission: Error {
+    case expected
+}
+
+private final class RejectingRunLifecycleRecorder:
+    RunLifecycleRecording, @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var storedAdmissions: [RunLifecycleAdmission] = []
+    private var storedAppends = 0
+    private var storedTerminals: [RunLifecycleTerminalReceipt] = []
+
+    var admissions: [RunLifecycleAdmission] {
+        lock.withLock { storedAdmissions }
+    }
+
+    var appendCount: Int {
+        lock.withLock { storedAppends }
+    }
+
+    var terminals: [RunLifecycleTerminalReceipt] {
+        lock.withLock { storedTerminals }
+    }
+
+    func admit(
+        _ admission: RunLifecycleAdmission
+    ) throws -> RunLifecycleAdmissionReceipt {
+        lock.withLock { storedAdmissions.append(admission) }
+        throw RejectedAdmission.expected
+    }
+
+    func append(
+        runId _: UUID,
+        kind _: RunCenterEventKind,
+        occurredAt _: Date,
+        message _: String?,
+        metadata _: [String: String]
+    ) throws {
+        lock.withLock { storedAppends += 1 }
+    }
+
+    func end(_ receipt: RunLifecycleTerminalReceipt) throws {
+        lock.withLock { storedTerminals.append(receipt) }
+    }
+}
+
+@Suite("Dispatch durable run identity", .serialized)
+@MainActor
 struct DispatchRunIdentityTests {
     @Test func executionIdentityIsDistinctFromReattachableContextIdentity() {
         let runId = UUID()
@@ -46,5 +93,91 @@ struct DispatchRunIdentityTests {
         #expect(request.parentToolCallId == "call-42")
         #expect(request.runId != parentRunId)
         #expect(request.runId != rootRunId)
+    }
+
+    @Test func onlyTrueDelegationFailsClosedWhenDurableAdmissionIsRejected() {
+        #expect(BackgroundTaskManager.requiresDurableAdmission(for: .delegation))
+        for source in SessionSource.allCases where source != .delegation {
+            #expect(!BackgroundTaskManager.requiresDurableAdmission(for: source))
+        }
+    }
+
+    @Test func delegationRequiresCompleteImmutableProvenance() {
+        let valid = DispatchRequest(
+            prompt: "Delegated child",
+            agentId: UUID(),
+            source: .delegation,
+            parentRunId: UUID(),
+            rootRunId: UUID(),
+            parentSessionId: UUID(),
+            parentToolCallId: "call-42"
+        )
+        #expect(BackgroundTaskManager.isDispatchRequestValid(valid))
+
+        let missingParent = DispatchRequest(
+            prompt: valid.prompt,
+            agentId: valid.agentId,
+            source: .delegation,
+            rootRunId: valid.rootRunId,
+            parentSessionId: valid.parentSessionId,
+            parentToolCallId: valid.parentToolCallId
+        )
+        let missingRoot = DispatchRequest(
+            prompt: valid.prompt,
+            agentId: valid.agentId,
+            source: .delegation,
+            parentRunId: valid.parentRunId,
+            parentSessionId: valid.parentSessionId,
+            parentToolCallId: valid.parentToolCallId
+        )
+        let missingSession = DispatchRequest(
+            prompt: valid.prompt,
+            agentId: valid.agentId,
+            source: .delegation,
+            parentRunId: valid.parentRunId,
+            rootRunId: valid.rootRunId,
+            parentToolCallId: valid.parentToolCallId
+        )
+        let blankToolCall = DispatchRequest(
+            prompt: valid.prompt,
+            agentId: valid.agentId,
+            source: .delegation,
+            parentRunId: valid.parentRunId,
+            rootRunId: valid.rootRunId,
+            parentSessionId: valid.parentSessionId,
+            parentToolCallId: "  \n"
+        )
+
+        for malformed in [missingParent, missingRoot, missingSession, blankToolCall] {
+            #expect(!BackgroundTaskManager.isDispatchRequestValid(malformed))
+        }
+    }
+
+    @Test func rejectedDelegationAdmissionNeverRegistersOrStarts() async throws {
+        try await ChatHistoryTestStorage.run {
+            let recorder = RejectingRunLifecycleRecorder()
+            let manager = BackgroundTaskManager.makeForTesting(
+                runLifecycleRecorder: recorder
+            )
+            let request = DispatchRequest(
+                prompt: "Delegated child",
+                agentId: UUID(),
+                showToast: false,
+                source: .delegation,
+                parentRunId: UUID(),
+                rootRunId: UUID(),
+                parentSessionId: UUID(),
+                parentToolCallId: "spawn-agent-call"
+            )
+
+            let handle = await manager.dispatchChat(request)
+
+            #expect(handle == nil)
+            #expect(recorder.admissions.count == 1)
+            #expect(recorder.admissions.first?.runId == request.runId)
+            #expect(recorder.appendCount == 0)
+            #expect(recorder.terminals.isEmpty)
+            #expect(manager.backgroundTasks.isEmpty)
+        }
     }
 }

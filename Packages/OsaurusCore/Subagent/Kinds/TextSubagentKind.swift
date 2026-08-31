@@ -371,6 +371,11 @@ final class TextSubagentKind:
     /// into a second notch row.
     var suppressNotchMirror: Bool { isDelegatedAgentTarget }
 
+    /// BackgroundTaskManager is the sole durable lifecycle owner for a true
+    /// delegated chat. The SubagentSession host supplies its preallocated
+    /// child ID but does not create a second ledger row for it.
+    var delegatesDurableLifecycle: Bool { isDelegatedAgentTarget }
+
     func resolveModel(_ scope: SubagentScope) async throws -> ResolvedModel {
         let resolved = try await resolveCurrentModel(scope)
         if permissionPreauthorized {
@@ -903,7 +908,7 @@ final class TextSubagentKind:
         if isDelegatedAgentTarget {
             return try await runDelegated(
                 resolved,
-                parentSessionId: scope.sessionId,
+                parentScope: scope,
                 feed: feed,
                 interrupt: interrupt
             )
@@ -1152,7 +1157,7 @@ final class TextSubagentKind:
     /// the same exchange would distill twice.
     private func runDelegated(
         _ resolved: ResolvedModel,
-        parentSessionId: String?,
+        parentScope: SubagentScope,
         feed: SubagentFeed,
         interrupt: InterruptToken
     ) async throws -> SubagentResult {
@@ -1177,7 +1182,7 @@ final class TextSubagentKind:
             maxContextPositions: delegatedContract?.contextPositions,
             feed: feed,
             interrupt: interrupt,
-            parentSessionId: parentSessionId
+            parentScope: parentScope
         )
         let digest = outcome.finalText
         let capped =

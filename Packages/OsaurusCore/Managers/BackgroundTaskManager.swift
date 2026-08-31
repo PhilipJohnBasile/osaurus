@@ -836,6 +836,14 @@ public final class BackgroundTaskManager: ObservableObject {
         request.externalSurface || ChatExecutionContext.isExternalSurface
     }
 
+    /// A true delegated chat is the sole durable child for its prepared
+    /// SubagentScope. If the ledger rejects that exact identity or lineage,
+    /// starting anyway would create an untracked child while the parent waits
+    /// on a handle that falsely claims a durable run.
+    nonisolated static func requiresDurableAdmission(for source: SessionSource) -> Bool {
+        source == .delegation
+    }
+
     /// Dispatch a chat task for background execution.
     public func dispatchChat(_ request: DispatchRequest) async -> DispatchHandle? {
         // Background dispatch is an external surface (HTTP / plugins /
@@ -850,7 +858,7 @@ public final class BackgroundTaskManager: ObservableObject {
             return nil
         }
 
-        guard isDispatchRequestValid(source: request.source, agentId: request.agentId) else { return nil }
+        guard Self.isDispatchRequestValid(request) else { return nil }
 
         // KPI: an agent run accepted via background dispatch (HTTP dispatch
         // endpoint, plugin, or schedule).
@@ -955,6 +963,9 @@ public final class BackgroundTaskManager: ObservableObject {
                 "[BackgroundTaskManager] run admission failed for "
                     + "\(request.runId): \(error)"
             )
+            if Self.requiresDurableAdmission(for: request.source) {
+                return nil
+            }
         }
 
         let state = BackgroundTaskState(
@@ -1053,11 +1064,10 @@ public final class BackgroundTaskManager: ObservableObject {
                     || request.source == .selfSchedule
                     || request.source == .watcher)
             let rootRunId = admittedRootRunId
-                ?? (request.parentRunId == nil ? request.runId : nil)
             await ChatExecutionContext.$currentSessionSource.withValue(request.source) {
                 await ChatExecutionContext.$isUnattendedDispatch.withValue(unattended) {
                     await ChatExecutionContext.$isExternalSurface.withValue(externalSurface) {
-                        await ChatExecutionContext.$currentRunId.withValue(request.runId) {
+                        await ChatExecutionContext.$currentRunId.withValue(admittedRunId) {
                             await ChatExecutionContext.$currentRootRunId.withValue(rootRunId) {
                                 await ChatExecutionContext.$currentRunActor.withValue("agent") {
                                     await ChatExecutionContext.$currentBackgroundId.withValue(context.id) {
@@ -1168,14 +1178,31 @@ public final class BackgroundTaskManager: ObservableObject {
     /// Structural validity of a dispatch request. Capacity is NOT checked
     /// here — a valid request that arrives while the limits are saturated is
     /// accepted and queued rather than rejected.
-    private func isDispatchRequestValid(source: SessionSource, agentId: UUID?) -> Bool {
+    nonisolated static func isDispatchRequestValid(_ request: DispatchRequest) -> Bool {
         // Plugin / sandbox callers must supply an agentId. Without one, the
         // per-agent cap would be silently skipped — letting a single
         // sandboxed plugin saturate every slot. The bridge always provides
         // an id post-fix, so a nil here is a programmer error.
-        if source == .plugin, agentId == nil {
+        if request.source == .plugin, request.agentId == nil {
             print("[BackgroundTaskManager] Refusing plugin dispatch without agentId")
             return false
+        }
+
+        // Delegation is a child relationship, never an alternate spelling
+        // for a root dispatch. Refuse incomplete launch provenance before
+        // creating a context or touching the ledger; otherwise malformed
+        // callers could silently admit the prepared child ID as a root run.
+        if request.source == .delegation {
+            guard request.parentRunId != nil,
+                request.rootRunId != nil,
+                request.parentSessionId != nil,
+                let parentToolCallId = request.parentToolCallId?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                !parentToolCallId.isEmpty
+            else {
+                print("[BackgroundTaskManager] Refusing delegation without complete provenance")
+                return false
+            }
         }
         return true
     }

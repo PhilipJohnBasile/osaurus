@@ -136,6 +136,96 @@ public enum SubagentSession {
     /// True when a subagent kind is currently running on this task tree.
     public static var isActive: Bool { activeKindId != nil }
 
+    private struct DurableChildRun {
+        let runId: UUID
+        let rootRunId: UUID
+    }
+
+    /// Unit suites exercise the host with scripted kinds and must not write
+    /// the user's scheduler ledger. Production paths use the shared recorder;
+    /// focused lifecycle tests inject their own sink through runPrepared.
+    private static func defaultRunLifecycleRecorder() -> any RunLifecycleRecording {
+        #if DEBUG
+            if RuntimeEnvironment.isUnderTests {
+                return DiscardingRunLifecycleRecorder.shared
+            }
+        #endif
+        return SchedulerRunLifecycleRecorder.shared
+    }
+
+    private static func durableTriggerPayload(for prepared: PreparedSubagentRun) -> String? {
+        var fields = [
+            "source": "subagent",
+            "kind": prepared.kind.capability.id,
+            "tool": prepared.tool,
+            "parent_session_id": prepared.scope.sessionId,
+            "parent_tool_call_id": prepared.scope.parentToolCallId,
+        ]
+        if prepared.kind.delegatesDurableLifecycle {
+            fields["owner"] = "background_task_manager"
+        } else {
+            fields["owner"] = "subagent_session"
+        }
+        guard JSONSerialization.isValidJSONObject(fields),
+            let data = try? JSONSerialization.data(
+                withJSONObject: fields,
+                options: [.sortedKeys]
+            )
+        else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private static func admitDurableChild(
+        _ prepared: PreparedSubagentRun,
+        recorder: any RunLifecycleRecording
+    ) throws -> DurableChildRun? {
+        // A true delegated chat is admitted and terminalized by
+        // BackgroundTaskManager. Its DispatchRequest still reuses scope.runId.
+        guard !prepared.kind.delegatesDurableLifecycle else { return nil }
+        let receipt = try recorder.admit(
+            RunLifecycleAdmission(
+                runId: prepared.scope.runId,
+                agentId: prepared.scope.agentId,
+                triggerKind: .user,
+                triggerPayload: durableTriggerPayload(for: prepared),
+                instructions: prepared.kind.feedTitle,
+                startsImmediately: true,
+                sessionId: UUID(uuidString: prepared.scope.sessionId),
+                parentRunId: prepared.scope.parentRunId,
+                rootRunId: prepared.scope.rootRunId,
+                title: prepared.kind.feedTitle,
+                modelId: prepared.resolved.id ?? prepared.resolved.name
+            )
+        )
+        return DurableChildRun(
+            runId: receipt.runId,
+            rootRunId: receipt.rootRunId
+        )
+    }
+
+    private static func endDurableChild(
+        _ run: DurableChildRun?,
+        recorder: any RunLifecycleRecording,
+        status: AgentRunStatus,
+        error: String? = nil
+    ) {
+        guard let run else { return }
+        do {
+            try recorder.end(
+                RunLifecycleTerminalReceipt(
+                    runId: run.runId,
+                    status: status,
+                    error: error
+                )
+            )
+        } catch {
+            let message =
+                "durable child terminal failed run=\(run.runId) "
+                + "error=\(error.localizedDescription)"
+            subagentLog.error("\(message, privacy: .public)")
+        }
+    }
+
     /// Run any subagent kind end to end and return a canonical envelope.
     /// `handoff` overrides the kind's own `makeHandoff()` (used by tests).
     public static func run(
@@ -491,7 +581,9 @@ public enum SubagentSession {
         captureProcessCacheSnapshot: Bool = true,
         admissionController: SubagentAdmission = .shared,
         postAdmissionLocalCapacityOverride:
-            (@Sendable (PreparedSubagentRun, ResidencyPlan) async -> Int)? = nil
+            (@Sendable (PreparedSubagentRun, ResidencyPlan) async -> Int)? = nil,
+        runLifecycleRecorder suppliedRunLifecycleRecorder:
+            (any RunLifecycleRecording)? = nil
     ) async -> String {
         if let active = activeKindId {
             return ToolEnvelope.failure(
@@ -983,43 +1075,137 @@ public enum SubagentSession {
             }
         }
         let started = Date()
+        let runLifecycleRecorder =
+            suppliedRunLifecycleRecorder ?? defaultRunLifecycleRecorder()
+        let durableChild: DurableChildRun?
+        do {
+            durableChild = try admitDurableChild(
+                prepared,
+                recorder: runLifecycleRecorder
+            )
+        } catch {
+            if admissionHeld {
+                if admissionHeldSlots > 0 {
+                    await admissionController.releaseLocalInPlace(
+                        modelKey: admissionModelKey,
+                        slots: admissionHeldSlots
+                    )
+                } else {
+                    await admissionController.release(
+                        admissionClass,
+                        modelKey: admissionModelKey
+                    )
+                }
+                admissionHeld = false
+            }
+            let message =
+                "durable child admission failed run=\(prepared.scope.runId) "
+                + "error=\(error.localizedDescription)"
+            subagentLog.error("\(message, privacy: .public)")
+            let envelope = ToolEnvelope.failure(
+                kind: .executionError,
+                message: "The child run could not be recorded durably and was not started.",
+                tool: prepared.tool,
+                retryable: false,
+                metadata: ["run_id": prepared.scope.runId.uuidString]
+            )
+            if presentation.finishFeed {
+                feed.finish(
+                    success: false,
+                    summary: ToolEnvelope.failureMessage(envelope)
+                )
+            }
+            return envelope
+        }
+
+        // Stop can arrive while the synchronous ledger admission is waiting
+        // on another writer. The child now owns a durable row, but no model,
+        // handoff, or tool work may begin after that stop. Settle the held
+        // admission lease first, then terminalize the accepted child once.
+        if interrupt.isInterrupted || Task.isCancelled {
+            if admissionHeld {
+                if admissionHeldSlots > 0 {
+                    await admissionController.releaseLocalInPlace(
+                        modelKey: admissionModelKey,
+                        slots: admissionHeldSlots
+                    )
+                } else {
+                    await admissionController.release(
+                        admissionClass,
+                        modelKey: admissionModelKey
+                    )
+                }
+                admissionHeld = false
+            }
+            endDurableChild(
+                durableChild,
+                recorder: runLifecycleRecorder,
+                status: .cancelled
+            )
+            let envelope = ToolEnvelope.failure(
+                kind: interrupt.isInterrupted ? .userDenied : .executionError,
+                message: interrupt.isInterrupted
+                    ? "Run was stopped by the user before execution began."
+                    : "Run was cancelled before execution began.",
+                tool: prepared.tool,
+                retryable: false,
+                metadata: ["cancelled": true]
+            )
+            if presentation.finishFeed {
+                feed.finish(
+                    success: false,
+                    summary: ToolEnvelope.failureMessage(envelope)
+                )
+            }
+            return envelope
+        }
 
         // Run under the recursion guard, wrapped by the optional handoff. Bind
         // the prepared child scope explicitly: batch children have distinct
         // tool-call ids even though one visible parent call owns the feed.
         do {
             let cacheCapture = PostRunCacheCapture()
-            let result = try await ChatExecutionContext.$currentSessionId.withValue(
-                prepared.scope.sessionId
+            let result = try await ChatExecutionContext.$currentRunId.withValue(
+                durableChild?.runId ?? ChatExecutionContext.currentRunId
             ) {
-                try await ChatExecutionContext.$currentAgentId.withValue(prepared.scope.agentId) {
-                    try await ChatExecutionContext.$currentEnableThinking.withValue(
-                        prepared.scope.enableThinking
+                try await ChatExecutionContext.$currentRootRunId.withValue(
+                    durableChild?.rootRunId ?? ChatExecutionContext.currentRootRunId
+                ) {
+                    try await ChatExecutionContext.$currentSessionId.withValue(
+                        prepared.scope.sessionId
                     ) {
-                        try await ChatExecutionContext.$currentToolCallId.withValue(
-                            prepared.scope.toolCallId
+                        try await ChatExecutionContext.$currentAgentId.withValue(
+                            prepared.scope.agentId
                         ) {
-                            try await SubagentSession.$activeKindId.withValue(
-                                prepared.kind.capability.id
+                            try await ChatExecutionContext.$currentEnableThinking.withValue(
+                                prepared.scope.enableThinking
                             ) {
-                                try await effectiveHandoff.around(
-                                    scope: prepared.scope,
-                                    resolved: prepared.resolved,
-                                    feed: feed
+                                try await ChatExecutionContext.$currentToolCallId.withValue(
+                                    prepared.scope.toolCallId
                                 ) {
-                                    let result = try await prepared.kind.run(
-                                        prepared.scope,
-                                        prepared.resolved,
-                                        feed: feed,
-                                        interrupt: interrupt
-                                    )
-                                    if captureProcessCacheSnapshot,
-                                        prepared.resolved.isLocal
-                                    {
-                                        cacheCapture.value =
-                                            await ModelRuntime.batchDiagnosticsSnapshot()
+                                    try await SubagentSession.$activeKindId.withValue(
+                                        prepared.kind.capability.id
+                                    ) {
+                                        try await effectiveHandoff.around(
+                                            scope: prepared.scope,
+                                            resolved: prepared.resolved,
+                                            feed: feed
+                                        ) {
+                                            let result = try await prepared.kind.run(
+                                                prepared.scope,
+                                                prepared.resolved,
+                                                feed: feed,
+                                                interrupt: interrupt
+                                            )
+                                            if captureProcessCacheSnapshot,
+                                                prepared.resolved.isLocal
+                                            {
+                                                cacheCapture.value =
+                                                    await ModelRuntime.batchDiagnosticsSnapshot()
+                                            }
+                                            return result
+                                        }
                                     }
-                                    return result
                                 }
                             }
                         }
@@ -1040,6 +1226,11 @@ public enum SubagentSession {
                 }
                 admissionHeld = false
             }
+            endDurableChild(
+                durableChild,
+                recorder: runLifecycleRecorder,
+                status: .success
+            )
 
             // Residency telemetry: phase durations derived from the feed's own
             // event timeline (the handoff emits its phases there), plus a
@@ -1102,6 +1293,13 @@ public enum SubagentSession {
                     )
                 }
             }
+            let cancelled = error is CancellationError || interrupt.isInterrupted
+            endDurableChild(
+                durableChild,
+                recorder: runLifecycleRecorder,
+                status: cancelled ? .cancelled : .error,
+                error: cancelled ? nil : error.localizedDescription
+            )
             let env: String
             if error is CancellationError {
                 env = ToolEnvelope.failure(

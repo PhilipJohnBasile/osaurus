@@ -933,6 +933,26 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         )
     }
 
+    /// Allocate one batch child's durable and operational identities while
+    /// preserving the immutable transcript provenance of the outer call.
+    /// The synthetic tool-call id isolates sibling feeds and interrupts; it
+    /// must never replace the original parent tool call in the run ledger.
+    static func childScope(
+        parentScope: SubagentScope,
+        jobID: String
+    ) -> SubagentScope {
+        SubagentScope(
+            sessionId: parentScope.sessionId,
+            toolCallId: "\(parentScope.toolCallId):\(jobID)",
+            agentId: parentScope.agentId,
+            parentModelName: parentScope.parentModelName,
+            enableThinking: parentScope.enableThinking,
+            parentRunId: parentScope.parentRunId,
+            rootRunId: parentScope.rootRunId,
+            parentToolCallId: parentScope.parentToolCallId
+        )
+    }
+
     private static func prepareJobs(
         _ jobs: [Job],
         parentScope: SubagentScope,
@@ -948,12 +968,9 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
             if interrupt.isInterrupted || Task.isCancelled {
                 return .cancelled
             }
-            let childScope = SubagentScope(
-                sessionId: parentScope.sessionId,
-                toolCallId: "\(parentScope.toolCallId):\(job.id)",
-                agentId: parentScope.agentId,
-                parentModelName: parentScope.parentModelName,
-                enableThinking: parentScope.enableThinking
+            let childScope = Self.childScope(
+                parentScope: parentScope,
+                jobID: job.id
             )
             let kind: any SubagentKind
             if let evaluationOverrides {

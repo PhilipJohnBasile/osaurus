@@ -24,11 +24,19 @@ import Foundation
 /// binding). Every subagent kind binds to its chat row the same way
 /// `computer_use` does today.
 public struct SubagentScope: Sendable, Equatable {
+    /// Stable durable identity allocated before target resolution or
+    /// authorization. In-memory children use it when they enter execution;
+    /// true delegated chats hand the same value to BackgroundTaskManager.
+    public let runId: UUID
     /// The chat session whose tool call started this subagent.
     public let sessionId: String
     /// The originating tool-call id — the key the live feed/interrupt and
     /// the chat row are addressed by.
     public let toolCallId: String
+    /// Transcript tool-call id that launched this child. Batch children use a
+    /// synthetic `toolCallId` for sibling feed isolation, but retain this
+    /// original parent call for durable provenance.
+    public let parentToolCallId: String
     /// The agent whose model/settings scope the run.
     public let agentId: UUID
     /// Exact model selected by the parent turn. Nil on surfaces that do not
@@ -37,32 +45,46 @@ public struct SubagentScope: Sendable, Equatable {
     /// Explicit parent-turn Thinking choice. Nil preserves the nested model's
     /// own bundle default; true/false must survive every reconstructed step.
     public let enableThinking: Bool?
+    /// Durable parent/root lineage captured from the launching turn. These
+    /// remain immutable even when a detached child outlives that task tree.
+    public let parentRunId: UUID?
+    public let rootRunId: UUID?
 
     public init(
         sessionId: String,
         toolCallId: String,
         agentId: UUID,
         parentModelName: String? = nil,
-        enableThinking: Bool? = nil
+        enableThinking: Bool? = nil,
+        runId: UUID = UUID(),
+        parentRunId: UUID? = nil,
+        rootRunId: UUID? = nil,
+        parentToolCallId: String? = nil
     ) {
+        self.runId = runId
         self.sessionId = sessionId
         self.toolCallId = toolCallId
+        self.parentToolCallId = parentToolCallId ?? toolCallId
         self.agentId = agentId
         self.parentModelName = parentModelName
         self.enableThinking = enableThinking
+        self.parentRunId = parentRunId
+        self.rootRunId = rootRunId
     }
 
     /// Resolve from the active chat execution context. Outside chat we fall
-    /// back to fresh ids and the default agent (mirrors
-    /// `ComputerUseTool.execute`), so a subagent still runs from HTTP / eval
-    /// surfaces — it just won't bind to a chat row.
+    /// back to fresh session/tool ids and the default agent (mirrors
+    /// `ComputerUseTool.execute`); the child can still receive its own durable
+    /// root row, but it has no parent/root lineage to inherit.
     public static func current() -> SubagentScope {
         SubagentScope(
             sessionId: ChatExecutionContext.currentSessionId ?? UUID().uuidString,
             toolCallId: ChatExecutionContext.currentToolCallId ?? UUID().uuidString,
             agentId: ChatExecutionContext.currentAgentId ?? Agent.defaultId,
             parentModelName: ChatExecutionContext.currentModelName,
-            enableThinking: ChatExecutionContext.currentEnableThinking
+            enableThinking: ChatExecutionContext.currentEnableThinking,
+            parentRunId: ChatExecutionContext.currentRunId,
+            rootRunId: ChatExecutionContext.currentRootRunId
         )
     }
 }

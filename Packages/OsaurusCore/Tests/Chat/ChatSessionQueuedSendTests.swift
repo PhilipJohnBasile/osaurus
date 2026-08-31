@@ -317,10 +317,14 @@ struct ChatSessionQueuedSendTests {
         try await ChatHistoryTestStorage.run {
             let session = ChatSession()
             session.forceChatEngineRouteForTests = true
-            session.chatEngineFactory = { _ in DelayedCancellingBeforeDeltaChatEngine(delayMs: 120) }
+            session.chatEngineFactory = { _ in CancellingBeforeDeltaChatEngine() }
 
             session.send("review will cancel")
-            try await waitUntil(timeout: .seconds(1)) { session.isStreaming }
+            // `send` synchronously appends and persists the user turn before
+            // its MainActor run task can enter the engine. Capture the
+            // transient identity and queue the follow-up in that same actor
+            // slice; yielding after merely observing `isStreaming` lets the
+            // privacy-cancel rollback legitimately clear `sessionId` first.
             let transientId = try #require(session.sessionId)
 
             let queuedAttachment = Attachment.document(
@@ -574,28 +578,6 @@ private actor CancellingBeforeDeltaChatEngine: ChatEngineProtocol {
 
     func completeChat(request _: ChatCompletionRequest) async throws -> ChatCompletionResponse {
         throw NSError(domain: "ChatSessionQueuedSendTests", code: 3)
-    }
-}
-
-private actor DelayedCancellingBeforeDeltaChatEngine: ChatEngineProtocol {
-    let delayMs: Int
-
-    init(delayMs: Int) {
-        self.delayMs = delayMs
-    }
-
-    func streamChat(request _: ChatCompletionRequest) async throws -> AsyncThrowingStream<String, Error> {
-        let delay = delayMs
-        return AsyncThrowingStream { continuation in
-            Task {
-                try? await Task.sleep(for: .milliseconds(delay))
-                continuation.finish(throwing: CancellationError())
-            }
-        }
-    }
-
-    func completeChat(request _: ChatCompletionRequest) async throws -> ChatCompletionResponse {
-        throw NSError(domain: "ChatSessionQueuedSendTests", code: 4)
     }
 }
 

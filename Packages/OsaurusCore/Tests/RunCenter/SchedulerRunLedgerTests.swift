@@ -306,6 +306,42 @@ struct SchedulerRunLedgerTests {
         #expect(parentEvents.last?.metadata["child_run_id"] == childRunId.uuidString)
     }
 
+    @Test func duplicateChildAdmissionRollsBackWithoutDuplicateParentLink() throws {
+        let database = SchedulerDatabase()
+        try database.openInMemory()
+        defer { database.close() }
+
+        let agentId = UUID()
+        let parentRunId = try database.recordRunStart(
+            agentId: agentId,
+            triggerKind: .user,
+            instructions: "Parent"
+        )
+        let childRunId = UUID()
+        let admission = RunLifecycleAdmission(
+            runId: childRunId,
+            agentId: agentId,
+            triggerKind: .user,
+            instructions: "Child",
+            startsImmediately: true,
+            parentRunId: parentRunId,
+            rootRunId: parentRunId,
+            title: "Delegated child"
+        )
+
+        try database.recordRunAdmission(admission)
+        #expect(throws: SchedulerDatabaseError.self) {
+            try database.recordRunAdmission(admission)
+        }
+
+        let duplicateChildRows = try database.allRuns().filter { $0.id == childRunId }
+        #expect(duplicateChildRows.count == 1)
+        #expect(try database.events(runId: childRunId).map(\.kind) == [.created, .started])
+        let parentEvents = try database.events(runId: parentRunId)
+        #expect(parentEvents.filter { $0.kind == .childLinked }.count == 1)
+        #expect(parentEvents.last?.metadata["child_run_id"] == childRunId.uuidString)
+    }
+
     @Test func metadataEventsAndTerminalStateRoundTrip() throws {
         let database = SchedulerDatabase()
         try database.openInMemory()

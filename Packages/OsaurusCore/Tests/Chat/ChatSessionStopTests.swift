@@ -234,7 +234,8 @@ struct ChatSessionStopTests {
             // binding, matching a later clarify answer from the UI/plugin.
             session.send("Resume the background run")
             try await waitUntilAsync(timeout: Self.asyncTimeout) {
-                !session.isStreaming && await engine.capturedRunId != nil
+                let capturedRunId = await engine.capturedRunId
+                return !session.isStreaming && capturedRunId != nil
             }
 
             #expect(recorder.admissions.isEmpty)

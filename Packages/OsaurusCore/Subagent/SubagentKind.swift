@@ -34,6 +34,12 @@ public protocol SubagentKind: Sendable {
     /// mirror it into a duplicate notch row. Defaults to false.
     var suppressNotchMirror: Bool { get }
 
+    /// True when this kind transfers durable lifecycle ownership to the real
+    /// dispatched chat it starts. The host still allocates the child run ID,
+    /// but it must neither admit nor terminalize that ID; the background task
+    /// manager reuses it as the sole durable writer.
+    var delegatesDurableLifecycle: Bool { get }
+
     /// Bounded request facts for RAM-admission pricing: the seed/input size
     /// and configured max output THIS run will actually ask the child model
     /// to hold. nil (the default) means "unknown" and admission falls back
@@ -116,6 +122,9 @@ extension SubagentKind {
 
     /// Default: ordinary in-memory subagent runs are mirrored to the notch.
     public var suppressNotchMirror: Bool { false }
+
+    /// Default: the shared SubagentSession host owns this in-memory run.
+    public var delegatesDurableLifecycle: Bool { false }
 
     /// Default: no residency change. Model-swapping kinds override.
     public func makeHandoff() -> SubagentHandoff { PassthroughHandoff() }

@@ -170,7 +170,25 @@ freezes the admitted model for the resumed segment, and closes only after the
 continuation settles. Cancelling either a direct or background clarification
 routes through its lifecycle owner and clears the prompt without fabricating a
 resume event before cancellation. A soft redirect preserves the wait boundary
-and durably saves its steering turn for the eventual real resume.
+and durably saves its steering turn for the eventual real resume. Ordinary
+in-memory subagents now allocate one child identity before preparation, admit
+that exact identity only after authorization and runtime admission succeed,
+bind the ledger-confirmed child/root while they execute, and fail closed if
+durable admission is rejected. True agent delegation transfers lifecycle
+ownership to `BackgroundTaskManager`, which reuses the prepared child identity
+and rejects missing parent/root/session/original-tool provenance or a failed
+ledger admission before it registers or starts the task. Batch children keep a
+synthetic per-job tool-call id for feed and interrupt isolation while retaining
+the original outer `spawn_batch` call as immutable provenance. The aggregate
+batch run is still the next capture slice; these child rows do not claim that
+gate. Duplicate SQLite child admission is transactionally rejected without a
+second child row or parent `childLinked` event.
+
+Validation status for this checkpoint remains `PARTIAL` until its exact commit
+passes the pinned Xcode 26.4.1 fork CI and the required Release-app parent/child,
+cancellation, persistence, and relaunch proof. Local Swift parsing and diff
+integrity pass; the local Xcode 27 beta focused-test build is blocked by the
+pre-existing `ChatView` type-check timeout, so it is not counted as a test pass.
 
 ### Phase 2 — Read-only Run Center
 

@@ -135,6 +135,44 @@ enum AgentDelegationDispatcher {
         return titlePrefix + (capped.isEmpty ? "task" : capped)
     }
 
+    /// Build the accepted child dispatch from the immutable scope captured by
+    /// SubagentSession before authorization. Keeping this pure makes the
+    /// identity handoff testable: BackgroundTaskManager must admit this exact
+    /// run ID and lineage rather than minting a second delegated child.
+    static func dispatchRequest(
+        targetAgentId: UUID,
+        input: String,
+        scope: SubagentScope,
+        maxResponseTokens: Int?,
+        maxAssistantTurns: Int?,
+        maxContextPositions: Int?
+    ) -> DispatchRequest {
+        DispatchRequest(
+            runId: scope.runId,
+            prompt: delegatedPrompt(input: input),
+            agentId: targetAgentId,
+            title: sessionTitle(for: input),
+            source: .delegation,
+            // Fresh session per delegation call (user decision): no
+            // externalSessionKey, so no reattach grouping ever applies.
+            externalSessionKey: nil,
+            // The orchestrator turn is synchronously waiting on this run
+            // (or awaiting its report-back), so its model load carries
+            // interactive intent.
+            loadIntent: .interactive,
+            parentRunId: scope.parentRunId,
+            rootRunId: scope.rootRunId,
+            parentSessionId: UUID(uuidString: scope.sessionId),
+            parentToolCallId: scope.parentToolCallId,
+            // Enforced delegation budget: the chat surface clamps its
+            // per-generation max tokens and tool-loop turns to these, and
+            // RAM admission prices the child from the SAME values.
+            delegationResponseTokenCap: maxResponseTokens,
+            delegationContextPositionCap: maxContextPositions,
+            delegationAssistantTurnCap: maxAssistantTurns
+        )
+    }
+
     /// Why the awaited child run was cancelled by this dispatcher (as
     /// opposed to failing or completing on its own).
     private enum CancelReason: Sendable {
@@ -200,32 +238,17 @@ enum AgentDelegationDispatcher {
         maxContextPositions: Int? = nil,
         feed: SubagentFeed,
         interrupt: InterruptToken,
-        parentSessionId: String? = nil
+        parentScope: SubagentScope
     ) async throws -> AgentDelegationOutcome {
         let started = Date()
-        let parentSessionUUID = parentSessionId.flatMap(UUID.init(uuidString:))
-        let request = DispatchRequest(
-            prompt: delegatedPrompt(input: input),
-            agentId: targetAgentId,
-            title: sessionTitle(for: input),
-            source: .delegation,
-            // Fresh session per delegation call (user decision): no
-            // externalSessionKey, so no reattach grouping ever applies.
-            externalSessionKey: nil,
-            // The orchestrator turn is synchronously waiting on this run
-            // (or awaiting its report-back), so its model load carries
-            // interactive intent.
-            loadIntent: .interactive,
-            parentRunId: ChatExecutionContext.currentRunId,
-            rootRunId: ChatExecutionContext.currentRootRunId,
-            parentSessionId: parentSessionUUID,
-            parentToolCallId: ChatExecutionContext.currentToolCallId,
-            // Enforced delegation budget: the chat surface clamps its
-            // per-generation max tokens and tool-loop turns to these, and
-            // RAM admission prices the child from the SAME values.
-            delegationResponseTokenCap: maxResponseTokens,
-            delegationContextPositionCap: maxContextPositions,
-            delegationAssistantTurnCap: maxAssistantTurns
+        let parentSessionId = parentScope.sessionId
+        let request = dispatchRequest(
+            targetAgentId: targetAgentId,
+            input: input,
+            scope: parentScope,
+            maxResponseTokens: maxResponseTokens,
+            maxAssistantTurns: maxAssistantTurns,
+            maxContextPositions: maxContextPositions
         )
 
         // The child is a REAL chat session of the target agent, not a

@@ -250,6 +250,43 @@ struct AgentDelegationDispatcherTests {
         #expect(!scheduled.isDelegatedRun)
     }
 
+    @Test func delegatedDispatchReusesThePreparedChildIdentityAndLineage() {
+        let childRunId = UUID()
+        let parentRunId = UUID()
+        let rootRunId = UUID()
+        let parentSessionId = UUID()
+        let targetAgentId = UUID()
+        let scope = SubagentScope(
+            sessionId: parentSessionId.uuidString,
+            toolCallId: "spawn-call-42",
+            agentId: UUID(),
+            runId: childRunId,
+            parentRunId: parentRunId,
+            rootRunId: rootRunId
+        )
+
+        let request = AgentDelegationDispatcher.dispatchRequest(
+            targetAgentId: targetAgentId,
+            input: "Trace the child",
+            scope: scope,
+            maxResponseTokens: 1_024,
+            maxAssistantTurns: 8,
+            maxContextPositions: 4_096
+        )
+
+        #expect(request.runId == childRunId)
+        #expect(request.parentRunId == parentRunId)
+        #expect(request.rootRunId == rootRunId)
+        #expect(request.parentSessionId == parentSessionId)
+        #expect(request.parentToolCallId == "spawn-call-42")
+        #expect(request.agentId == targetAgentId)
+        #expect(request.isDelegatedRun)
+        #expect(request.externalSessionKey == nil)
+        #expect(request.delegationResponseTokenCap == 1_024)
+        #expect(request.delegationAssistantTurnCap == 8)
+        #expect(request.delegationContextPositionCap == 4_096)
+    }
+
     /// The cross-window "one local generation at a time" send refusal must
     /// not apply to delegated child sessions: their orchestrating parent is
     /// itself a chat run whose `isStreaming` stays true through the spawn

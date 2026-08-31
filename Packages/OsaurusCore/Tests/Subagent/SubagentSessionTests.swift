@@ -21,6 +21,7 @@ import Testing
 /// model. Each step is overridable; defaults form a happy path.
 private final class ScriptedKind: SubagentKind, @unchecked Sendable {
     let capability: SubagentCapability
+    let delegatesDurableLifecycle: Bool
     /// Test-local handoff opt-in (drives `makeHandoff()`); no longer a
     /// `SubagentKind` requirement.
     let needsHandoff: Bool
@@ -32,6 +33,7 @@ private final class ScriptedKind: SubagentKind, @unchecked Sendable {
     init(
         id: String = "scripted",
         needsHandoff: Bool = false,
+        delegatesDurableLifecycle: Bool = false,
         resolve: @escaping @Sendable (SubagentScope) async throws -> ResolvedModel = { _ in
             ResolvedModel(name: "scripted-model", id: "scripted-model", isLocal: true)
         },
@@ -52,6 +54,7 @@ private final class ScriptedKind: SubagentKind, @unchecked Sendable {
     ) {
         self.capability = SubagentCapability(id: id, toolNames: [id], gate: .sandboxExec)
         self.needsHandoff = needsHandoff
+        self.delegatesDurableLifecycle = delegatesDurableLifecycle
         self.resolve = resolve
         self.decide = decide
         self.body = body
@@ -91,6 +94,79 @@ private func decode(_ envelope: String) -> [String: Any] {
     (try? JSONSerialization.jsonObject(with: Data(envelope.utf8))) as? [String: Any] ?? [:]
 }
 
+private final class RecordingSubagentRunLifecycleRecorder:
+    RunLifecycleRecording, @unchecked Sendable
+{
+    private enum ExpectedAdmissionError: Error {
+        case rejected
+    }
+
+    private let lock = NSLock()
+    private let rejectsAdmission: Bool
+    private let interruptOnAdmission: InterruptToken?
+    private var storedAdmissions: [RunLifecycleAdmission] = []
+    private var storedTerminals: [RunLifecycleTerminalReceipt] = []
+
+    init(
+        rejectsAdmission: Bool = false,
+        interruptOnAdmission: InterruptToken? = nil
+    ) {
+        self.rejectsAdmission = rejectsAdmission
+        self.interruptOnAdmission = interruptOnAdmission
+    }
+
+    var admissions: [RunLifecycleAdmission] {
+        lock.withLock { storedAdmissions }
+    }
+
+    var terminals: [RunLifecycleTerminalReceipt] {
+        lock.withLock { storedTerminals }
+    }
+
+    func admit(
+        _ admission: RunLifecycleAdmission
+    ) throws -> RunLifecycleAdmissionReceipt {
+        lock.withLock { storedAdmissions.append(admission) }
+        interruptOnAdmission?.interrupt()
+        if rejectsAdmission {
+            throw ExpectedAdmissionError.rejected
+        }
+        return RunLifecycleAdmissionReceipt(
+            runId: admission.runId,
+            rootRunId: admission.rootRunId ?? admission.runId
+        )
+    }
+
+    func append(
+        runId _: UUID,
+        kind _: RunCenterEventKind,
+        occurredAt _: Date,
+        message _: String?,
+        metadata _: [String: String]
+    ) throws {}
+
+    func end(_ receipt: RunLifecycleTerminalReceipt) throws {
+        lock.withLock { storedTerminals.append(receipt) }
+    }
+}
+
+private final class RunBindingBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedRunId: UUID?
+    private var storedRootRunId: UUID?
+
+    func capture() {
+        lock.withLock {
+            storedRunId = ChatExecutionContext.currentRunId
+            storedRootRunId = ChatExecutionContext.currentRootRunId
+        }
+    }
+
+    var value: (runId: UUID?, rootRunId: UUID?) {
+        lock.withLock { (storedRunId, storedRootRunId) }
+    }
+}
+
 // MARK: - Tests
 
 @Suite("SubagentSession host")
@@ -109,6 +185,28 @@ struct SubagentSessionTests {
         }
     }
 
+    @Test("batch child feed identity does not replace its transcript launch provenance")
+    func batchChildRetainsParentToolCallIdentity() {
+        let parentRunId = UUID()
+        let rootRunId = UUID()
+        let parentScope = SubagentScope(
+            sessionId: UUID().uuidString,
+            toolCallId: "spawn-batch-call",
+            agentId: UUID(),
+            parentRunId: parentRunId,
+            rootRunId: rootRunId
+        )
+        let first = SpawnBatchTool.childScope(parentScope: parentScope, jobID: "job-3")
+        let second = SpawnBatchTool.childScope(parentScope: parentScope, jobID: "job-4")
+
+        #expect(first.runId != second.runId)
+        #expect(first.sessionId == parentScope.sessionId)
+        #expect(first.parentRunId == parentRunId)
+        #expect(first.rootRunId == rootRunId)
+        #expect(first.toolCallId == "spawn-batch-call:job-3")
+        #expect(first.parentToolCallId == "spawn-batch-call")
+    }
+
     @Test("happy path returns a success envelope carrying the kind payload")
     func happyPath() async {
         let kind = ScriptedKind()
@@ -117,6 +215,217 @@ struct SubagentSessionTests {
         let payload = ToolEnvelope.successPayload(envelope) as? [String: Any]
         #expect(payload?["kind"] as? String == "scripted")
         #expect(payload?["summary"] as? String == "done")
+    }
+
+    @Test("in-memory child uses one durable identity and immutable launch provenance")
+    func durableChildIdentityAndProvenance() async throws {
+        let childRunId = UUID()
+        let parentRunId = UUID()
+        let rootRunId = UUID()
+        let parentSessionId = UUID()
+        let recorder = RecordingSubagentRunLifecycleRecorder()
+        let binding = RunBindingBox()
+        let scope = SubagentScope(
+            sessionId: parentSessionId.uuidString,
+            toolCallId: "spawn-call-7",
+            agentId: UUID(),
+            runId: childRunId,
+            parentRunId: parentRunId,
+            rootRunId: rootRunId
+        )
+        let kind = ScriptedKind(
+            resolve: { _ in
+                ResolvedModel(name: "remote-child", id: "remote-child-id", isLocal: false)
+            },
+            body: { _, _, _, _ in
+                binding.capture()
+                return SubagentResult(payload: ["summary": "done"])
+            }
+        )
+
+        let preparation = await SubagentSession.prepare(
+            kind,
+            tool: "scripted",
+            scope: scope
+        )
+        guard case .ready(let prepared) = preparation else {
+            Issue.record("Expected the scripted child to prepare")
+            return
+        }
+        let envelope = await SubagentSession.runPrepared(
+            prepared,
+            runLifecycleRecorder: recorder
+        )
+
+        #expect(ToolEnvelope.isSuccess(envelope))
+        let admission = try #require(recorder.admissions.first)
+        #expect(recorder.admissions.count == 1)
+        #expect(admission.runId == childRunId)
+        #expect(admission.parentRunId == parentRunId)
+        #expect(admission.rootRunId == rootRunId)
+        #expect(admission.sessionId == parentSessionId)
+        #expect(admission.modelId == "remote-child-id")
+        let trigger = try #require(admission.triggerPayload)
+        #expect(trigger.contains(#""parent_tool_call_id":"spawn-call-7""#))
+        #expect(trigger.contains(#""parent_session_id":"\#(parentSessionId.uuidString)""#))
+        #expect(binding.value.runId == childRunId)
+        #expect(binding.value.rootRunId == rootRunId)
+        #expect(recorder.terminals.count == 1)
+        #expect(recorder.terminals.first?.runId == childRunId)
+        #expect(recorder.terminals.first?.status == .success)
+    }
+
+    @Test("child cancellation terminalizes only after the owned run unwinds")
+    func durableChildCancellation() async {
+        let recorder = RecordingSubagentRunLifecycleRecorder()
+        let scope = SubagentScope(
+            sessionId: UUID().uuidString,
+            toolCallId: "spawn-cancel",
+            agentId: UUID()
+        )
+        let kind = ScriptedKind(
+            resolve: { _ in
+                ResolvedModel(name: "remote-child", isLocal: false)
+            },
+            body: { _, _, _, _ in throw CancellationError() }
+        )
+        guard case .ready(let prepared) = await SubagentSession.prepare(
+            kind,
+            tool: "scripted",
+            scope: scope
+        ) else {
+            Issue.record("Expected the scripted child to prepare")
+            return
+        }
+
+        let envelope = await SubagentSession.runPrepared(
+            prepared,
+            runLifecycleRecorder: recorder
+        )
+
+        #expect(ToolEnvelope.isError(envelope))
+        #expect(recorder.admissions.count == 1)
+        #expect(recorder.terminals.count == 1)
+        #expect(recorder.terminals.first?.runId == scope.runId)
+        #expect(recorder.terminals.first?.status == .cancelled)
+    }
+
+    @Test("delegated child transfers durable lifecycle to its dispatcher")
+    func delegatedChildDoesNotWriteCompetingLifecycle() async {
+        let recorder = RecordingSubagentRunLifecycleRecorder()
+        let kind = ScriptedKind(delegatesDurableLifecycle: true)
+        guard case .ready(let prepared) = await SubagentSession.prepare(
+            kind,
+            tool: "scripted",
+            scope: SubagentScope(
+                sessionId: UUID().uuidString,
+                toolCallId: "spawn-agent",
+                agentId: UUID(),
+                parentRunId: UUID(),
+                rootRunId: UUID()
+            )
+        ) else {
+            Issue.record("Expected the delegated child to prepare")
+            return
+        }
+
+        let envelope = await SubagentSession.runPrepared(
+            prepared,
+            runLifecycleRecorder: recorder
+        )
+
+        #expect(ToolEnvelope.isSuccess(envelope))
+        #expect(recorder.admissions.isEmpty)
+        #expect(recorder.terminals.isEmpty)
+    }
+
+    @Test("ordinary child fails closed when durable admission is rejected")
+    func rejectedDurableChildNeverExecutes() async {
+        let recorder = RecordingSubagentRunLifecycleRecorder(rejectsAdmission: true)
+        let bodyRan = RunBindingBox()
+        let kind = ScriptedKind(
+            body: { _, _, _, _ in
+                bodyRan.capture()
+                return SubagentResult(payload: ["summary": "unexpected"])
+            }
+        )
+        guard case .ready(let prepared) = await SubagentSession.prepare(
+            kind,
+            tool: "scripted",
+            scope: SubagentScope(
+                sessionId: UUID().uuidString,
+                toolCallId: "child-call",
+                agentId: UUID()
+            )
+        ) else {
+            Issue.record("Expected the ordinary child to prepare")
+            return
+        }
+
+        let envelope = await SubagentSession.runPrepared(
+            prepared,
+            runLifecycleRecorder: recorder
+        )
+
+        #expect(ToolEnvelope.isError(envelope))
+        #expect(recorder.admissions.count == 1)
+        #expect(recorder.terminals.isEmpty)
+        #expect(bodyRan.value.runId == nil)
+    }
+
+    @Test("stop during durable admission settles without starting the child")
+    func stopDuringDurableAdmissionNeverExecutes() async {
+        let interrupt = InterruptToken()
+        let recorder = RecordingSubagentRunLifecycleRecorder(
+            interruptOnAdmission: interrupt
+        )
+        let bodyRan = RunBindingBox()
+        let kind = ScriptedKind(
+            resolve: { _ in
+                ResolvedModel(name: "remote-child", isLocal: false)
+            },
+            body: { _, _, _, _ in
+                bodyRan.capture()
+                return SubagentResult(payload: ["summary": "unexpected"])
+            }
+        )
+        let scope = SubagentScope(
+            sessionId: UUID().uuidString,
+            toolCallId: "stop-during-admission",
+            agentId: UUID()
+        )
+        guard case .ready(let prepared) = await SubagentSession.prepare(
+            kind,
+            tool: "scripted",
+            scope: scope
+        ) else {
+            Issue.record("Expected the child to prepare")
+            return
+        }
+        let feed = SubagentFeed(
+            toolCallId: scope.toolCallId,
+            kindId: kind.capability.id,
+            title: kind.feedTitle,
+            agentId: scope.agentId,
+            parentSessionId: scope.sessionId
+        )
+
+        let envelope = await SubagentSession.runPrepared(
+            prepared,
+            presentation: SubagentRunPresentation(
+                feed: feed,
+                interrupt: interrupt,
+                registerWithUI: false
+            ),
+            runLifecycleRecorder: recorder
+        )
+
+        #expect(ToolEnvelope.isError(envelope))
+        #expect(recorder.admissions.count == 1)
+        #expect(recorder.terminals.count == 1)
+        #expect(recorder.terminals.first?.runId == scope.runId)
+        #expect(recorder.terminals.first?.status == .cancelled)
+        #expect(bodyRan.value.runId == nil)
     }
 
     @Test("the unified recursion guard refuses a nested subagent of any kind")
