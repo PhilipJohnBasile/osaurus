@@ -499,6 +499,7 @@ public final class BackgroundTaskManager: ObservableObject {
                 } catch {
                     print("[BackgroundTaskManager] recordRunEnd (finalize/cancel) failed for run \(runId): \(error)")
                 }
+                state.chatSession?.clearBackgroundRunLifecycle(runId: runId)
                 state.agentRunId = nil
             }
         }
@@ -626,6 +627,7 @@ public final class BackgroundTaskManager: ObservableObject {
             } catch {
                 print("[BackgroundTaskManager] recordRunEnd (cancel) failed for run \(runId): \(error)")
             }
+            state.chatSession?.clearBackgroundRunLifecycle(runId: runId)
             state.agentRunId = nil
         }
         resumeCompletion(for: backgroundId, result: .cancelled)
@@ -913,8 +915,9 @@ public final class BackgroundTaskManager: ObservableObject {
         // per-execution identity before registration so queued work and a
         // queued cancellation both have a durable lifecycle.
         var admittedRunId: UUID?
+        var admittedRootRunId: UUID?
         do {
-            try runLifecycleRecorder.admit(
+            let receipt = try runLifecycleRecorder.admit(
                 RunLifecycleAdmission(
                     runId: request.runId,
                     agentId: context.agentId,
@@ -930,7 +933,8 @@ public final class BackgroundTaskManager: ObservableObject {
                     modelId: context.chatSession.selectedModel
                 )
             )
-            admittedRunId = request.runId
+            admittedRunId = receipt.runId
+            admittedRootRunId = receipt.rootRunId
         } catch {
             print(
                 "[BackgroundTaskManager] run admission failed for "
@@ -952,6 +956,12 @@ public final class BackgroundTaskManager: ObservableObject {
             showToast: request.showToast
         )
         state.agentRunId = admittedRunId
+        if let admittedRunId, let admittedRootRunId {
+            context.chatSession.bindBackgroundRunLifecycle(
+                runId: admittedRunId,
+                rootRunId: admittedRootRunId
+            )
+        }
 
         // Plugin-originated dispatches buffer their `.started` event until
         // the trampoline returns, so the plugin's `on_task_event` callback
@@ -1025,7 +1035,7 @@ public final class BackgroundTaskManager: ObservableObject {
                 && (request.source == .schedule
                     || request.source == .selfSchedule
                     || request.source == .watcher)
-            let rootRunId = request.rootRunId
+            let rootRunId = admittedRootRunId
                 ?? (request.parentRunId == nil ? request.runId : nil)
             await ChatExecutionContext.$currentSessionSource.withValue(request.source) {
                 await ChatExecutionContext.$isUnattendedDispatch.withValue(unattended) {
@@ -1237,6 +1247,16 @@ public final class BackgroundTaskManager: ObservableObject {
             )
         }
 
+        static func makeForTesting(
+            runLifecycleRecorder: any RunLifecycleRecording
+        ) -> BackgroundTaskManager {
+            BackgroundTaskManager(
+                persistsRetainedTabs: false,
+                powerManager: nil,
+                runLifecycleRecorder: runLifecycleRecorder
+            )
+        }
+
         static func makeForTestingRetaining(defaults: UserDefaults) -> BackgroundTaskManager {
             BackgroundTaskManager(
                 persistsRetainedTabs: true,
@@ -1430,6 +1450,7 @@ public final class BackgroundTaskManager: ObservableObject {
             } catch {
                 print("[BackgroundTaskManager] recordRunEnd failed for run \(runId): \(error)")
             }
+            state.chatSession?.clearBackgroundRunLifecycle(runId: runId)
             state.agentRunId = nil
         }
         resumeCompletion(for: state.id, result: resultFromState(state))
@@ -1787,20 +1808,59 @@ public final class BackgroundTaskManager: ObservableObject {
     /// Bridge `ChatSession.awaitingClarify` into the per-task plugin event
     /// surface. Setting a payload transitions the task to
     /// `.waitingForInput` and emits `OSR_TASK_EVENT_CLARIFICATION`.
-    /// Clearing it is a no-op here — the next streaming tick is the
-    /// single writer for the `.running` transition.
+    /// Clearing it records the resume boundary before the next streaming
+    /// tick. The task status guard makes both transitions exact-once even if
+    /// a UI reassigns an equivalent payload.
     private func handleChatClarifyChange(taskId: UUID, payload: ClarifyPayload?) {
-        guard let state = backgroundTasks[taskId], let payload else { return }
-        state.status = .waitingForInput
-        state.currentStep = "Waiting for clarification"
-        emitPluginEvent(
-            state,
-            type: .clarification,
-            json: PluginHostContext.serializeClarificationEvent(payload: payload)
-        )
-        // Waiting requests stay alive but release their execution slot so
-        // queued work isn't starved by a task idling on the user.
-        pumpQueue()
+        guard let state = backgroundTasks[taskId] else { return }
+        if let payload {
+            guard state.status != .waitingForInput else { return }
+            if let runId = state.agentRunId {
+                do {
+                    try runLifecycleRecorder.append(
+                        runId: runId,
+                        kind: .waitingForInput,
+                        occurredAt: Date(),
+                        message: payload.question,
+                        metadata: [:]
+                    )
+                } catch {
+                    print(
+                        "[BackgroundTaskManager] clarify wait event failed for "
+                            + "\(runId): \(error)"
+                    )
+                }
+            }
+            state.status = .waitingForInput
+            state.currentStep = "Waiting for clarification"
+            emitPluginEvent(
+                state,
+                type: .clarification,
+                json: PluginHostContext.serializeClarificationEvent(payload: payload)
+            )
+            // Waiting requests stay alive but release their execution slot so
+            // queued work isn't starved by a task idling on the user.
+            pumpQueue()
+        } else if state.status == .waitingForInput {
+            if let runId = state.agentRunId {
+                do {
+                    try runLifecycleRecorder.append(
+                        runId: runId,
+                        kind: .resumed,
+                        occurredAt: Date(),
+                        message: nil,
+                        metadata: [:]
+                    )
+                } catch {
+                    print(
+                        "[BackgroundTaskManager] clarify resume event failed for "
+                            + "\(runId): \(error)"
+                    )
+                }
+            }
+            state.status = .running
+            state.currentStep = "Resuming..."
+        }
     }
 
     /// Scan newly added turns for tool calls and record them as activity.

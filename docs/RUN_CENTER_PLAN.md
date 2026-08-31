@@ -162,7 +162,9 @@ Implemented capture checkpoint: background admission and queue promotion use a
 single durable run identity; direct Chat creates a root only when no background
 identity is prebound; terminal cancellation waits for engine settlement; and
 launch recovery atomically interrupts ownerless nonterminal rows before new
-work is admitted.
+work is admitted. Background clarification keeps that ledger-confirmed run and
+root identity across UI/plugin continuation tasks and records exact-once
+`waitingForInput`/`resumed` boundaries without minting another run.
 
 ### Phase 2 — Read-only Run Center
 

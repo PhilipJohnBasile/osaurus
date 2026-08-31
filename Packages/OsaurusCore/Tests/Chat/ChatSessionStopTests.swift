@@ -219,6 +219,32 @@ struct ChatSessionStopTests {
     }
 
     @Test
+    func backgroundRunBindingSurvivesAContinuationWithoutTaskLocals() async throws {
+        try await ChatHistoryTestStorage.run {
+            let recorder = RecordingRunLifecycleRecorder()
+            let engine = RunIdentityCapturingChatEngine()
+            let session = ChatSession()
+            let runId = UUID()
+            let rootRunId = UUID()
+            session.runLifecycleRecorder = recorder
+            session.chatEngineFactory = { _ in engine }
+            session.bindBackgroundRunLifecycle(runId: runId, rootRunId: rootRunId)
+
+            // This call deliberately has no ChatExecutionContext task-local
+            // binding, matching a later clarify answer from the UI/plugin.
+            session.send("Resume the background run")
+            try await waitUntilAsync(timeout: Self.asyncTimeout) {
+                !session.isStreaming && await engine.capturedRunId != nil
+            }
+
+            #expect(recorder.admissions.isEmpty)
+            #expect(recorder.terminalReceipts.isEmpty)
+            #expect(await engine.capturedRunId == runId)
+            #expect(await engine.capturedRootRunId == rootRunId)
+        }
+    }
+
+    @Test
     func directChatCancellationWaitsForEngineSettlementBeforeTerminalReceipt() async throws {
         try await ChatHistoryTestStorage.run {
             let recorder = RecordingRunLifecycleRecorder()
@@ -1047,8 +1073,15 @@ private final class RecordingRunLifecycleRecorder: RunLifecycleRecording, @unche
         lock.withLock { storedTerminalReceipts }
     }
 
-    func admit(_ admission: RunLifecycleAdmission) throws {
+    @discardableResult
+    func admit(
+        _ admission: RunLifecycleAdmission
+    ) throws -> RunLifecycleAdmissionReceipt {
         lock.withLock { storedAdmissions.append(admission) }
+        return RunLifecycleAdmissionReceipt(
+            runId: admission.runId,
+            rootRunId: admission.rootRunId ?? admission.runId
+        )
     }
 
     func append(

@@ -625,6 +625,12 @@ final class ChatSession: ObservableObject {
     private var activeRunId: UUID?
     private var activeRunContext: RunContext?
     private var activeRunOwnsDurableLifecycle = false
+    /// Durable identity owned by `BackgroundTaskManager` across execution
+    /// segments. A clarify answer is sent from a later UI/plugin task that no
+    /// longer inherits the original task locals, so the session must retain
+    /// the binding until its background owner reaches a terminal state.
+    private var backgroundRunId: UUID?
+    private var backgroundRootRunId: UUID?
     /// Test-replaceable persistence sink. A prebound background run remains
     /// owned by `BackgroundTaskManager`; direct Chat uses this recorder.
     var runLifecycleRecorder: any RunLifecycleRecording = SchedulerRunLifecycleRecorder.shared
@@ -3892,6 +3898,17 @@ final class ChatSession: ObservableObject {
         activeRunOwnsDurableLifecycle = ownsDurableLifecycle
     }
 
+    func bindBackgroundRunLifecycle(runId: UUID, rootRunId: UUID) {
+        backgroundRunId = runId
+        backgroundRootRunId = rootRunId
+    }
+
+    func clearBackgroundRunLifecycle(runId: UUID) {
+        guard backgroundRunId == runId else { return }
+        backgroundRunId = nil
+        backgroundRootRunId = nil
+    }
+
     /// Best-effort estimate of the execution mode the next send will use.
     /// Prefers the registry's actual registered state (matches what
     /// `prepareChatExecutionMode` would resolve) so the token-budget preview
@@ -5840,7 +5857,7 @@ final class ChatSession: ObservableObject {
         let memoryAgentId = (agentId ?? Agent.defaultId).uuidString
         let memoryConversationId = (sessionId ?? UUID()).uuidString
 
-        let inheritedRunId = ChatExecutionContext.currentRunId
+        let inheritedRunId = ChatExecutionContext.currentRunId ?? backgroundRunId
         let runId = inheritedRunId ?? UUID()
         var ownsDurableLifecycle = false
         if inheritedRunId == nil {
@@ -5898,7 +5915,9 @@ final class ChatSession: ObservableObject {
         let storedTurnModelOptions = turnModelId.flatMap {
             ModelOptionsStore.shared.storedExplicitOptions(for: $0)
         }
-        let turnRootRunId = ChatExecutionContext.currentRootRunId ?? runId
+        let turnRootRunId = ChatExecutionContext.currentRootRunId
+            ?? backgroundRootRunId
+            ?? runId
 
         currentTask = Task { @MainActor [weak self] in
             guard let self else { return }

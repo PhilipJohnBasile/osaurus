@@ -55,6 +55,19 @@ public struct RunLifecycleAdmission: Sendable, Equatable {
     }
 }
 
+/// Identity confirmed by the durable ledger after it validates lineage.
+/// A child may omit `rootRunId` at the dispatch boundary; the ledger resolves
+/// that value from its parent and returns the canonical root to the runtime.
+public struct RunLifecycleAdmissionReceipt: Sendable, Equatable {
+    public let runId: UUID
+    public let rootRunId: UUID
+
+    public init(runId: UUID, rootRunId: UUID) {
+        self.runId = runId
+        self.rootRunId = rootRunId
+    }
+}
+
 public struct RunLifecycleTerminalReceipt: Sendable, Equatable {
     public let runId: UUID
     public let status: AgentRunStatus
@@ -86,7 +99,8 @@ public struct RunLifecycleTerminalReceipt: Sendable, Equatable {
 /// Ordered write-only sink used by the execution owner. Implementations must
 /// preserve call order and fail closed on invalid durable transitions.
 public protocol RunLifecycleRecording: Sendable {
-    func admit(_ admission: RunLifecycleAdmission) throws
+    @discardableResult
+    func admit(_ admission: RunLifecycleAdmission) throws -> RunLifecycleAdmissionReceipt
     func append(
         runId: UUID,
         kind: RunCenterEventKind,
@@ -127,9 +141,13 @@ public final class SchedulerRunLifecycleRecorder: RunLifecycleRecording, @unchec
         return recovered
     }
 
-    public func admit(_ admission: RunLifecycleAdmission) throws {
+    @discardableResult
+    public func admit(
+        _ admission: RunLifecycleAdmission
+    ) throws -> RunLifecycleAdmissionReceipt {
         _ = try recoverOrphanedRunsAfterLaunch()
-        try database.recordRunAdmission(admission)
+        let rootRunId = try database.recordRunAdmission(admission)
+        return RunLifecycleAdmissionReceipt(runId: admission.runId, rootRunId: rootRunId)
     }
 
     public func append(
@@ -169,7 +187,13 @@ final class DiscardingRunLifecycleRecorder: RunLifecycleRecording, @unchecked Se
 
     private init() {}
 
-    func admit(_ admission: RunLifecycleAdmission) throws {}
+    @discardableResult
+    func admit(_ admission: RunLifecycleAdmission) throws -> RunLifecycleAdmissionReceipt {
+        RunLifecycleAdmissionReceipt(
+            runId: admission.runId,
+            rootRunId: admission.rootRunId ?? admission.runId
+        )
+    }
 
     func append(
         runId: UUID,

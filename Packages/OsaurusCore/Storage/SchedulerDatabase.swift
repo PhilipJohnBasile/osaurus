@@ -744,7 +744,8 @@ public final class SchedulerDatabase: @unchecked Sendable {
     /// `started_at` column stores admission time until a schema revision can
     /// split admission/start timestamps; the event stream remains the source
     /// of truth and records both `created` and the initial queued/running fact.
-    public func recordRunAdmission(_ admission: RunLifecycleAdmission) throws {
+    @discardableResult
+    public func recordRunAdmission(_ admission: RunLifecycleAdmission) throws -> UUID {
         try inTransaction(immediate: true) { _ in
             let resolvedRootRunId: UUID
             if let parentRunId = admission.parentRunId {
@@ -848,6 +849,7 @@ public final class SchedulerDatabase: @unchecked Sendable {
                     )
                 }
             }
+            return resolvedRootRunId
         }
     }
 

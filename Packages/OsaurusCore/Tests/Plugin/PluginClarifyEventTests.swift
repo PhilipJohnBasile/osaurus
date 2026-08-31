@@ -81,7 +81,9 @@ struct ClarifyEventSerializationTests {
 @MainActor
 struct BackgroundTaskClarifyObserverTests {
 
-    private func makeObservedState() -> (state: BackgroundTaskState, mgr: BackgroundTaskManager) {
+    private func makeObservedState(
+        manager: BackgroundTaskManager? = nil
+    ) -> (state: BackgroundTaskState, mgr: BackgroundTaskManager) {
         let context = ExecutionContext(agentId: Agent.defaultId)
         // Mock engine yields nothing so isStreaming only flips when the
         // test sets it explicitly. Mirrors `BackgroundTaskStreamingObserverTests`.
@@ -96,7 +98,7 @@ struct BackgroundTaskClarifyObserverTests {
             status: .running,
             currentStep: "Running..."
         )
-        let mgr = BackgroundTaskManager.shared
+        let mgr = manager ?? BackgroundTaskManager.makeForTesting()
         mgr.registerTaskForTesting(state)
         mgr.observeChatTask(state, session: context.chatSession)
         return (state, mgr)
@@ -164,6 +166,66 @@ struct BackgroundTaskClarifyObserverTests {
 
         #expect(state.status == .completed(summary: "Chat completed"))
     }
+
+    @Test
+    func clarifyWaitAndResumeAppendOneDurableEventEach() async throws {
+        let recorder = ClarifyRunLifecycleRecorder()
+        let manager = BackgroundTaskManager.makeForTesting(runLifecycleRecorder: recorder)
+        let (state, mgr) = makeObservedState(manager: manager)
+        defer { mgr.finalizeTask(state.id) }
+        let runId = UUID()
+        state.agentRunId = runId
+
+        state.chatSession?.isStreaming = true
+        state.chatSession?.awaitingClarify = ClarifyPayload(
+            question: "Choose a database",
+            options: ["SQLite", "Postgres"],
+            allowMultiple: false
+        )
+        try await Task.sleep(for: .milliseconds(10))
+        state.chatSession?.awaitingClarify = nil
+        try await Task.sleep(for: .milliseconds(10))
+
+        #expect(recorder.appendedEvents.map(\.runId) == [runId, runId])
+        #expect(recorder.appendedEvents.map(\.kind) == [.waitingForInput, .resumed])
+        #expect(state.status == .running)
+    }
+}
+
+private final class ClarifyRunLifecycleRecorder: RunLifecycleRecording, @unchecked Sendable {
+    struct AppendedEvent: Sendable {
+        let runId: UUID
+        let kind: RunCenterEventKind
+    }
+
+    private let lock = NSLock()
+    private var storedEvents: [AppendedEvent] = []
+
+    var appendedEvents: [AppendedEvent] {
+        lock.withLock { storedEvents }
+    }
+
+    @discardableResult
+    func admit(
+        _ admission: RunLifecycleAdmission
+    ) throws -> RunLifecycleAdmissionReceipt {
+        RunLifecycleAdmissionReceipt(
+            runId: admission.runId,
+            rootRunId: admission.rootRunId ?? admission.runId
+        )
+    }
+
+    func append(
+        runId: UUID,
+        kind: RunCenterEventKind,
+        occurredAt _: Date,
+        message _: String?,
+        metadata _: [String: String]
+    ) throws {
+        lock.withLock { storedEvents.append(AppendedEvent(runId: runId, kind: kind)) }
+    }
+
+    func end(_: RunLifecycleTerminalReceipt) throws {}
 }
 
 // MARK: - 3. End-to-end emission through a fake LoadedPlugin

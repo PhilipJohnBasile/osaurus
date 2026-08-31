@@ -283,7 +283,7 @@ struct SchedulerRunLedgerTests {
             instructions: "Parent"
         )
         let childRunId = UUID()
-        try database.recordRunAdmission(
+        let resolvedRootRunId = try database.recordRunAdmission(
             RunLifecycleAdmission(
                 runId: childRunId,
                 agentId: agentId,
@@ -296,6 +296,7 @@ struct SchedulerRunLedgerTests {
         )
 
         let child = try #require(database.allRuns().first { $0.id == childRunId })
+        #expect(resolvedRootRunId == parentRunId)
         #expect(child.parentRunId == parentRunId)
         #expect(child.rootRunId == parentRunId)
         #expect(try database.events(runId: childRunId).map(\.kind) == [.created, .started])
