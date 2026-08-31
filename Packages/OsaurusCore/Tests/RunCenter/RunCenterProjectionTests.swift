@@ -419,10 +419,11 @@ struct RunCenterProjectionTests {
     @Test func duplicateSequenceFailsClosed() {
         let events = [
             event(sequence: 1, kind: .started),
-            event(sequence: 1, kind: .progress),
+            event(sequence: 2, kind: .progress),
+            event(sequence: 2, kind: .progress),
         ]
 
-        #expect(throws: RunCenterProjectionError.duplicateSequence(1)) {
+        #expect(throws: RunCenterProjectionError.duplicateSequence(2)) {
             try RunCenterProjector.project(
                 runId: runId,
                 events: events,
