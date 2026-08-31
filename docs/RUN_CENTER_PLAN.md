@@ -164,7 +164,13 @@ identity is prebound; terminal cancellation waits for engine settlement; and
 launch recovery atomically interrupts ownerless nonterminal rows before new
 work is admitted. Background clarification keeps that ledger-confirmed run and
 root identity across UI/plugin continuation tasks and records exact-once
-`waitingForInput`/`resumed` boundaries without minting another run.
+`waitingForInput`/`resumed` boundaries without minting another run. Direct Chat
+clarification likewise keeps its admitted root nonterminal across the answer,
+freezes the admitted model for the resumed segment, and closes only after the
+continuation settles. Cancelling either a direct or background clarification
+routes through its lifecycle owner and clears the prompt without fabricating a
+resume event before cancellation. A soft redirect preserves the wait boundary
+and durably saves its steering turn for the eventual real resume.
 
 ### Phase 2 — Read-only Run Center
 

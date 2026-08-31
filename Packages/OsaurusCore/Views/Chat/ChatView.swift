@@ -624,13 +624,22 @@ final class ChatSession: ObservableObject {
     private var currentTask: Task<Void, Never>?
     private var activeRunId: UUID?
     private var activeRunContext: RunContext?
+    private var activeRunModelId: String?
     private var activeRunOwnsDurableLifecycle = false
+    /// Direct Chat keeps its durable root active while the `clarify` tool is
+    /// waiting. The execution segment has stopped, but the logical run has
+    /// not; the user's answer resumes this same id instead of admitting a
+    /// competing row.
+    private var activeRunIsWaitingForClarification = false
     /// Durable identity owned by `BackgroundTaskManager` across execution
     /// segments. A clarify answer is sent from a later UI/plugin task that no
     /// longer inherits the original task locals, so the session must retain
     /// the binding until its background owner reaches a terminal state.
     private var backgroundRunId: UUID?
     private var backgroundRootRunId: UUID?
+    private weak var backgroundRunOwner: BackgroundTaskManager?
+    private var backgroundTaskId: UUID?
+    private var backgroundOwnerStopInProgress = false
     /// Test-replaceable persistence sink. A prebound background run remains
     /// owned by `BackgroundTaskManager`; direct Chat uses this recorder.
     var runLifecycleRecorder: any RunLifecycleRecording = SchedulerRunLifecycleRecorder.shared
@@ -2405,6 +2414,13 @@ final class ChatSession: ObservableObject {
     /// dying is a side effect the user never chose; those keep the historical
     /// clean trim so no ghost "cancelled" row appears in the transcript.
     func stop(preservesCancelledMarker: Bool = true) {
+        if !backgroundOwnerStopInProgress,
+            let backgroundRunOwner,
+            let backgroundTaskId
+        {
+            backgroundRunOwner.cancelTask(backgroundTaskId)
+            return
+        }
         stopPreservesCancelledMarker = preservesCancelledMarker
         // Capture BEFORE any cancellation: whether a send was in flight when
         // the user hit Stop. The marker decision below must not depend on
@@ -2423,6 +2439,7 @@ final class ChatSession: ObservableObject {
         // would leave that continuation suspended forever, the overlay
         // mounted, and the input bar hit-test disabled.
         promptQueue.drainAll()
+        awaitingClarify = nil
         stopRequested = true
         let task = currentTask
         let ownedDurableRunId = activeRunOwnsDurableLifecycle ? activeRunId : nil
@@ -2468,6 +2485,16 @@ final class ChatSession: ObservableObject {
             isDirty = true
             rebuildVisibleBlocks()
         }
+    }
+
+    /// The background manager calls through this seam after it has assumed
+    /// cancellation ownership. A UI/session-level `stop()` routes back to the
+    /// bound manager; this bypass prevents recursion while preserving the
+    /// ordinary Chat cleanup and engine-settlement behavior.
+    func stopFromBackgroundTaskOwner(preservesCancelledMarker: Bool = true) {
+        backgroundOwnerStopInProgress = true
+        defer { backgroundOwnerStopInProgress = false }
+        stop(preservesCancelledMarker: preservesCancelledMarker)
     }
 
     /// Put this session on the same cancellation path as its visible Stop
@@ -3891,11 +3918,120 @@ final class ChatSession: ObservableObject {
     private func beginRun(
         _ runId: UUID,
         context: RunContext,
+        modelId: String?,
         ownsDurableLifecycle: Bool
     ) {
         activeRunId = runId
         activeRunContext = context
+        activeRunModelId = modelId
         activeRunOwnsDurableLifecycle = ownsDurableLifecycle
+        activeRunIsWaitingForClarification = false
+    }
+
+    private var canResumeDirectRun: Bool {
+        activeRunId != nil
+            && activeRunOwnsDurableLifecycle
+            && activeRunIsWaitingForClarification
+    }
+
+    private struct PreparedDurableRun {
+        let runId: UUID
+        let rootRunId: UUID
+        let context: RunContext
+        let modelId: String?
+        let ownsLifecycle: Bool
+    }
+
+    private func restoreDirectRunModelIfNeeded(_ modelId: String?) {
+        guard selectedModel != modelId else { return }
+        isLoadingModel = true
+        selectedModel = modelId
+        loadActiveModelOptions(for: modelId)
+        applyImageModelDefaults(for: modelId)
+        isLoadingModel = false
+        if let modelId {
+            warmupController.handleModelSelectionChange(
+                session: self,
+                to: modelId,
+                performSwitch: { [weak self] evictOthers in
+                    await self?.performModelResidencySwitch(evictOthers: evictOthers)
+                }
+            )
+        }
+    }
+
+    private func prepareDurableRunForSend(
+        instructions: String,
+        fallbackContext: RunContext
+    ) -> PreparedDurableRun {
+        if canResumeDirectRun, let runId = activeRunId {
+            let modelId = activeRunModelId
+            restoreDirectRunModelIfNeeded(modelId)
+            do {
+                try runLifecycleRecorder.append(
+                    runId: runId,
+                    kind: .resumed,
+                    occurredAt: Date(),
+                    message: nil,
+                    metadata: [:]
+                )
+            } catch {
+                print(
+                    "[ChatSession] durable clarification resume failed for "
+                        + "\(runId): \(error)"
+                )
+            }
+            return PreparedDurableRun(
+                runId: runId,
+                rootRunId: runId,
+                context: activeRunContext ?? fallbackContext,
+                modelId: modelId,
+                ownsLifecycle: true
+            )
+        }
+
+        if let runId = ChatExecutionContext.currentRunId ?? backgroundRunId {
+            return PreparedDurableRun(
+                runId: runId,
+                rootRunId: ChatExecutionContext.currentRootRunId
+                    ?? backgroundRootRunId
+                    ?? runId,
+                context: fallbackContext,
+                modelId: selectedModel,
+                ownsLifecycle: false
+            )
+        }
+
+        let runId = UUID()
+        var ownsLifecycle = false
+        var rootRunId = runId
+        do {
+            let receipt = try runLifecycleRecorder.admit(
+                RunLifecycleAdmission(
+                    runId: runId,
+                    agentId: agentId ?? Agent.defaultId,
+                    triggerKind: .user,
+                    triggerPayload: #"{"source":"chat"}"#,
+                    instructions: instructions,
+                    startsImmediately: true,
+                    sessionId: sessionId,
+                    projectId: projectId,
+                    title: title,
+                    modelId: selectedModel
+                )
+            )
+            rootRunId = receipt.rootRunId
+            ownsLifecycle = true
+        } catch {
+            print("[ChatSession] direct run admission failed for \(runId): \(error)")
+        }
+        return PreparedDurableRun(
+            runId: runId,
+            rootRunId: rootRunId,
+            context: fallbackContext,
+            modelId: selectedModel,
+            ownsLifecycle: ownsLifecycle
+        )
     }
 
     func bindBackgroundRunLifecycle(runId: UUID, rootRunId: UUID) {
@@ -3903,10 +4039,23 @@ final class ChatSession: ObservableObject {
         backgroundRootRunId = rootRunId
     }
 
+    func bindBackgroundRunLifecycle(
+        runId: UUID,
+        rootRunId: UUID,
+        owner: BackgroundTaskManager,
+        taskId: UUID
+    ) {
+        bindBackgroundRunLifecycle(runId: runId, rootRunId: rootRunId)
+        backgroundRunOwner = owner
+        backgroundTaskId = taskId
+    }
+
     func clearBackgroundRunLifecycle(runId: UUID) {
         guard backgroundRunId == runId else { return }
         backgroundRunId = nil
         backgroundRootRunId = nil
+        backgroundRunOwner = nil
+        backgroundTaskId = nil
     }
 
     /// Best-effort estimate of the execution mode the next send will use.
@@ -3969,7 +4118,7 @@ final class ChatSession: ObservableObject {
         return resolved
     }
 
-    private func completeRunCleanup() {
+    private func completeRunCleanup(pausingForClarification: Bool = false) {
         currentTask = nil
         isStreaming = false
         // Successful run finished — drop the saved draft so a later
@@ -3989,16 +4138,53 @@ final class ChatSession: ObservableObject {
         markUnfinishedToolCallsInterrupted()
         rebuildVisibleBlocks()
         save()
-        maybeGenerateAutoTitle()
-        maybeGenerateFollowUps()
-        if !suppressQueuedSendFlushForCurrentRun {
-            flushQueuedSendIfEligible()
+        if !pausingForClarification {
+            maybeGenerateAutoTitle()
+            maybeGenerateFollowUps()
+            if !suppressQueuedSendFlushForCurrentRun {
+                flushQueuedSendIfEligible()
+            }
         }
         suppressQueuedSendFlushForCurrentRun = false
-        handleWarmupAfterRunCompleted(
-            wasCancelled: stopRequested,
-            hadError: lastStreamError != nil
-        )
+        if !pausingForClarification {
+            handleWarmupAfterRunCompleted(
+                wasCancelled: stopRequested,
+                hadError: lastStreamError != nil
+            )
+        }
+    }
+
+    private func pauseActiveDirectRunForClarificationIfNeeded(
+        runId: UUID,
+        persistConversationArtifacts: Bool
+    ) -> Bool {
+        guard
+            activeRunOwnsDurableLifecycle,
+            !stopRequested,
+            lastStreamError == nil,
+            persistConversationArtifacts,
+            let clarification = awaitingClarify
+        else { return false }
+
+        if !activeRunIsWaitingForClarification {
+            do {
+                try runLifecycleRecorder.append(
+                    runId: runId,
+                    kind: .waitingForInput,
+                    occurredAt: Date(),
+                    message: clarification.question,
+                    metadata: [:]
+                )
+            } catch {
+                print(
+                    "[ChatSession] durable clarification wait failed for "
+                        + "\(runId): \(error)"
+                )
+            }
+        }
+        activeRunIsWaitingForClarification = true
+        completeRunCleanup(pausingForClarification: true)
+        return true
     }
 
     /// Outcome of the auto-title eligibility check for one clean run
@@ -4329,6 +4515,11 @@ final class ChatSession: ObservableObject {
         let context = activeRunContext
         let ownsDurableLifecycle = activeRunOwnsDurableLifecycle
         let runCompletedCleanly = !stopRequested && lastStreamError == nil
+        if pauseActiveDirectRunForClarificationIfNeeded(
+            runId: runId,
+            persistConversationArtifacts: persistConversationArtifacts
+        ) { return }
+
         let durableTerminalStatus: AgentRunStatus?
         if stopRequested {
             // `stop()` waits for the cancelled task to unwind before writing
@@ -4359,9 +4550,14 @@ final class ChatSession: ObservableObject {
             }
         }
 
+        if ownsDurableLifecycle, activeRunIsWaitingForClarification {
+            awaitingClarify = nil
+        }
         activeRunId = nil
         activeRunContext = nil
+        activeRunModelId = nil
         activeRunOwnsDurableLifecycle = false
+        activeRunIsWaitingForClarification = false
         completeRunCleanup()
 
         if ownsDurableLifecycle, let durableTerminalStatus {
@@ -5626,9 +5822,16 @@ final class ChatSession: ObservableObject {
             restoreTurnsRollbackAfterAbortedRegeneration()
             return
         }
-        guard activeRunId == nil, !isStreaming else {
+        guard (activeRunId == nil || canResumeDirectRun), !isStreaming else {
             restoreTurnsRollbackAfterAbortedRegeneration()
             return
+        }
+        if canResumeDirectRun {
+            // Restore the admitted model before the warm-up handshake is
+            // planned. Doing this only inside `dispatchSend` would be too
+            // late: a catalog-driven selection change during the pause could
+            // warm model B and then execute the resumed run on model A.
+            restoreDirectRunModelIfNeeded(activeRunModelId)
         }
 
         // Authoritative guard for every send path (interactive, regeneration,
@@ -5757,7 +5960,7 @@ final class ChatSession: ObservableObject {
         {
             return
         }
-        guard activeRunId == nil, !isStreaming else {
+        guard (activeRunId == nil || canResumeDirectRun), !isStreaming else {
             rollbackPreAppendedUserTurn(
                 preAppendedUserTurn,
                 restoringDraft: (trimmed, attachments)
@@ -5856,44 +6059,25 @@ final class ChatSession: ObservableObject {
 
         let memoryAgentId = (agentId ?? Agent.defaultId).uuidString
         let memoryConversationId = (sessionId ?? UUID()).uuidString
-
-        let inheritedRunId = ChatExecutionContext.currentRunId ?? backgroundRunId
-        let runId = inheritedRunId ?? UUID()
-        var ownsDurableLifecycle = false
-        if inheritedRunId == nil {
-            let instructions = trimmed.isEmpty
-                ? turns.last(where: { $0.role == .user })?.content ?? "Regenerate response"
-                : trimmed
-            do {
-                try runLifecycleRecorder.admit(
-                    RunLifecycleAdmission(
-                        runId: runId,
-                        agentId: agentId ?? Agent.defaultId,
-                        triggerKind: .user,
-                        triggerPayload: #"{"source":"chat"}"#,
-                        instructions: instructions,
-                        startsImmediately: true,
-                        sessionId: sessionId,
-                        projectId: projectId,
-                        title: title,
-                        modelId: selectedModel
-                    )
-                )
-                ownsDurableLifecycle = true
-            } catch {
-                print("[ChatSession] direct run admission failed for \(runId): \(error)")
-            }
-        }
+        let nextRunContext = RunContext(
+            hasContent: hasContent,
+            userContent: trimmed,
+            memoryAgentId: memoryAgentId,
+            memoryConversationId: memoryConversationId,
+            memoryProjectId: projectId
+        )
+        let runInstructions = trimmed.isEmpty
+            ? turns.last(where: { $0.role == .user })?.content ?? "Regenerate response"
+            : trimmed
+        let durableRun = prepareDurableRunForSend(
+            instructions: runInstructions,
+            fallbackContext: nextRunContext
+        )
         beginRun(
-            runId,
-            context: RunContext(
-                hasContent: hasContent,
-                userContent: trimmed,
-                memoryAgentId: memoryAgentId,
-                memoryConversationId: memoryConversationId,
-                memoryProjectId: projectId
-            ),
-            ownsDurableLifecycle: ownsDurableLifecycle
+            durableRun.runId,
+            context: durableRun.context,
+            modelId: durableRun.modelId,
+            ownsDurableLifecycle: durableRun.ownsLifecycle
         )
 
         // Capture the agent binding for the whole turn so every async
@@ -5905,7 +6089,7 @@ final class ChatSession: ObservableObject {
         // streaming pipeline (e.g. from a sandbox plugin running on a
         // detached task) couldn't tell what agent they belonged to.
         let turnAgentId = agentId ?? Agent.defaultId
-        let turnModelId = selectedModel
+        let turnModelId = durableRun.modelId
         let turnModelType = selectedPickerItem?.modelType
         let turnSupportsImages = selectedModelSupportsImages
         let turnSupportsAudio = selectedModelSupportsAudio
@@ -5915,9 +6099,8 @@ final class ChatSession: ObservableObject {
         let storedTurnModelOptions = turnModelId.flatMap {
             ModelOptionsStore.shared.storedExplicitOptions(for: $0)
         }
-        let turnRootRunId = ChatExecutionContext.currentRootRunId
-            ?? backgroundRootRunId
-            ?? runId
+        let runId = durableRun.runId
+        let turnRootRunId = durableRun.rootRunId
 
         currentTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -8821,13 +9004,14 @@ struct ChatView: View {
                                 )
                             },
                             onStop: { id in
-                                // This window's own run stops directly (the
-                                // hosting surface may not be registered with
-                                // ChatWindowManager); anything else routes
-                                // through the monitor, which prefers the
-                                // registry task so a detached run is also
-                                // marked cancelled.
-                                if session.sessionId == id {
+                                // Prefer registry ownership even for the chat
+                                // displayed in this window. Some hosting
+                                // surfaces are not registered with
+                                // ChatWindowManager, so retain the direct
+                                // fallback only when no background task owns it.
+                                if BackgroundTaskManager.shared.liveTask(forSessionId: id) != nil {
+                                    SessionActivityMonitor.shared.stop(sessionId: id)
+                                } else if session.sessionId == id {
                                     session.stop()
                                 } else {
                                     SessionActivityMonitor.shared.stop(sessionId: id)
@@ -8949,7 +9133,16 @@ struct ChatView: View {
                                         observedSession.sendCurrent()
                                     }
                                 },
-                                onStop: { observedSession.stop() },
+                                onStop: {
+                                    if let sessionId = observedSession.sessionId,
+                                        BackgroundTaskManager.shared.liveTask(forSessionId: sessionId)
+                                            != nil
+                                    {
+                                        SessionActivityMonitor.shared.stop(sessionId: sessionId)
+                                    } else {
+                                        observedSession.stop()
+                                    }
+                                },
                                 focusTrigger: focusTrigger,
                                 agentId: windowState.agentId,
                                 windowId: windowState.windowId,

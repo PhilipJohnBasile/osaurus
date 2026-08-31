@@ -132,6 +132,12 @@ public final class BackgroundTaskManager: ObservableObject {
     /// Task body runs). See `handleChatStreamingChange`.
     private var streamingObserved: Set<UUID> = []
 
+    /// Clearing a clarification as part of cancellation is not a resume.
+    /// `ChatSession.stop()` publishes that nil synchronously, so this guard
+    /// keeps the clarification observer from appending a false `.resumed`
+    /// boundary immediately before the canonical cancellation receipt.
+    private var clarificationResumeSuppressedTaskIds: Set<UUID> = []
+
     /// Background-task id keyed by the chat window currently bound to it.
     /// Populated by `detachChatWindow`, `openTaskWindow`, and
     /// `bindWindow(_:toTask:)`; consulted by `ChatWindowManager` in
@@ -596,7 +602,9 @@ public final class BackgroundTaskManager: ObservableObject {
         queuedOrder.removeAll { $0 == backgroundId }
         pendingStarts.removeValue(forKey: backgroundId)
 
-        state.chatSession?.stop()
+        clarificationResumeSuppressedTaskIds.insert(backgroundId)
+        state.chatSession?.stopFromBackgroundTaskOwner()
+        clarificationResumeSuppressedTaskIds.remove(backgroundId)
         state.status = .cancelled
         state.captureContextPreview()
         // Mirror the markCompleted finalisation for the agent_runs row
@@ -744,9 +752,16 @@ public final class BackgroundTaskManager: ObservableObject {
             // it as part of the conversation history.
             state.chatSession?.appendInterruptMessage(trimmed)
         }
+        // A clarification pause has no live stream to cancel. Preserve its
+        // payload and durable wait boundary so this soft redirect cannot look
+        // like an answer/resume; the next real user response owns that edge.
+        if state.status == .waitingForInput {
+            state.chatSession?.save()
+            return
+        }
         // Programmatic redirect, not the user's Stop button: the interrupt
         // turn itself is the transcript record, so no cancelled marker.
-        state.chatSession?.stop(preservesCancelledMarker: false)
+        state.chatSession?.stopFromBackgroundTaskOwner(preservesCancelledMarker: false)
     }
 
     /// Emit a draft event to the originating plugin.
@@ -959,7 +974,9 @@ public final class BackgroundTaskManager: ObservableObject {
         if let admittedRunId, let admittedRootRunId {
             context.chatSession.bindBackgroundRunLifecycle(
                 runId: admittedRunId,
-                rootRunId: admittedRootRunId
+                rootRunId: admittedRootRunId,
+                owner: self,
+                taskId: context.id
             )
         }
 
@@ -1842,6 +1859,7 @@ public final class BackgroundTaskManager: ObservableObject {
             // queued work isn't starved by a task idling on the user.
             pumpQueue()
         } else if state.status == .waitingForInput {
+            guard !clarificationResumeSuppressedTaskIds.contains(taskId) else { return }
             if let runId = state.agentRunId {
                 do {
                     try runLifecycleRecorder.append(

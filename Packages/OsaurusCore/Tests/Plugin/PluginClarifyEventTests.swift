@@ -190,6 +190,82 @@ struct BackgroundTaskClarifyObserverTests {
         #expect(recorder.appendedEvents.map(\.kind) == [.waitingForInput, .resumed])
         #expect(state.status == .running)
     }
+
+    @Test
+    func cancellingClarificationClearsPromptWithoutDurableResume() async throws {
+        let recorder = ClarifyRunLifecycleRecorder()
+        let manager = BackgroundTaskManager.makeForTesting(runLifecycleRecorder: recorder)
+        let (state, mgr) = makeObservedState(manager: manager)
+        let session = try #require(state.chatSession)
+        let runId = UUID()
+        state.agentRunId = runId
+        session.bindBackgroundRunLifecycle(
+            runId: runId,
+            rootRunId: runId,
+            owner: mgr,
+            taskId: state.id
+        )
+
+        session.isStreaming = true
+        session.awaitingClarify = ClarifyPayload(
+            question: "Choose a database",
+            options: ["SQLite", "Postgres"],
+            allowMultiple: false
+        )
+        session.isStreaming = false
+        try await Task.sleep(for: .milliseconds(10))
+        #expect(state.status == .waitingForInput)
+
+        // Exercise the UI/session entrypoint. It must route to the bound
+        // background owner rather than publishing a false resume and leaving
+        // the durable row open.
+        session.stop()
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(session.awaitingClarify == nil)
+        #expect(state.status == .cancelled)
+        #expect(recorder.appendedEvents.map(\.kind) == [.waitingForInput])
+        #expect(recorder.terminalReceipts.map(\.runId) == [runId])
+        #expect(recorder.terminalReceipts.map(\.status) == [.cancelled])
+        mgr.finalizeTask(state.id)
+    }
+
+    @Test
+    func softInterruptDoesNotResumeAWaitingClarification() async throws {
+        try await ChatHistoryTestStorage.run {
+            let recorder = ClarifyRunLifecycleRecorder()
+            let manager = BackgroundTaskManager.makeForTesting(runLifecycleRecorder: recorder)
+            let (state, mgr) = makeObservedState(manager: manager)
+            defer { mgr.finalizeTask(state.id) }
+            let session = try #require(state.chatSession)
+            let runId = UUID()
+            state.agentRunId = runId
+
+            session.isStreaming = true
+            session.awaitingClarify = ClarifyPayload(
+                question: "Choose a database",
+                options: ["SQLite", "Postgres"],
+                allowMultiple: false
+            )
+            session.isStreaming = false
+            try await Task.sleep(for: .milliseconds(10))
+
+            mgr.interruptTask(state.id, message: "Prefer the smallest option")
+            try await Task.sleep(for: .milliseconds(50))
+
+            #expect(session.awaitingClarify?.question == "Choose a database")
+            #expect(state.status == .waitingForInput)
+            #expect(recorder.appendedEvents.map(\.kind) == [.waitingForInput])
+            #expect(recorder.terminalReceipts.isEmpty)
+            let sessionId = try #require(session.sessionId)
+            let persisted = try #require(ChatSessionStore.load(id: sessionId))
+            #expect(
+                persisted.turns.contains {
+                    $0.role == .user && $0.content == "Prefer the smallest option"
+                }
+            )
+        }
+    }
 }
 
 private final class ClarifyRunLifecycleRecorder: RunLifecycleRecording, @unchecked Sendable {
@@ -200,9 +276,14 @@ private final class ClarifyRunLifecycleRecorder: RunLifecycleRecording, @uncheck
 
     private let lock = NSLock()
     private var storedEvents: [AppendedEvent] = []
+    private var storedTerminalReceipts: [RunLifecycleTerminalReceipt] = []
 
     var appendedEvents: [AppendedEvent] {
         lock.withLock { storedEvents }
+    }
+
+    var terminalReceipts: [RunLifecycleTerminalReceipt] {
+        lock.withLock { storedTerminalReceipts }
     }
 
     @discardableResult
@@ -225,7 +306,9 @@ private final class ClarifyRunLifecycleRecorder: RunLifecycleRecording, @uncheck
         lock.withLock { storedEvents.append(AppendedEvent(runId: runId, kind: kind)) }
     }
 
-    func end(_: RunLifecycleTerminalReceipt) throws {}
+    func end(_ receipt: RunLifecycleTerminalReceipt) throws {
+        lock.withLock { storedTerminalReceipts.append(receipt) }
+    }
 }
 
 // MARK: - 3. End-to-end emission through a fake LoadedPlugin

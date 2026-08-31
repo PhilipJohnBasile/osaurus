@@ -245,6 +245,84 @@ struct ChatSessionStopTests {
     }
 
     @Test
+    func directClarificationResumesTheSameDurableRun() async throws {
+        try await ChatHistoryTestStorage.run {
+            let recorder = RecordingRunLifecycleRecorder()
+            let engine = ClarificationLifecycleChatEngine()
+            let session = ChatSession()
+            session.runLifecycleRecorder = recorder
+            session.chatEngineFactory = { _ in engine }
+            session.selectedModel = "lifecycle-model-a"
+
+            session.send("Configure the database")
+            try await waitUntilAsync(timeout: Self.asyncTimeout) {
+                session.awaitingClarify != nil
+                    && !session.isStreaming
+                    && recorder.appendedEvents.map(\.kind) == [.waitingForInput]
+            }
+
+            let runId = try #require(recorder.admissions.first?.runId)
+            #expect(recorder.admissions.count == 1)
+            #expect(recorder.terminalReceipts.isEmpty)
+
+            // A logical clarification run keeps the model provenance it was
+            // admitted with; a catalog/UI change during the pause cannot
+            // silently reuse the row for a different runtime.
+            session.selectedModel = "lifecycle-model-b"
+            session.send("SQLite")
+            try await waitUntilAsync(timeout: Self.asyncTimeout) {
+                let regularRequestCount = await engine.regularRequestCount
+                return recorder.terminalReceipts.count == 1
+                    && regularRequestCount == 2
+            }
+
+            #expect(recorder.admissions.count == 1)
+            #expect(recorder.appendedEvents.map(\.runId) == [runId, runId])
+            #expect(recorder.appendedEvents.map(\.kind) == [.waitingForInput, .resumed])
+            #expect(recorder.terminalReceipts.first?.runId == runId)
+            #expect(recorder.terminalReceipts.first?.status == .success)
+            #expect(await engine.capturedRunIds == [runId, runId])
+            #expect(await engine.capturedRootRunIds == [runId, runId])
+            #expect(await engine.capturedModels == ["lifecycle-model-a", "lifecycle-model-a"])
+            #expect(session.selectedModel == "lifecycle-model-a")
+            try await Task.sleep(for: .milliseconds(50))
+            #expect(recorder.terminalReceipts.count == 1)
+        }
+    }
+
+    @Test
+    func stoppingAWaitingDirectClarificationCancelsItsDurableRun() async throws {
+        try await ChatHistoryTestStorage.run {
+            let recorder = RecordingRunLifecycleRecorder()
+            let engine = ClarificationLifecycleChatEngine()
+            let session = ChatSession()
+            session.runLifecycleRecorder = recorder
+            session.chatEngineFactory = { _ in engine }
+
+            session.send("Configure the database")
+            try await waitUntilAsync(timeout: Self.asyncTimeout) {
+                session.awaitingClarify != nil
+                    && !session.isStreaming
+                    && recorder.appendedEvents.map(\.kind) == [.waitingForInput]
+            }
+            let runId = try #require(recorder.admissions.first?.runId)
+
+            session.stop()
+            try await waitUntilAsync(timeout: Self.asyncTimeout) {
+                recorder.terminalReceipts.count == 1
+            }
+
+            #expect(recorder.admissions.count == 1)
+            #expect(recorder.appendedEvents.map(\.kind) == [.waitingForInput])
+            #expect(recorder.terminalReceipts.first?.runId == runId)
+            #expect(recorder.terminalReceipts.first?.status == .cancelled)
+            #expect(session.awaitingClarify == nil)
+            try await Task.sleep(for: .milliseconds(50))
+            #expect(recorder.terminalReceipts.count == 1)
+        }
+    }
+
+    @Test
     func directChatCancellationWaitsForEngineSettlementBeforeTerminalReceipt() async throws {
         try await ChatHistoryTestStorage.run {
             let recorder = RecordingRunLifecycleRecorder()
@@ -1061,8 +1139,14 @@ private actor IncomingWarmupRecordingEngine: ChatEngineProtocol {
 }
 
 private final class RecordingRunLifecycleRecorder: RunLifecycleRecording, @unchecked Sendable {
+    struct AppendedEvent: Sendable {
+        let runId: UUID
+        let kind: RunCenterEventKind
+    }
+
     private let lock = NSLock()
     private var storedAdmissions: [RunLifecycleAdmission] = []
+    private var storedEvents: [AppendedEvent] = []
     private var storedTerminalReceipts: [RunLifecycleTerminalReceipt] = []
 
     var admissions: [RunLifecycleAdmission] {
@@ -1071,6 +1155,10 @@ private final class RecordingRunLifecycleRecorder: RunLifecycleRecording, @unche
 
     var terminalReceipts: [RunLifecycleTerminalReceipt] {
         lock.withLock { storedTerminalReceipts }
+    }
+
+    var appendedEvents: [AppendedEvent] {
+        lock.withLock { storedEvents }
     }
 
     @discardableResult
@@ -1087,13 +1175,56 @@ private final class RecordingRunLifecycleRecorder: RunLifecycleRecording, @unche
     func append(
         runId: UUID,
         kind: RunCenterEventKind,
-        occurredAt: Date,
-        message: String?,
-        metadata: [String: String]
-    ) throws {}
+        occurredAt _: Date,
+        message _: String?,
+        metadata _: [String: String]
+    ) throws {
+        lock.withLock { storedEvents.append(AppendedEvent(runId: runId, kind: kind)) }
+    }
 
     func end(_ receipt: RunLifecycleTerminalReceipt) throws {
         lock.withLock { storedTerminalReceipts.append(receipt) }
+    }
+}
+
+private actor ClarificationLifecycleChatEngine: ChatEngineProtocol {
+    private(set) var regularRequestCount = 0
+    private(set) var capturedRunIds: [UUID] = []
+    private(set) var capturedRootRunIds: [UUID] = []
+    private(set) var capturedModels: [String] = []
+
+    func streamChat(request: ChatCompletionRequest) async throws -> AsyncThrowingStream<String, Error> {
+        if request.warmupPrefill == true {
+            return AsyncThrowingStream { $0.finish() }
+        }
+        regularRequestCount += 1
+        if let runId = ChatExecutionContext.currentRunId {
+            capturedRunIds.append(runId)
+        }
+        if let rootRunId = ChatExecutionContext.currentRootRunId {
+            capturedRootRunIds.append(rootRunId)
+        }
+        capturedModels.append(request.model)
+        if regularRequestCount == 1 {
+            return AsyncThrowingStream { continuation in
+                continuation.finish(
+                    throwing: ServiceToolInvocation(
+                        toolName: "clarify",
+                        jsonArguments:
+                            #"{"question":"Use Postgres or SQLite?","options":["Postgres","SQLite"]}"#,
+                        toolCallId: "call_clarify"
+                    )
+                )
+            }
+        }
+        return AsyncThrowingStream { continuation in
+            continuation.yield("SQLite configured.")
+            continuation.finish()
+        }
+    }
+
+    func completeChat(request _: ChatCompletionRequest) async throws -> ChatCompletionResponse {
+        throw NSError(domain: "ChatSessionStopTests", code: 10)
     }
 }
 
