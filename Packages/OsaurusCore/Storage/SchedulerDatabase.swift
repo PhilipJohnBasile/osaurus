@@ -893,34 +893,12 @@ public final class SchedulerDatabase: @unchecked Sendable {
                 baselineState: .created
             )
             if let parentRunId = admission.parentRunId {
-                guard let parent = try self.runLifecycleTransactionally(runId: parentRunId) else {
-                    throw SchedulerDatabaseError.runNotFound(parentRunId)
-                }
-                _ = try self.appendRunEventTransactionally(
-                    runId: parentRunId,
-                    kind: .childLinked,
-                    occurredAt: admission.admittedAt,
-                    message: admission.title,
-                    metadata: ["child_run_id": admission.runId.uuidString],
-                    legacyStatus: parent.status,
-                    baselineState: parent.eventBaselineState
+                try self.linkChildTransactionally(
+                    parentRunId: parentRunId,
+                    childRunId: admission.runId,
+                    linkedAt: admission.admittedAt,
+                    title: admission.title
                 )
-                try self.transactionalStep(
-                    """
-                        UPDATE agent_runs SET updated_at = CASE
-                            WHEN updated_at IS NULL OR updated_at < ?2 THEN ?2
-                            ELSE updated_at
-                        END
-                        WHERE id = ?1
-                    """
-                ) { stmt in
-                    Self.bindText(stmt, index: 1, value: parentRunId.uuidString)
-                    sqlite3_bind_int64(
-                        stmt,
-                        2,
-                        Int64(admission.admittedAt.timeIntervalSince1970)
-                    )
-                }
             }
             return resolvedRootRunId
         }
@@ -1006,6 +984,14 @@ public final class SchedulerDatabase: @unchecked Sendable {
                 metadata: [:],
                 baselineState: .created
             )
+            if let parentRunId {
+                try self.linkChildTransactionally(
+                    parentRunId: parentRunId,
+                    childRunId: id,
+                    linkedAt: startedAt,
+                    title: title
+                )
+            }
         }
         return id
     }
@@ -2012,6 +1998,40 @@ public final class SchedulerDatabase: @unchecked Sendable {
             )
         }
         return id
+    }
+
+    /// Must be called from inside `inTransaction` while `queue` is held.
+    /// The child row and this parent event commit or roll back together.
+    private func linkChildTransactionally(
+        parentRunId: UUID,
+        childRunId: UUID,
+        linkedAt: Date,
+        title: String?
+    ) throws {
+        guard let parent = try runLifecycleTransactionally(runId: parentRunId) else {
+            throw SchedulerDatabaseError.runNotFound(parentRunId)
+        }
+        _ = try appendRunEventTransactionally(
+            runId: parentRunId,
+            kind: .childLinked,
+            occurredAt: linkedAt,
+            message: title,
+            metadata: ["child_run_id": childRunId.uuidString],
+            legacyStatus: parent.status,
+            baselineState: parent.eventBaselineState
+        )
+        try transactionalStep(
+            """
+                UPDATE agent_runs SET updated_at = CASE
+                    WHEN updated_at IS NULL OR updated_at < ?2 THEN ?2
+                    ELSE updated_at
+                END
+                WHERE id = ?1
+            """
+        ) { stmt in
+            Self.bindText(stmt, index: 1, value: parentRunId.uuidString)
+            sqlite3_bind_int64(stmt, 2, Int64(linkedAt.timeIntervalSince1970))
+        }
     }
 
     /// Must be called from inside `inTransaction` while `queue` is held.

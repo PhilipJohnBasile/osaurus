@@ -1477,6 +1477,9 @@ struct SchedulerRunLedgerTests {
         let child = try #require(database.allRuns().first(where: { $0.id == childRunId }))
         #expect(child.parentRunId == parentRunId)
         #expect(child.rootRunId == parentRunId)
+        let parentEvents = try database.events(runId: parentRunId)
+        #expect(parentEvents.map(\.kind) == [.started, .childLinked])
+        #expect(parentEvents.last?.metadata["child_run_id"] == childRunId.uuidString)
 
         #expect(throws: SchedulerDatabaseError.self) {
             try database.recordRunStart(
