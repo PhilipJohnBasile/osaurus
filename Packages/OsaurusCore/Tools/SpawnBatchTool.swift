@@ -132,6 +132,17 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
     struct PreparedJob: Sendable {
         let job: Job
         let run: PreparedSubagentRun
+        let heldDurableChild: SubagentSession.DurableChildRun?
+
+        init(
+            job: Job,
+            run: PreparedSubagentRun,
+            heldDurableChild: SubagentSession.DurableChildRun? = nil
+        ) {
+            self.job = job
+            self.run = run
+            self.heldDurableChild = heldDurableChild
+        }
 
         var localGroupingKey: String? {
             guard let modelKey = run.admissionModelKey else { return nil }
@@ -159,6 +170,23 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
                 return
                     "aggregate outcome event failed: \(outcome); "
                     + "aggregate terminal failed: \(terminal)"
+            }
+        }
+    }
+
+    enum DurableChildHoldError: LocalizedError {
+        case reservation(String)
+        case reservationAndCleanup(reservation: String, childRunIds: [UUID])
+
+        var errorDescription: String? {
+            switch self {
+            case .reservation(let message):
+                return "ordinary child reservation failed: \(message)"
+            case .reservationAndCleanup(let message, let childRunIds):
+                return
+                    "ordinary child reservation failed: \(message); queued child "
+                    + "cleanup also failed for "
+                    + childRunIds.map(\.uuidString).joined(separator: ", ")
             }
         }
     }
@@ -878,17 +906,81 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
                 metadata: ["run_id": parentScope.runId.uuidString]
             )
         }
-        if interrupt.isInterrupted || Task.isCancelled {
-            let summary = "Batch was cancelled before any jobs started."
+        let linkedPrepared = Self.linkPreparedJobs(
+            prepared,
+            to: durableAggregate
+        )
+        let heldPrepared: [PreparedJob]
+        do {
+            heldPrepared = try Self.holdOrdinaryDurableChildren(
+                linkedPrepared,
+                recorder: runLifecycleRecorder
+            )
+        } catch {
+            let summary =
+                "The approved batch could not reserve every ordinary child "
+                + "durably, so no jobs were started. "
+                + error.localizedDescription
             do {
                 try Self.finishDurableAggregate(
                     durableAggregate,
                     recorder: runLifecycleRecorder,
-                    status: .cancelled,
-                    aggregateStatus: "all_cancelled",
+                    status: .error,
+                    aggregateStatus: "all_failed",
                     succeeded: 0,
                     failed: jobs.count,
-                    cancelled: jobs.count,
+                    cancelled: 0,
+                    summary: summary
+                )
+            } catch {
+                let message = Self.aggregateFinalizationFailureMessage(error)
+                feed.finish(success: false, summary: message)
+                return ToolEnvelope.failure(
+                    kind: .executionError,
+                    message: message,
+                    tool: name,
+                    retryable: false,
+                    metadata: ["run_id": durableAggregate.runId.uuidString]
+                )
+            }
+            feed.finish(success: false, summary: summary)
+            return ToolEnvelope.failure(
+                kind: .executionError,
+                message: summary,
+                tool: name,
+                retryable: false,
+                metadata: ["run_id": durableAggregate.runId.uuidString]
+            )
+        }
+        if interrupt.isInterrupted || Task.isCancelled {
+            let cancelledResults = Self.settleHeldDurableChildren(
+                heldPrepared.map {
+                    Self.cancelledResult(
+                        $0,
+                        tool: name,
+                        userInterrupted: interrupt.isInterrupted
+                    )
+                },
+                jobs: heldPrepared,
+                tool: name
+            )
+            let terminalFailures = cancelledResults.filter {
+                Self.isTerminalWriteFailureEnvelope($0.envelope)
+            }
+            let childTerminalsSettled = terminalFailures.isEmpty
+            let summary = childTerminalsSettled
+                ? "Batch was cancelled before any jobs started."
+                : "Batch was cancelled before execution, but one or more child terminal states could not be recorded durably."
+            do {
+                try Self.finishDurableAggregate(
+                    durableAggregate,
+                    recorder: runLifecycleRecorder,
+                    status: childTerminalsSettled ? .cancelled : .error,
+                    aggregateStatus: childTerminalsSettled
+                        ? "all_cancelled" : "all_failed",
+                    succeeded: 0,
+                    failed: jobs.count,
+                    cancelled: jobs.count - terminalFailures.count,
                     summary: summary
                 )
             } catch {
@@ -908,31 +1000,44 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
                 )
             }
             feed.finish(success: false, summary: summary)
+            guard childTerminalsSettled else {
+                return ToolEnvelope.failure(
+                    kind: .executionError,
+                    message: summary,
+                    tool: name,
+                    retryable: false,
+                    metadata: [
+                        "run_id": durableAggregate.runId.uuidString,
+                        "cancelled": true,
+                        "results": cancelledResults.map(Self.resultRow),
+                    ]
+                )
+            }
             return Self.earlyCancellationEnvelope(
                 tool: name,
                 userInterrupted: interrupt.isInterrupted,
                 runId: durableAggregate.runId
             )
         }
-        let linkedPrepared = Self.linkPreparedJobs(
-            prepared,
-            to: durableAggregate
-        )
         let localAdmissionPlanOverride: (@Sendable () async -> SubagentBatchAdmissionPlan)?
         if let plan = evaluationOverrides?.localAdmissionPlan {
             localAdmissionPlanOverride = { plan }
         } else {
             localAdmissionPlanOverride = nil
         }
-        let results = await Self.runPreparedJobs(
-            linkedPrepared,
-            maxParallel: maxParallel,
-            feed: feed,
-            interrupt: interrupt,
-            tool: name,
-            localParallelismOverride: evaluationOverrides?.localParallelism,
-            localAdmissionPlanOverride: localAdmissionPlanOverride,
-            diagnostics: diagnostics
+        let results = Self.settleHeldDurableChildren(
+            await Self.runPreparedJobs(
+                heldPrepared,
+                maxParallel: maxParallel,
+                feed: feed,
+                interrupt: interrupt,
+                tool: name,
+                localParallelismOverride: evaluationOverrides?.localParallelism,
+                localAdmissionPlanOverride: localAdmissionPlanOverride,
+                diagnostics: diagnostics
+            ),
+            jobs: heldPrepared,
+            tool: name
         )
         // A cold first wave has no engine snapshot at admission time. After
         // its children settle, the same production registry can report the
@@ -1170,9 +1275,165 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
                     resolved: existing.resolved,
                     handoff: existing.handoff,
                     handoffIsKindOwned: existing.handoffIsKindOwned
+                ),
+                heldDurableChild: preparedJob.heldDurableChild
+            )
+        }
+    }
+
+    /// Ask the ordinary child execution owner to reserve every approved job
+    /// before the batch scheduler can refuse or cancel it. True delegated
+    /// agents deliberately remain with BackgroundTaskManager and require its
+    /// separate held-dispatch transfer; SubagentSession never writes their
+    /// lifecycle.
+    static func holdOrdinaryDurableChildren(
+        _ jobs: [PreparedJob],
+        recorder: any RunLifecycleRecording
+    ) throws -> [PreparedJob] {
+        var held: [PreparedJob] = []
+        held.reserveCapacity(jobs.count)
+        do {
+            for preparedJob in jobs {
+                let child = try SubagentSession.holdDurableChild(
+                    preparedJob.run,
+                    recorder: recorder
+                )
+                held.append(
+                    PreparedJob(
+                        job: preparedJob.job,
+                        run: preparedJob.run,
+                        heldDurableChild: child
+                    )
+                )
+            }
+            return held
+        } catch {
+            var cleanupFailures: [UUID] = []
+            for preparedJob in held {
+                let cleanupEnvelope = SubagentSession.settleDurableChild(
+                    preparedJob.heldDurableChild,
+                    status: .error,
+                    error: "A sibling child could not be reserved durably.",
+                    envelope: ToolEnvelope.failure(
+                        kind: .executionError,
+                        message: "The approved batch was not started.",
+                        tool: preparedJob.run.tool,
+                        retryable: false
+                    ),
+                    tool: preparedJob.run.tool
+                )
+                if Self.isTerminalWriteFailureEnvelope(cleanupEnvelope),
+                    let runId = preparedJob.heldDurableChild?.runId
+                {
+                    cleanupFailures.append(runId)
+                }
+            }
+            if cleanupFailures.isEmpty {
+                throw DurableChildHoldError.reservation(
+                    error.localizedDescription
+                )
+            }
+            throw DurableChildHoldError.reservationAndCleanup(
+                reservation: error.localizedDescription,
+                childRunIds: cleanupFailures
+            )
+        }
+    }
+
+    /// Settle queued ordinary children the batch scheduler never launched and
+    /// add their durable identity to every result. A child that ran has already
+    /// terminalized itself; `settleDurableChild` is exact-once and only adds
+    /// correlation in that case.
+    static func settleHeldDurableChildren(
+        _ results: [RawJobResult],
+        jobs: [PreparedJob],
+        tool: String
+    ) -> [RawJobResult] {
+        let heldByJob = Dictionary(
+            uniqueKeysWithValues: jobs.compactMap { preparedJob in
+                preparedJob.heldDurableChild.map {
+                    (preparedJob.job.id, $0)
+                }
+            }
+        )
+        func reconcile(_ result: RawJobResult) -> RawJobResult {
+            guard let held = heldByJob[result.job.id] else { return result }
+            if held.isTerminal {
+                return RawJobResult(
+                    job: result.job,
+                    envelope: SubagentSession.addingRunIdentity(
+                        to: result.envelope,
+                        runId: held.runId
+                    )
+                )
+            }
+            let unsettledEnvelope: String
+            if ToolEnvelope.isSuccess(result.envelope) {
+                unsettledEnvelope = ToolEnvelope.failure(
+                    kind: .executionError,
+                    message:
+                        "The batch scheduler returned success for job "
+                        + "'\(result.job.id)' before its lifecycle owner "
+                        + "recorded a durable terminal state.",
+                    tool: tool,
+                    retryable: false
+                )
+            } else {
+                unsettledEnvelope = result.envelope
+            }
+            let cancelled = Self.isCancelledEnvelope(unsettledEnvelope)
+            let message = ToolEnvelope.failureMessage(unsettledEnvelope)
+            let envelope = SubagentSession.settleDurableChild(
+                held,
+                status: cancelled ? .cancelled : .error,
+                error: cancelled ? nil : message,
+                envelope: unsettledEnvelope,
+                tool: tool
+            )
+            return RawJobResult(job: result.job, envelope: envelope)
+        }
+        var reconciled = results.map(reconcile)
+        let returnedJobIds = Set(results.map(\.job.id))
+        for preparedJob in jobs
+        where preparedJob.heldDurableChild != nil
+            && !returnedJobIds.contains(preparedJob.job.id)
+        {
+            let envelope = ToolEnvelope.failure(
+                kind: .executionError,
+                message:
+                    "The batch scheduler ended without returning an outcome "
+                    + "for job '\(preparedJob.job.id)'.",
+                tool: tool,
+                retryable: false
+            )
+            reconciled.append(
+                reconcile(
+                    RawJobResult(
+                        job: preparedJob.job,
+                        envelope: envelope
+                    )
                 )
             )
         }
+        return reconciled
+    }
+
+    private static func isCancelledEnvelope(_ envelope: String) -> Bool {
+        guard let data = envelope.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any]
+        else { return false }
+        return object["cancelled"] as? Bool == true
+    }
+
+    private static func isTerminalWriteFailureEnvelope(
+        _ envelope: String
+    ) -> Bool {
+        guard let data = envelope.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any]
+        else { return false }
+        return object["terminal_write_failed"] as? Bool == true
     }
 
     static func finishDurableAggregate(
@@ -2201,7 +2462,8 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
             ),
             skipAdmission: skipAdmission,
             handoffOverride: skipAdmission ? PassthroughHandoff() : nil,
-            captureProcessCacheSnapshot: false
+            captureProcessCacheSnapshot: false,
+            heldDurableChild: job.heldDurableChild
         )
         relay.stop()
         return RawJobResult(job: job.job, envelope: envelope)

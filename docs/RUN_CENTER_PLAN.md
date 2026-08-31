@@ -200,12 +200,22 @@ a log. Duplicate SQLite child admission is transactionally rejected without a
 second child row or parent `childLinked` event.
 
 This aggregate slice is deliberately `PARTIAL`: it records the aggregate and
-one child per job that actually enters its execution owner. An accepted job
-that is refused or cancelled by the batch scheduler before `SubagentSession`
-or `BackgroundTaskManager` starts it does not yet have a queued durable child
-row. Completing the stated one-child-per-stable-job contract requires held
-reservations owned by those existing execution owners, including an explicit
-held-launch transfer for true delegated agents; pre-admitting those rows in
+now asks `SubagentSession` to hold every finally accepted ordinary child as
+queued after authority revalidation and aggregate admission but before batch
+scheduling. A Stop arriving after aggregate admission therefore settles those
+queued rows before the aggregate closes. The same owner appends started immediately before
+execution or terminalizes scheduler refusal, cancellation, authority loss, and
+even a missing scheduler result without a false start. Held terminal retries
+reuse the exact first receipt, including its timestamp, through a bounded
+owner retry, so an uncertain commit cannot create a conflicting terminal fact.
+If success is confirmed only during aggregate reconciliation, the owner restores
+the original successful result rather than reporting a failure against a
+successful ledger row. A partial hold failure starts no
+jobs, attempts to settle every earlier reservation, and surfaces any cleanup
+failure rather than hiding it. True delegated agent jobs still acquire their
+row only when they enter `BackgroundTaskManager`; completing the stated
+one-child-per-stable-job contract therefore still requires an explicit held
+dispatch owned by that manager. Pre-admitting delegated rows in
 `SpawnBatchTool` would create a competing lifecycle writer and is prohibited.
 `BackgroundTaskManager` also performs post-terminal residency acceleration and
 chat warm-up rearming in an asynchronous follow-up. A delegated child's

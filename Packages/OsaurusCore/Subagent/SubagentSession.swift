@@ -143,9 +143,110 @@ public enum SubagentSession {
     /// True when a subagent kind is currently running on this task tree.
     public static var isActive: Bool { activeKindId != nil }
 
-    private struct DurableChildRun {
+    final class DurableChildRun: @unchecked Sendable {
+        private enum State: Equatable {
+            case queued
+            case started
+            case terminal
+        }
+
         let runId: UUID
         let rootRunId: UUID
+        private let recorder: any RunLifecycleRecording
+        private let lock = NSLock()
+        private var state: State
+        private var terminalReceipt: RunLifecycleTerminalReceipt?
+        private var confirmedResultEnvelope: String?
+
+        init(
+            runId: UUID,
+            rootRunId: UUID,
+            recorder: any RunLifecycleRecording,
+            startsImmediately: Bool
+        ) {
+            self.runId = runId
+            self.rootRunId = rootRunId
+            self.recorder = recorder
+            self.state = startsImmediately ? .started : .queued
+        }
+
+        var isTerminal: Bool {
+            lock.withLock { state == .terminal }
+        }
+
+        func start() throws {
+            try lock.withLock {
+                switch state {
+                case .queued:
+                    try recorder.append(
+                        runId: runId,
+                        kind: .started,
+                        occurredAt: Date(),
+                        message: nil,
+                        metadata: [:]
+                    )
+                    state = .started
+                case .started:
+                    return
+                case .terminal:
+                    throw DurableChildFinalizationError.terminal(
+                        runId: runId,
+                        message: "cannot start a terminal durable child"
+                    )
+                }
+            }
+        }
+
+        func end(
+            status: AgentRunStatus,
+            error: String? = nil,
+            confirmedEnvelope: String? = nil
+        ) throws {
+            try lock.withLock {
+                guard state != .terminal else { return }
+                let receipt = terminalReceipt
+                    ?? RunLifecycleTerminalReceipt(
+                        runId: runId,
+                        status: status,
+                        error: error
+                    )
+                // Persist the exact first terminal intent before the write.
+                // If the recorder committed but its acknowledgement was lost,
+                // a retry must replay the identical endedAt/status/error tuple
+                // so SchedulerDatabase can recognize it as idempotent.
+                if terminalReceipt == nil {
+                    terminalReceipt = receipt
+                    if status == .success {
+                        confirmedResultEnvelope = confirmedEnvelope
+                    }
+                }
+                var finalError: (any Error)?
+                for _ in 0..<2 {
+                    do {
+                        try recorder.end(receipt)
+                        state = .terminal
+                        return
+                    } catch {
+                        finalError = error
+                    }
+                }
+                throw DurableChildFinalizationError.terminal(
+                    runId: runId,
+                    message: finalError?.localizedDescription
+                        ?? "unknown terminal write failure"
+                )
+            }
+        }
+
+        func resultEnvelope(afterConfirming fallback: String) -> String {
+            lock.withLock {
+                guard state == .terminal,
+                    terminalReceipt?.status == .success,
+                    let confirmedResultEnvelope
+                else { return fallback }
+                return confirmedResultEnvelope
+            }
+        }
     }
 
     private enum DurableChildFinalizationError: LocalizedError {
@@ -201,7 +302,8 @@ public enum SubagentSession {
 
     private static func admitDurableChild(
         _ prepared: PreparedSubagentRun,
-        recorder: any RunLifecycleRecording
+        recorder: any RunLifecycleRecording,
+        startsImmediately: Bool = true
     ) throws -> DurableChildRun? {
         // A true delegated chat is admitted and terminalized by
         // BackgroundTaskManager. Its DispatchRequest still reuses scope.runId.
@@ -213,7 +315,7 @@ public enum SubagentSession {
                 triggerKind: .user,
                 triggerPayload: durableTriggerPayload(for: prepared),
                 instructions: prepared.kind.feedTitle,
-                startsImmediately: true,
+                startsImmediately: startsImmediately,
                 sessionId: UUID(uuidString: prepared.scope.sessionId),
                 parentRunId: prepared.scope.parentRunId,
                 rootRunId: prepared.scope.rootRunId,
@@ -223,29 +325,62 @@ public enum SubagentSession {
         )
         return DurableChildRun(
             runId: receipt.runId,
-            rootRunId: receipt.rootRunId
+            rootRunId: receipt.rootRunId,
+            recorder: recorder,
+            startsImmediately: startsImmediately
         )
     }
 
     private static func endDurableChild(
         _ run: DurableChildRun?,
-        recorder: any RunLifecycleRecording,
         status: AgentRunStatus,
-        error: String? = nil
+        error: String? = nil,
+        confirmedEnvelope: String? = nil
     ) throws {
         guard let run else { return }
+        try run.end(
+            status: status,
+            error: error,
+            confirmedEnvelope: confirmedEnvelope
+        )
+    }
+
+    /// Reserve an ordinary batch child in the queued state before the batch
+    /// scheduler decides whether it can launch. The lifecycle remains owned
+    /// by SubagentSession: SpawnBatchTool only carries this opaque handle back
+    /// to `runPrepared` or asks this owner to settle an unstarted result.
+    static func holdDurableChild(
+        _ prepared: PreparedSubagentRun,
+        recorder: any RunLifecycleRecording
+    ) throws -> DurableChildRun? {
+        try admitDurableChild(
+            prepared,
+            recorder: recorder,
+            startsImmediately: false
+        )
+    }
+
+    static func settleDurableChild(
+        _ run: DurableChildRun?,
+        status: AgentRunStatus,
+        error: String? = nil,
+        envelope: String,
+        tool: String
+    ) -> String {
+        guard let run else { return envelope }
         do {
-            try recorder.end(
-                RunLifecycleTerminalReceipt(
-                    runId: run.runId,
-                    status: status,
-                    error: error
+            try endDurableChild(run, status: status, error: error)
+            return run.resultEnvelope(
+                afterConfirming: addingRunIdentity(
+                    to: envelope,
+                    runId: run.runId
                 )
             )
         } catch {
-            throw DurableChildFinalizationError.terminal(
-                runId: run.runId,
-                message: error.localizedDescription
+            return durableTerminalFailureEnvelope(
+                error,
+                tool: tool,
+                runId: run.runId
             )
         }
     }
@@ -269,7 +404,7 @@ public enum SubagentSession {
         )
     }
 
-    private static func addingRunIdentity(
+    static func addingRunIdentity(
         to envelope: String,
         runId: UUID?
     ) -> String {
@@ -645,16 +780,24 @@ public enum SubagentSession {
         postAdmissionLocalCapacityOverride:
             (@Sendable (PreparedSubagentRun, ResidencyPlan) async -> Int)? = nil,
         runLifecycleRecorder suppliedRunLifecycleRecorder:
-            (any RunLifecycleRecording)? = nil
+            (any RunLifecycleRecording)? = nil,
+        heldDurableChild: DurableChildRun? = nil
     ) async -> String {
         if let active = activeKindId {
-            return ToolEnvelope.failure(
+            let envelope = ToolEnvelope.failure(
                 kind: .rejected,
                 message:
                     "\(prepared.tool) cannot be called from inside a running subagent (\(active)). "
                     + "Finish the current subagent and return its result first.",
                 tool: prepared.tool,
                 retryable: false
+            )
+            return settleDurableChild(
+                heldDurableChild,
+                status: .error,
+                error: ToolEnvelope.failureMessage(envelope),
+                envelope: envelope,
+                tool: prepared.tool
             )
         }
 
@@ -702,7 +845,13 @@ public enum SubagentSession {
                     summary: ToolEnvelope.failureMessage(envelope)
                 )
             }
-            return envelope
+            return settleDurableChild(
+                heldDurableChild,
+                status: .error,
+                error: ToolEnvelope.failureMessage(envelope),
+                envelope: envelope,
+                tool: prepared.tool
+            )
         }
         if interrupt.isInterrupted || Task.isCancelled {
             let envelope = ToolEnvelope.failure(
@@ -720,7 +869,12 @@ public enum SubagentSession {
                     summary: ToolEnvelope.failureMessage(envelope)
                 )
             }
-            return envelope
+            return settleDurableChild(
+                heldDurableChild,
+                status: .cancelled,
+                envelope: envelope,
+                tool: prepared.tool
+            )
         }
 
         var admissionClass = prepared.admissionClass
@@ -752,11 +906,18 @@ public enum SubagentSession {
                     if presentation.finishFeed {
                         feed.finish(success: false, summary: message)
                     }
-                    return ToolEnvelope.failure(
+                    let envelope = ToolEnvelope.failure(
                         kind: .unavailable,
                         message: message,
                         tool: prepared.tool,
                         retryable: true
+                    )
+                    return settleDurableChild(
+                        heldDurableChild,
+                        status: .error,
+                        error: message,
+                        envelope: envelope,
+                        tool: prepared.tool
                     )
                 case .cancelled:
                     let message =
@@ -764,11 +925,17 @@ public enum SubagentSession {
                     if presentation.finishFeed {
                         feed.finish(success: false, summary: message)
                     }
-                    return ToolEnvelope.failure(
+                    let envelope = ToolEnvelope.failure(
                         kind: .userDenied,
                         message: message,
                         tool: prepared.tool,
                         retryable: false
+                    )
+                    return settleDurableChild(
+                        heldDurableChild,
+                        status: .cancelled,
+                        envelope: envelope,
+                        tool: prepared.tool
                     )
                 }
             } else {
@@ -790,11 +957,18 @@ public enum SubagentSession {
                     if presentation.finishFeed {
                         feed.finish(success: false, summary: message)
                     }
-                    return ToolEnvelope.failure(
+                    let envelope = ToolEnvelope.failure(
                         kind: .unavailable,
                         message: message,
                         tool: prepared.tool,
                         retryable: true
+                    )
+                    return settleDurableChild(
+                        heldDurableChild,
+                        status: .error,
+                        error: message,
+                        envelope: envelope,
+                        tool: prepared.tool
                     )
                 case .cancelled:
                     let message =
@@ -802,11 +976,17 @@ public enum SubagentSession {
                     if presentation.finishFeed {
                         feed.finish(success: false, summary: message)
                     }
-                    return ToolEnvelope.failure(
+                    let envelope = ToolEnvelope.failure(
                         kind: .userDenied,
                         message: message,
                         tool: prepared.tool,
                         retryable: false
+                    )
+                    return settleDurableChild(
+                        heldDurableChild,
+                        status: .cancelled,
+                        envelope: envelope,
+                        tool: prepared.tool
                     )
                 }
             }
@@ -842,7 +1022,13 @@ public enum SubagentSession {
                     summary: ToolEnvelope.failureMessage(envelope)
                 )
             }
-            return envelope
+            return settleDurableChild(
+                heldDurableChild,
+                status: .error,
+                error: ToolEnvelope.failureMessage(envelope),
+                envelope: envelope,
+                tool: prepared.tool
+            )
         }
         if interrupt.isInterrupted || Task.isCancelled {
             if admissionHeld {
@@ -873,7 +1059,12 @@ public enum SubagentSession {
                     summary: ToolEnvelope.failureMessage(envelope)
                 )
             }
-            return envelope
+            return settleDurableChild(
+                heldDurableChild,
+                status: .cancelled,
+                envelope: envelope,
+                tool: prepared.tool
+            )
         }
 
         var effectiveHandoff = handoffOverride ?? prepared.handoff
@@ -908,7 +1099,13 @@ public enum SubagentSession {
                         summary: ToolEnvelope.failureMessage(envelope)
                     )
                 }
-                return envelope
+                return settleDurableChild(
+                    heldDurableChild,
+                    status: .error,
+                    error: ToolEnvelope.failureMessage(envelope),
+                    envelope: envelope,
+                    tool: prepared.tool
+                )
             }
             if interrupt.isInterrupted || Task.isCancelled {
                 if admissionHeld {
@@ -941,7 +1138,12 @@ public enum SubagentSession {
                         summary: ToolEnvelope.failureMessage(envelope)
                     )
                 }
-                return envelope
+                return settleDurableChild(
+                    heldDurableChild,
+                    status: .cancelled,
+                    envelope: envelope,
+                    tool: prepared.tool
+                )
             }
 
             var currentPlan = refreshedPlan
@@ -989,11 +1191,18 @@ public enum SubagentSession {
                     if presentation.finishFeed {
                         feed.finish(success: false, summary: message)
                     }
-                    return ToolEnvelope.failure(
+                    let envelope = ToolEnvelope.failure(
                         kind: .unavailable,
                         message: message,
                         tool: prepared.tool,
                         retryable: true
+                    )
+                    return settleDurableChild(
+                        heldDurableChild,
+                        status: .error,
+                        error: message,
+                        envelope: envelope,
+                        tool: prepared.tool
                     )
                 case .cancelled:
                     let message =
@@ -1001,11 +1210,17 @@ public enum SubagentSession {
                     if presentation.finishFeed {
                         feed.finish(success: false, summary: message)
                     }
-                    return ToolEnvelope.failure(
+                    let envelope = ToolEnvelope.failure(
                         kind: .userDenied,
                         message: message,
                         tool: prepared.tool,
                         retryable: false
+                    )
+                    return settleDurableChild(
+                        heldDurableChild,
+                        status: .cancelled,
+                        envelope: envelope,
+                        tool: prepared.tool
                     )
                 }
 
@@ -1038,7 +1253,13 @@ public enum SubagentSession {
                             summary: ToolEnvelope.failureMessage(envelope)
                         )
                     }
-                    return envelope
+                    return settleDurableChild(
+                        heldDurableChild,
+                        status: .error,
+                        error: ToolEnvelope.failureMessage(envelope),
+                        envelope: envelope,
+                        tool: prepared.tool
+                    )
                 }
                 if interrupt.isInterrupted || Task.isCancelled {
                     await admissionController.release(
@@ -1062,7 +1283,12 @@ public enum SubagentSession {
                             summary: ToolEnvelope.failureMessage(envelope)
                         )
                     }
-                    return envelope
+                    return settleDurableChild(
+                        heldDurableChild,
+                        status: .cancelled,
+                        envelope: envelope,
+                        tool: prepared.tool
+                    )
                 }
             }
 
@@ -1119,7 +1345,7 @@ public enum SubagentSession {
                     if presentation.finishFeed {
                         feed.finish(success: false, summary: message)
                     }
-                    return ToolEnvelope.failure(
+                    let envelope = ToolEnvelope.failure(
                         kind: .rejected,
                         message: message,
                         tool: prepared.tool,
@@ -1128,6 +1354,13 @@ public enum SubagentSession {
                             "admission": "stable_memory_refusal",
                             "refreshed_capacity": refreshedCapacity,
                         ]
+                    )
+                    return settleDurableChild(
+                        heldDurableChild,
+                        status: .error,
+                        error: message,
+                        envelope: envelope,
+                        tool: prepared.tool
                     )
                 }
             }
@@ -1141,10 +1374,15 @@ public enum SubagentSession {
             suppliedRunLifecycleRecorder ?? resolvedRunLifecycleRecorder()
         let durableChild: DurableChildRun?
         do {
-            durableChild = try admitDurableChild(
-                prepared,
-                recorder: runLifecycleRecorder
-            )
+            if let heldDurableChild {
+                try heldDurableChild.start()
+                durableChild = heldDurableChild
+            } else {
+                durableChild = try admitDurableChild(
+                    prepared,
+                    recorder: runLifecycleRecorder
+                )
+            }
         } catch {
             if admissionHeld {
                 if admissionHeldSlots > 0 {
@@ -1160,13 +1398,34 @@ public enum SubagentSession {
                 }
                 admissionHeld = false
             }
+            if let heldDurableChild {
+                do {
+                    try heldDurableChild.end(
+                        status: .error,
+                        error: error.localizedDescription
+                    )
+                } catch {
+                    let envelope = durableTerminalFailureEnvelope(
+                        error,
+                        tool: prepared.tool,
+                        runId: heldDurableChild.runId
+                    )
+                    if presentation.finishFeed {
+                        feed.finish(
+                            success: false,
+                            summary: ToolEnvelope.failureMessage(envelope)
+                        )
+                    }
+                    return envelope
+                }
+            }
             let message =
-                "durable child admission failed run=\(prepared.scope.runId) "
+                "durable child launch failed run=\(prepared.scope.runId) "
                 + "error=\(error.localizedDescription)"
             subagentLog.error("\(message, privacy: .public)")
             let envelope = ToolEnvelope.failure(
                 kind: .executionError,
-                message: "The child run could not be recorded durably and was not started.",
+                message: "The child run could not be started durably and was not executed.",
                 tool: prepared.tool,
                 retryable: false,
                 metadata: ["run_id": prepared.scope.runId.uuidString]
@@ -1202,7 +1461,6 @@ public enum SubagentSession {
             do {
                 try endDurableChild(
                     durableChild,
-                    recorder: runLifecycleRecorder,
                     status: .cancelled
                 )
             } catch {
@@ -1306,12 +1564,6 @@ public enum SubagentSession {
                 }
                 admissionHeld = false
             }
-            try endDurableChild(
-                durableChild,
-                recorder: runLifecycleRecorder,
-                status: .success
-            )
-
             // Residency telemetry: phase durations derived from the feed's own
             // event timeline (the handoff emits its phases there), plus a
             // process cache snapshot for an isolated local run. Batched
@@ -1349,6 +1601,16 @@ public enum SubagentSession {
                 payload["residency"] = residency
             }
 
+            let successEnvelope = ToolEnvelope.success(
+                tool: prepared.tool,
+                result: payload
+            )
+            try endDurableChild(
+                durableChild,
+                status: .success,
+                confirmedEnvelope: successEnvelope
+            )
+
             if presentation.finishFeed {
                 feed.finish(success: true, summary: result.summary ?? "")
             }
@@ -1359,7 +1621,7 @@ public enum SubagentSession {
                 usage: payload["usage"] as? [String: Any],
                 phases: phases
             )
-            return ToolEnvelope.success(tool: prepared.tool, result: payload)
+            return successEnvelope
         } catch {
             if admissionHeld {
                 if admissionHeldSlots > 0 {
@@ -1386,7 +1648,6 @@ public enum SubagentSession {
                 do {
                     try endDurableChild(
                         durableChild,
-                        recorder: runLifecycleRecorder,
                         status: cancelled ? .cancelled : .error,
                         error: cancelled ? nil : error.localizedDescription
                     )

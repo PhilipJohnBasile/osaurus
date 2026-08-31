@@ -97,6 +97,11 @@ private func decode(_ envelope: String) -> [String: Any] {
 private final class RecordingSubagentRunLifecycleRecorder:
     RunLifecycleRecording, @unchecked Sendable
 {
+    struct RecordedEvent: Sendable, Equatable {
+        let runId: UUID
+        let kind: RunCenterEventKind
+    }
+
     private enum ExpectedAdmissionError: Error {
         case rejected
     }
@@ -110,6 +115,7 @@ private final class RecordingSubagentRunLifecycleRecorder:
     private let rejectsTerminal: Bool
     private let interruptOnAdmission: InterruptToken?
     private var storedAdmissions: [RunLifecycleAdmission] = []
+    private var storedEvents: [RecordedEvent] = []
     private var storedTerminals: [RunLifecycleTerminalReceipt] = []
 
     init(
@@ -130,6 +136,10 @@ private final class RecordingSubagentRunLifecycleRecorder:
         lock.withLock { storedTerminals }
     }
 
+    var events: [RecordedEvent] {
+        lock.withLock { storedEvents }
+    }
+
     func admit(
         _ admission: RunLifecycleAdmission
     ) throws -> RunLifecycleAdmissionReceipt {
@@ -145,12 +155,16 @@ private final class RecordingSubagentRunLifecycleRecorder:
     }
 
     func append(
-        runId _: UUID,
-        kind _: RunCenterEventKind,
+        runId: UUID,
+        kind: RunCenterEventKind,
         occurredAt _: Date,
         message _: String?,
         metadata _: [String: String]
-    ) throws {}
+    ) throws {
+        lock.withLock {
+            storedEvents.append(RecordedEvent(runId: runId, kind: kind))
+        }
+    }
 
     func end(_ receipt: RunLifecycleTerminalReceipt) throws {
         if rejectsTerminal {
@@ -174,6 +188,48 @@ private final class RunBindingBox: @unchecked Sendable {
 
     var value: (runId: UUID?, rootRunId: UUID?) {
         lock.withLock { (storedRunId, storedRootRunId) }
+    }
+}
+
+private final class UncertainTerminalRunLifecycleRecorder:
+    RunLifecycleRecording, @unchecked Sendable
+{
+    private enum UncertainWrite: Error {
+        case acknowledgementLost
+    }
+
+    private let lock = NSLock()
+    private var storedTerminalAttempts: [RunLifecycleTerminalReceipt] = []
+
+    var terminalAttempts: [RunLifecycleTerminalReceipt] {
+        lock.withLock { storedTerminalAttempts }
+    }
+
+    func admit(
+        _ admission: RunLifecycleAdmission
+    ) throws -> RunLifecycleAdmissionReceipt {
+        RunLifecycleAdmissionReceipt(
+            runId: admission.runId,
+            rootRunId: admission.rootRunId ?? admission.runId
+        )
+    }
+
+    func append(
+        runId _: UUID,
+        kind _: RunCenterEventKind,
+        occurredAt _: Date,
+        message _: String?,
+        metadata _: [String: String]
+    ) throws {}
+
+    func end(_ receipt: RunLifecycleTerminalReceipt) throws {
+        let attempt = lock.withLock { () -> Int in
+            storedTerminalAttempts.append(receipt)
+            return storedTerminalAttempts.count
+        }
+        if attempt == 1 {
+            throw UncertainWrite.acknowledgementLost
+        }
     }
 }
 
@@ -352,6 +408,158 @@ struct SubagentSessionTests {
         #expect(ToolEnvelope.isSuccess(envelope))
         #expect(recorder.admissions.isEmpty)
         #expect(recorder.terminals.isEmpty)
+    }
+
+    @Test("held ordinary child is queued before launch and started exactly once")
+    func heldOrdinaryChildLaunchesThroughItsLifecycleOwner() async throws {
+        let recorder = RecordingSubagentRunLifecycleRecorder()
+        let scope = SubagentScope(
+            sessionId: UUID().uuidString,
+            toolCallId: "held-child",
+            agentId: UUID(),
+            parentRunId: UUID(),
+            rootRunId: UUID(),
+            stableJobId: "stable-child"
+        )
+        let kind = ScriptedKind()
+        guard case .ready(let prepared) = await SubagentSession.prepare(
+            kind,
+            tool: "scripted",
+            scope: scope
+        ) else {
+            Issue.record("Expected the ordinary child to prepare")
+            return
+        }
+        let held = try #require(
+            SubagentSession.holdDurableChild(
+                prepared,
+                recorder: recorder
+            )
+        )
+
+        #expect(recorder.admissions.count == 1)
+        #expect(recorder.admissions.first?.runId == scope.runId)
+        #expect(recorder.admissions.first?.startsImmediately == false)
+        #expect(recorder.events.isEmpty)
+
+        let envelope = await SubagentSession.runPrepared(
+            prepared,
+            skipAdmission: true,
+            handoffOverride: PassthroughHandoff(),
+            runLifecycleRecorder: recorder,
+            heldDurableChild: held
+        )
+
+        #expect(ToolEnvelope.isSuccess(envelope))
+        #expect(decode(envelope)["run_id"] as? String == scope.runId.uuidString)
+        #expect(
+            recorder.events
+                == [.init(runId: scope.runId, kind: .started)]
+        )
+        #expect(recorder.terminals.count == 1)
+        #expect(recorder.terminals.first?.runId == scope.runId)
+        #expect(recorder.terminals.first?.status == .success)
+    }
+
+    @Test("held ordinary child can settle without a false start")
+    func heldOrdinaryChildSettlesBeforeExecution() async throws {
+        let recorder = RecordingSubagentRunLifecycleRecorder()
+        let scope = SubagentScope(
+            sessionId: UUID().uuidString,
+            toolCallId: "held-child-cancelled",
+            agentId: UUID(),
+            parentRunId: UUID(),
+            rootRunId: UUID(),
+            stableJobId: "stable-cancelled"
+        )
+        guard case .ready(let prepared) = await SubagentSession.prepare(
+            ScriptedKind(),
+            tool: "scripted",
+            scope: scope
+        ) else {
+            Issue.record("Expected the ordinary child to prepare")
+            return
+        }
+        let held = try #require(
+            SubagentSession.holdDurableChild(
+                prepared,
+                recorder: recorder
+            )
+        )
+        let cancelled = ToolEnvelope.failure(
+            kind: .userDenied,
+            message: "Batch stopped before this child launched.",
+            tool: "scripted",
+            retryable: false,
+            metadata: ["cancelled": true]
+        )
+
+        let envelope = SubagentSession.settleDurableChild(
+            held,
+            status: .cancelled,
+            envelope: cancelled,
+            tool: "scripted"
+        )
+
+        #expect(ToolEnvelope.isError(envelope))
+        #expect(decode(envelope)["run_id"] as? String == scope.runId.uuidString)
+        #expect(recorder.events.isEmpty)
+        #expect(recorder.terminals.count == 1)
+        #expect(recorder.terminals.first?.status == .cancelled)
+    }
+
+    @Test("uncertain terminal retry reuses the exact first receipt")
+    func heldChildTerminalRetryIsReceiptIdempotent() async throws {
+        let recorder = UncertainTerminalRunLifecycleRecorder()
+        let scope = SubagentScope(
+            sessionId: UUID().uuidString,
+            toolCallId: "held-child-uncertain-terminal",
+            agentId: UUID(),
+            parentRunId: UUID(),
+            rootRunId: UUID()
+        )
+        guard case .ready(let prepared) = await SubagentSession.prepare(
+            ScriptedKind(),
+            tool: "scripted",
+            scope: scope
+        ) else {
+            Issue.record("Expected the ordinary child to prepare")
+            return
+        }
+        let held = try #require(
+            SubagentSession.holdDurableChild(
+                prepared,
+                recorder: recorder
+            )
+        )
+        let failure = ToolEnvelope.failure(
+            kind: .executionError,
+            message: "scheduler refused",
+            tool: "scripted",
+            retryable: false
+        )
+
+        let first = SubagentSession.settleDurableChild(
+            held,
+            status: .error,
+            error: "first terminal intent",
+            envelope: failure,
+            tool: "scripted"
+        )
+        let second = SubagentSession.settleDurableChild(
+            held,
+            status: .cancelled,
+            envelope: failure,
+            tool: "scripted"
+        )
+
+        #expect(decode(first)["terminal_write_failed"] == nil)
+        #expect(decode(second)["terminal_write_failed"] == nil)
+        let attempts = recorder.terminalAttempts
+        #expect(attempts.count == 2)
+        #expect(attempts[0] == attempts[1])
+        #expect(attempts[0].status == .error)
+        #expect(attempts[0].error == "first terminal intent")
     }
 
     @Test("ordinary child fails closed when durable admission is rejected")

@@ -136,6 +136,7 @@ private final class BatchRunLifecycleRecorder:
     private let rejectAdmissions: Bool
     private let rejectEvents: Bool
     private let rejectTerminals: Bool
+    private let interruptToolCallIdAfterFirstAdmission: String?
     private var storedAdmissionAttempts = 0
     private var storedAdmissions: [RunLifecycleAdmission] = []
     private var storedEvents: [AppendedEvent] = []
@@ -145,11 +146,14 @@ private final class BatchRunLifecycleRecorder:
     init(
         rejectAdmissions: Bool = false,
         rejectEvents: Bool = false,
-        rejectTerminals: Bool = false
+        rejectTerminals: Bool = false,
+        interruptToolCallIdAfterFirstAdmission: String? = nil
     ) {
         self.rejectAdmissions = rejectAdmissions
         self.rejectEvents = rejectEvents
         self.rejectTerminals = rejectTerminals
+        self.interruptToolCallIdAfterFirstAdmission =
+            interruptToolCallIdAfterFirstAdmission
     }
 
     var admissionAttempts: Int {
@@ -175,11 +179,19 @@ private final class BatchRunLifecycleRecorder:
     func admit(
         _ admission: RunLifecycleAdmission
     ) throws -> RunLifecycleAdmissionReceipt {
-        try lock.withLock {
+        let admissionNumber = try lock.withLock { () -> Int in
             storedAdmissionAttempts += 1
             guard !rejectAdmissions else { throw Failure.admissionRejected }
             storedAdmissions.append(admission)
             storedOperations.append(.admit(admission.runId))
+            return storedAdmissions.count
+        }
+        if admissionNumber == 1,
+            let interruptToolCallIdAfterFirstAdmission
+        {
+            SubagentInterruptCenter.shared.interrupt(
+                interruptToolCallIdAfterFirstAdmission
+            )
         }
         return RunLifecycleAdmissionReceipt(
             runId: admission.runId,
@@ -1118,6 +1130,7 @@ struct SpawnPermissionGateTests {
         #expect(childAdmission.parentRunId == aggregateAdmission.runId)
         #expect(childAdmission.rootRunId == parentRunID)
         #expect(childAdmission.runId == execution.scopes.first?.runId)
+        #expect(childAdmission.startsImmediately == false)
         #expect(childAdmission.triggerPayload?.contains(callID) == true)
         #expect(
             childAdmission.triggerPayload?.contains(
@@ -1126,6 +1139,10 @@ struct SpawnPermissionGateTests {
         )
         #expect(lifecycle.terminals.count == 2)
         #expect(lifecycle.terminals.allSatisfy { $0.status == .success })
+        let childStarted = try #require(
+            lifecycle.events.first { $0.runId == childAdmission.runId }
+        )
+        #expect(childStarted.kind == .started)
         let aggregateEvent = try #require(
             lifecycle.events.first { $0.runId == aggregateAdmission.runId }
         )
@@ -1142,6 +1159,104 @@ struct SpawnPermissionGateTests {
         )
     }
 
+    @Test("cancellation after aggregate admission settles queued children before closure")
+    func batchCancellationAfterAggregateAdmissionKeepsCompleteTree() async throws {
+        let lease = await acquireSubagentStoreSandbox(
+            "spawn-permission-batch-post-aggregate-cancel"
+        )
+        defer { lease.release() }
+
+        var permissions = SubagentPermissionDefaults()
+        permissions.setPolicy(
+            .alwaysAllow,
+            for: SubagentCapabilityRegistry.spawn.id
+        )
+        SubagentConfigurationStore.save(
+            SubagentConfiguration(
+                permissionDefaults: permissions,
+                budgets: SubagentBudgets(maxParallelSpawns: 1),
+                spawnableModelNames: ["allowed/model"]
+            )
+        )
+
+        let probe = BatchAuthorityProbe()
+        let overrides = SpawnBatchTool.EvaluationOverrides(
+            kindForJob: { _ in BatchAuthorityKind(probe: probe) },
+            maxParallel: 1,
+            localParallelism: 1,
+            localAdmissionPlan: Self.remoteAdmissionPlan()
+        )
+        let callID = "spawn-batch-post-aggregate-cancel-\(UUID().uuidString)"
+        let lifecycle = BatchRunLifecycleRecorder(
+            interruptToolCallIdAfterFirstAdmission: callID
+        )
+        let parentRunID = UUID()
+        let result = try await ChatExecutionContext.$currentSessionId.withValue(
+            UUID().uuidString
+        ) {
+            try await ChatExecutionContext.$currentToolCallId.withValue(callID) {
+                try await ChatExecutionContext.$currentAgentId.withValue(
+                    Agent.defaultId
+                ) {
+                    try await ChatExecutionContext.$currentRunId.withValue(
+                        parentRunID
+                    ) {
+                        try await ChatExecutionContext.$currentRootRunId.withValue(
+                            parentRunID
+                        ) {
+                            try await SpawnBatchTool.$evaluationOverrides.withValue(
+                                overrides
+                            ) {
+                                try await SubagentSession.$runLifecycleRecorderOverride.withValue(
+                                    lifecycle
+                                ) {
+                                    try await SpawnBatchTool().execute(
+                                        argumentsJSON: Self.batchArguments()
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        SubagentFeedRegistry.shared.removeNow(toolCallId: callID)
+
+        let aggregate = try #require(
+            lifecycle.admissions.first {
+                $0.triggerPayload?.contains(#""source":"spawn_batch""#) == true
+            }
+        )
+        let child = try #require(
+            lifecycle.admissions.first {
+                $0.triggerPayload?.contains(#""source":"subagent""#) == true
+            }
+        )
+        #expect((await probe.snapshot()).runs == 0)
+        #expect(lifecycle.admissions.count == 2)
+        #expect(child.startsImmediately == false)
+        #expect(
+            lifecycle.events.allSatisfy {
+                $0.runId != child.runId || $0.kind != .started
+            }
+        )
+        #expect(
+            lifecycle.terminals.first { $0.runId == child.runId }?.status
+                == .cancelled
+        )
+        #expect(
+            lifecycle.terminals.first { $0.runId == aggregate.runId }?.status
+                == .cancelled
+        )
+        #expect(lifecycle.operations.last == .end(aggregate.runId))
+        let object = try #require(
+            JSONSerialization.jsonObject(with: Data(result.utf8))
+                as? [String: Any]
+        )
+        #expect(object["cancelled"] as? Bool == true)
+        #expect(object["run_id"] as? String == aggregate.runId.uuidString)
+    }
+
     @Test("batch fails closed when the aggregate ledger admission is refused")
     func batchRejectsAggregateAdmissionBeforeStartingChildren() async throws {
         let lease = await acquireSubagentStoreSandbox(
@@ -1150,7 +1265,7 @@ struct SpawnPermissionGateTests {
         defer { lease.release() }
 
         var permissions = SubagentPermissionDefaults()
-        permissions.setPolicy(.allow, for: SubagentCapabilityRegistry.spawn.id)
+        permissions.setPolicy(.alwaysAllow, for: SubagentCapabilityRegistry.spawn.id)
         SubagentConfigurationStore.save(
             SubagentConfiguration(
                 permissionDefaults: permissions,

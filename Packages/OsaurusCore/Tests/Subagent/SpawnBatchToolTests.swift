@@ -12,6 +12,98 @@ import Testing
 
 @testable import OsaurusCore
 
+private final class HeldBatchLifecycleRecorder:
+    RunLifecycleRecording, @unchecked Sendable
+{
+    private enum ExpectedAdmissionError: Error {
+        case rejected
+    }
+
+    private enum ExpectedTerminalError: Error {
+        case acknowledgementLost
+    }
+
+    struct Event: Sendable, Equatable {
+        let runId: UUID
+        let kind: RunCenterEventKind
+    }
+
+    private let lock = NSLock()
+    private let rejectAdmissionAttempt: Int?
+    private var remainingTerminalFailures: Int
+    private var storedAdmissions: [RunLifecycleAdmission] = []
+    private var storedEvents: [Event] = []
+    private var storedTerminalAttempts: [RunLifecycleTerminalReceipt] = []
+    private var storedTerminals: [RunLifecycleTerminalReceipt] = []
+
+    init(
+        rejectAdmissionAttempt: Int? = nil,
+        terminalFailures: Int = 0
+    ) {
+        self.rejectAdmissionAttempt = rejectAdmissionAttempt
+        self.remainingTerminalFailures = terminalFailures
+    }
+
+    var admissions: [RunLifecycleAdmission] {
+        lock.withLock { storedAdmissions }
+    }
+
+    var events: [Event] {
+        lock.withLock { storedEvents }
+    }
+
+    var terminals: [RunLifecycleTerminalReceipt] {
+        lock.withLock { storedTerminals }
+    }
+
+    var terminalAttempts: [RunLifecycleTerminalReceipt] {
+        lock.withLock { storedTerminalAttempts }
+    }
+
+    func admit(
+        _ admission: RunLifecycleAdmission
+    ) throws -> RunLifecycleAdmissionReceipt {
+        let attempt = lock.withLock { () -> Int in
+            storedAdmissions.append(admission)
+            return storedAdmissions.count
+        }
+        if attempt == rejectAdmissionAttempt {
+            throw ExpectedAdmissionError.rejected
+        }
+        return RunLifecycleAdmissionReceipt(
+            runId: admission.runId,
+            rootRunId: admission.rootRunId ?? admission.runId
+        )
+    }
+
+    func append(
+        runId: UUID,
+        kind: RunCenterEventKind,
+        occurredAt _: Date,
+        message _: String?,
+        metadata _: [String: String]
+    ) throws {
+        lock.withLock {
+            storedEvents.append(Event(runId: runId, kind: kind))
+        }
+    }
+
+    func end(_ receipt: RunLifecycleTerminalReceipt) throws {
+        let shouldFail = lock.withLock { () -> Bool in
+            storedTerminalAttempts.append(receipt)
+            if remainingTerminalFailures > 0 {
+                remainingTerminalFailures -= 1
+                return true
+            }
+            storedTerminals.append(receipt)
+            return false
+        }
+        if shouldFail {
+            throw ExpectedTerminalError.acknowledgementLost
+        }
+    }
+}
+
 private actor BatchExecutionProbe {
     private var active = 0
     private var maxActive = 0
@@ -447,6 +539,247 @@ struct SpawnBatchToolTests {
                 handoff: handoff
             )
         )
+    }
+
+    @Test("scheduler-refused ordinary child keeps a queued durable row and never starts")
+    func schedulerRefusalSettlesHeldOrdinaryChild() async throws {
+        let lifecycle = HeldBatchLifecycleRecorder()
+        let execution = BatchExecutionProbe()
+        let original = prepared(
+            index: 0,
+            id: "held-refused",
+            targetType: .model,
+            target: "Local-A",
+            model: "local-a",
+            modelID: "Org/Local-A",
+            isLocal: true,
+            admission: .localExclusive,
+            probe: execution
+        )
+        let held = try SpawnBatchTool.holdOrdinaryDurableChildren(
+            [original],
+            recorder: lifecycle
+        )
+        let rejectedPlan = SubagentBatchAdmissionPlanner.plan(
+            SubagentBatchAdmissionInput(
+                localJobCount: 1,
+                remoteJobCount: 0,
+                agentParallelLimit: 0,
+                engineParallelLimit: 1,
+                continuousBatchingEnabled: false,
+                ramSafetyEnabled: false,
+                failClosedWhenEstimateUnknown: false,
+                memory: nil
+            )
+        )
+        let raw = await SpawnBatchTool.runLocalSequence(
+            held,
+            remoteJobCount: 0,
+            maxParallel: 1,
+            localParallelismOverride: 1,
+            feed: SubagentFeed(
+                toolCallId: "held-refused-parent",
+                kindId: "spawn",
+                title: "batch"
+            ),
+            interrupt: InterruptToken(),
+            tool: "spawn_batch",
+            diagnostics: nil,
+            localAdmissionPlanOverride: { rejectedPlan },
+            liveResidencyPlanOverride: { _ in .none }
+        )
+        let settled = SpawnBatchTool.settleHeldDurableChildren(
+            raw,
+            jobs: held,
+            tool: "spawn_batch"
+        )
+
+        #expect((await execution.snapshot()).total == 0)
+        #expect(lifecycle.admissions.count == 1)
+        #expect(lifecycle.admissions.first?.startsImmediately == false)
+        #expect(lifecycle.events.isEmpty)
+        #expect(lifecycle.terminals.count == 1)
+        #expect(lifecycle.terminals.first?.status == .error)
+        let envelope = try #require(settled.first?.envelope)
+        let object = try #require(
+            JSONSerialization.jsonObject(with: Data(envelope.utf8))
+                as? [String: Any]
+        )
+        #expect(
+            object["run_id"] as? String
+                == lifecycle.admissions.first?.runId.uuidString
+        )
+    }
+
+    @Test("missing scheduler outcomes are synthesized for every held child")
+    func missingSchedulerOutcomeCannotLeakQueuedChildren() throws {
+        let lifecycle = HeldBatchLifecycleRecorder()
+        let jobs = [
+            prepared(
+                index: 0,
+                id: "missing-a",
+                targetType: .model,
+                target: "Local-A",
+                model: "local-a",
+                isLocal: true,
+                admission: .localExclusive
+            ),
+            prepared(
+                index: 1,
+                id: "missing-b",
+                targetType: .model,
+                target: "Local-A",
+                model: "local-a",
+                isLocal: true,
+                admission: .localExclusive
+            ),
+        ]
+        let held = try SpawnBatchTool.holdOrdinaryDurableChildren(
+            jobs,
+            recorder: lifecycle
+        )
+
+        let settled = SpawnBatchTool.settleHeldDurableChildren(
+            [],
+            jobs: held,
+            tool: "spawn_batch"
+        )
+
+        #expect(settled.map(\.job.id) == ["missing-a", "missing-b"])
+        #expect(settled.allSatisfy { ToolEnvelope.isError($0.envelope) })
+        #expect(lifecycle.admissions.count == 2)
+        #expect(lifecycle.events.isEmpty)
+        #expect(lifecycle.terminals.count == 2)
+        #expect(lifecycle.terminals.allSatisfy { $0.status == .error })
+    }
+
+    @Test("partial child hold failure settles every earlier reservation")
+    func partialHoldFailureStartsNothingAndCleansEarlierRows() throws {
+        let lifecycle = HeldBatchLifecycleRecorder(rejectAdmissionAttempt: 2)
+        let jobs = [
+            prepared(
+                index: 0,
+                id: "held-first",
+                targetType: .model,
+                target: "remote/model",
+                model: "remote/model",
+                isLocal: false,
+                admission: .remote
+            ),
+            prepared(
+                index: 1,
+                id: "held-rejected",
+                targetType: .model,
+                target: "remote/model",
+                model: "remote/model",
+                isLocal: false,
+                admission: .remote
+            ),
+        ]
+
+        #expect(throws: SpawnBatchTool.DurableChildHoldError.self) {
+            _ = try SpawnBatchTool.holdOrdinaryDurableChildren(
+                jobs,
+                recorder: lifecycle
+            )
+        }
+
+        #expect(lifecycle.admissions.count == 2)
+        #expect(lifecycle.events.isEmpty)
+        #expect(lifecycle.terminals.count == 1)
+        #expect(lifecycle.terminals.first?.runId == jobs[0].run.scope.runId)
+        #expect(lifecycle.terminals.first?.status == .error)
+    }
+
+    @Test("scheduler success without owner terminal fails closed")
+    func schedulerSuccessCannotBypassDurableTerminal() throws {
+        let lifecycle = HeldBatchLifecycleRecorder()
+        let job = prepared(
+            index: 0,
+            id: "unsettled-success",
+            targetType: .model,
+            target: "remote/model",
+            model: "remote/model",
+            isLocal: false,
+            admission: .remote
+        )
+        let held = try SpawnBatchTool.holdOrdinaryDurableChildren(
+            [job],
+            recorder: lifecycle
+        )
+        let raw = [
+            SpawnBatchTool.RawJobResult(
+                job: job.job,
+                envelope: ToolEnvelope.success(
+                    tool: "spawn_batch",
+                    result: ["summary": "not durably settled"]
+                )
+            )
+        ]
+
+        let settled = SpawnBatchTool.settleHeldDurableChildren(
+            raw,
+            jobs: held,
+            tool: "spawn_batch"
+        )
+
+        let envelope = try #require(settled.first?.envelope)
+        #expect(ToolEnvelope.isError(envelope))
+        #expect(lifecycle.events.isEmpty)
+        #expect(lifecycle.terminals.count == 1)
+        #expect(lifecycle.terminals.first?.status == .error)
+    }
+
+    @Test("late success terminal confirmation restores the successful result")
+    func reconciliationPreservesConfirmedSuccessIntent() async throws {
+        let lifecycle = HeldBatchLifecycleRecorder(terminalFailures: 2)
+        let execution = BatchExecutionProbe()
+        let job = prepared(
+            index: 0,
+            id: "uncertain-success",
+            targetType: .model,
+            target: "remote/model",
+            model: "remote/model",
+            isLocal: false,
+            admission: .remote,
+            probe: execution,
+            delayMilliseconds: 1
+        )
+        let held = try SpawnBatchTool.holdOrdinaryDurableChildren(
+            [job],
+            recorder: lifecycle
+        )
+        let raw = await SpawnBatchTool.runOne(
+            held[0],
+            feed: SubagentFeed(
+                toolCallId: "uncertain-success-parent",
+                kindId: "spawn",
+                title: "batch"
+            ),
+            interrupt: InterruptToken()
+        )
+
+        #expect(ToolEnvelope.isError(raw.envelope))
+        #expect(
+            (try #require(
+                JSONSerialization.jsonObject(with: Data(raw.envelope.utf8))
+                    as? [String: Any]
+            ))["terminal_write_failed"] as? Bool == true
+        )
+
+        let settled = SpawnBatchTool.settleHeldDurableChildren(
+            [raw],
+            jobs: held,
+            tool: "spawn_batch"
+        )
+
+        #expect((await execution.snapshot()).total == 1)
+        #expect(ToolEnvelope.isSuccess(try #require(settled.first?.envelope)))
+        #expect(lifecycle.events.map(\.kind) == [.started])
+        #expect(lifecycle.terminalAttempts.count == 3)
+        #expect(lifecycle.terminalAttempts.allSatisfy { $0.status == .success })
+        #expect(lifecycle.terminals.count == 1)
+        #expect(lifecycle.terminals.first?.status == .success)
     }
 
     @Test("one batch feed relays ordered child channels without a child Stop owner")
