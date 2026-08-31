@@ -203,6 +203,7 @@ enum AgentDelegationDispatcher {
         parentSessionId: String? = nil
     ) async throws -> AgentDelegationOutcome {
         let started = Date()
+        let parentSessionUUID = parentSessionId.flatMap(UUID.init(uuidString:))
         let request = DispatchRequest(
             prompt: delegatedPrompt(input: input),
             agentId: targetAgentId,
@@ -215,6 +216,10 @@ enum AgentDelegationDispatcher {
             // (or awaiting its report-back), so its model load carries
             // interactive intent.
             loadIntent: .interactive,
+            parentRunId: ChatExecutionContext.currentRunId,
+            rootRunId: ChatExecutionContext.currentRootRunId,
+            parentSessionId: parentSessionUUID,
+            parentToolCallId: ChatExecutionContext.currentToolCallId,
             // Enforced delegation budget: the chat surface clamps its
             // per-generation max tokens and tool-loop turns to these, and
             // RAM admission prices the child from the SAME values.

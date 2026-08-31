@@ -740,6 +740,117 @@ public final class SchedulerDatabase: @unchecked Sendable {
 
     // MARK: - agent_runs
 
+    /// Admit one accepted execution before it starts doing work. The legacy
+    /// `started_at` column stores admission time until a schema revision can
+    /// split admission/start timestamps; the event stream remains the source
+    /// of truth and records both `created` and the initial queued/running fact.
+    public func recordRunAdmission(_ admission: RunLifecycleAdmission) throws {
+        try inTransaction(immediate: true) { _ in
+            let resolvedRootRunId: UUID
+            if let parentRunId = admission.parentRunId {
+                guard let parentRoot = try self.runRootTransactionally(runId: parentRunId) else {
+                    throw SchedulerDatabaseError.invalidRunRelationship(
+                        admission.runId,
+                        "parent run \(parentRunId.uuidString) does not exist"
+                    )
+                }
+                if let rootRunId = admission.rootRunId, rootRunId != parentRoot {
+                    throw SchedulerDatabaseError.invalidRunRelationship(
+                        admission.runId,
+                        "root \(rootRunId.uuidString) does not match parent root \(parentRoot.uuidString)"
+                    )
+                }
+                resolvedRootRunId = parentRoot
+            } else {
+                if let rootRunId = admission.rootRunId, rootRunId != admission.runId {
+                    throw SchedulerDatabaseError.invalidRunRelationship(
+                        admission.runId,
+                        "a root run without a parent must point to itself"
+                    )
+                }
+                resolvedRootRunId = admission.runId
+            }
+
+            let initialStatus: AgentRunStatus = admission.startsImmediately ? .running : .queued
+            try self.transactionalStep(
+                """
+                    INSERT INTO agent_runs
+                        (id, agent_id, trigger_kind, trigger_payload, instructions,
+                         started_at, status, session_id, project_id, parent_run_id,
+                         root_run_id, title, model_id, updated_at, event_baseline_state)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                """
+            ) { stmt in
+                Self.bindText(stmt, index: 1, value: admission.runId.uuidString)
+                Self.bindText(stmt, index: 2, value: admission.agentId.uuidString)
+                Self.bindText(stmt, index: 3, value: admission.triggerKind.rawValue)
+                Self.bindText(stmt, index: 4, value: admission.triggerPayload)
+                Self.bindText(stmt, index: 5, value: admission.instructions)
+                sqlite3_bind_int64(stmt, 6, Int64(admission.admittedAt.timeIntervalSince1970))
+                Self.bindText(stmt, index: 7, value: initialStatus.rawValue)
+                Self.bindText(stmt, index: 8, value: admission.sessionId?.uuidString)
+                Self.bindText(stmt, index: 9, value: admission.projectId?.uuidString)
+                Self.bindText(stmt, index: 10, value: admission.parentRunId?.uuidString)
+                Self.bindText(stmt, index: 11, value: resolvedRootRunId.uuidString)
+                Self.bindText(stmt, index: 12, value: admission.title)
+                Self.bindText(stmt, index: 13, value: admission.modelId)
+                sqlite3_bind_int64(stmt, 14, Int64(admission.admittedAt.timeIntervalSince1970))
+                Self.bindText(
+                    stmt,
+                    index: 15,
+                    value: RunCenterExecutionState.created.rawValue
+                )
+            }
+
+            _ = try self.appendRunEventTransactionally(
+                runId: admission.runId,
+                kind: .created,
+                occurredAt: admission.admittedAt,
+                message: admission.title,
+                metadata: [:],
+                baselineState: .created
+            )
+            _ = try self.appendRunEventTransactionally(
+                runId: admission.runId,
+                kind: admission.startsImmediately ? .started : .queued,
+                occurredAt: admission.admittedAt,
+                message: nil,
+                metadata: [:],
+                baselineState: .created
+            )
+            if let parentRunId = admission.parentRunId {
+                guard let parent = try self.runLifecycleTransactionally(runId: parentRunId) else {
+                    throw SchedulerDatabaseError.runNotFound(parentRunId)
+                }
+                _ = try self.appendRunEventTransactionally(
+                    runId: parentRunId,
+                    kind: .childLinked,
+                    occurredAt: admission.admittedAt,
+                    message: admission.title,
+                    metadata: ["child_run_id": admission.runId.uuidString],
+                    legacyStatus: parent.status,
+                    baselineState: parent.eventBaselineState
+                )
+                try self.transactionalStep(
+                    """
+                        UPDATE agent_runs SET updated_at = CASE
+                            WHEN updated_at IS NULL OR updated_at < ?2 THEN ?2
+                            ELSE updated_at
+                        END
+                        WHERE id = ?1
+                    """
+                ) { stmt in
+                    Self.bindText(stmt, index: 1, value: parentRunId.uuidString)
+                    sqlite3_bind_int64(
+                        stmt,
+                        2,
+                        Int64(admission.admittedAt.timeIntervalSince1970)
+                    )
+                }
+            }
+        }
+    }
+
     /// Insert a `running` row and return its id. Pair with `recordRunEnd`
     /// before the run finishes so the row reaches a terminal state.
     @discardableResult

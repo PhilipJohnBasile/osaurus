@@ -116,6 +116,10 @@ public final class BackgroundTaskManager: ObservableObject {
     /// never alter the host machine's power state.
     private let powerManager: AgentRunPowerManager?
 
+    /// Write-only durable lifecycle sink. Runtime state remains owned here;
+    /// the recorder never schedules, cancels, or otherwise drives execution.
+    private let runLifecycleRecorder: any RunLifecycleRecording
+
     /// Tasks whose dispatch() hasn't returned to the plugin yet; events are
     /// buffered in `heldTaskEvents` until `releaseEventsForDispatch` flushes them.
     private var dispatchHoldTasks: Set<UUID> = []
@@ -154,11 +158,13 @@ public final class BackgroundTaskManager: ObservableObject {
     private init(
         persistsRetainedTabs: Bool = true,
         retainedTabsDefaults: UserDefaults = .standard,
-        powerManager: AgentRunPowerManager? = .shared
+        powerManager: AgentRunPowerManager? = .shared,
+        runLifecycleRecorder: any RunLifecycleRecording = SchedulerRunLifecycleRecorder.shared
     ) {
         self.persistsRetainedTabs = persistsRetainedTabs
         self.retainedTabsDefaults = retainedTabsDefaults
         self.powerManager = powerManager
+        self.runLifecycleRecorder = runLifecycleRecorder
         viewUpdateCancellable =
             viewUpdateSubject
             .throttle(for: .milliseconds(50), scheduler: DispatchQueue.main, latest: true)
@@ -487,7 +493,9 @@ public final class BackgroundTaskManager: ObservableObject {
             )
             if let runId = state.agentRunId {
                 do {
-                    try SchedulerDatabase.shared.recordRunEnd(runId: runId, status: .cancelled)
+                    try runLifecycleRecorder.end(
+                        RunLifecycleTerminalReceipt(runId: runId, status: .cancelled)
+                    )
                 } catch {
                     print("[BackgroundTaskManager] recordRunEnd (finalize/cancel) failed for run \(runId): \(error)")
                 }
@@ -595,21 +603,25 @@ public final class BackgroundTaskManager: ObservableObject {
         // Activity tab.
         if let runId = state.agentRunId {
             let cancelError = state.budgetExhaustedReason.map { "Budget exhausted: \($0)" }
+            let endedAt = Date()
             Self.writeRunTrace(
                 runId: runId,
                 state: state,
                 status: .cancelled,
-                endedAt: Date(),
+                endedAt: endedAt,
                 errorMessage: cancelError
             )
             do {
-                try SchedulerDatabase.shared.recordRunEnd(
-                    runId: runId,
-                    status: .cancelled,
-                    tokensIn: state.tokensIn > 0 ? state.tokensIn : nil,
-                    tokensOut: state.tokensOut > 0 ? state.tokensOut : nil,
-                    costUSD: state.costUSD > 0 ? state.costUSD : nil,
-                    error: cancelError
+                try runLifecycleRecorder.end(
+                    RunLifecycleTerminalReceipt(
+                        runId: runId,
+                        status: .cancelled,
+                        endedAt: endedAt,
+                        tokensIn: state.tokensIn > 0 ? state.tokensIn : nil,
+                        tokensOut: state.tokensOut > 0 ? state.tokensOut : nil,
+                        costUSD: state.costUSD > 0 ? state.costUSD : nil,
+                        error: cancelError
+                    )
                 )
             } catch {
                 print("[BackgroundTaskManager] recordRunEnd (cancel) failed for run \(runId): \(error)")
@@ -896,6 +908,36 @@ public final class BackgroundTaskManager: ObservableObject {
         // execution so `awaitCompletion` always finds the task.
         let startsImmediately = hasExecutionCapacity(agentId: request.agentId)
 
+        // Run Center is a global execution ledger, independent of whether an
+        // agent opted into its knowledge/database feature. Admit the exact
+        // per-execution identity before registration so queued work and a
+        // queued cancellation both have a durable lifecycle.
+        var admittedRunId: UUID?
+        do {
+            try runLifecycleRecorder.admit(
+                RunLifecycleAdmission(
+                    runId: request.runId,
+                    agentId: context.agentId,
+                    triggerKind: Self.triggerKind(for: request.source),
+                    triggerPayload: Self.triggerPayload(for: request),
+                    instructions: request.prompt,
+                    startsImmediately: startsImmediately,
+                    sessionId: context.id,
+                    projectId: context.chatSession.projectId,
+                    parentRunId: request.parentRunId,
+                    rootRunId: request.rootRunId,
+                    title: context.title ?? request.title,
+                    modelId: context.chatSession.selectedModel
+                )
+            )
+            admittedRunId = request.runId
+        } catch {
+            print(
+                "[BackgroundTaskManager] run admission failed for "
+                    + "\(request.runId): \(error)"
+            )
+        }
+
         let state = BackgroundTaskState(
             id: context.id,
             taskTitle: context.title ?? "Chat",
@@ -909,6 +951,7 @@ public final class BackgroundTaskManager: ObservableObject {
             externalSessionKey: request.externalSessionKey,
             showToast: request.showToast
         )
+        state.agentRunId = admittedRunId
 
         // Plugin-originated dispatches buffer their `.started` event until
         // the trampoline returns, so the plugin's `on_task_event` callback
@@ -932,42 +975,25 @@ public final class BackgroundTaskManager: ObservableObject {
 
         // The actual execution start. Runs immediately when a slot is
         // available, or later from `pumpQueue()` when queued. Everything
-        // that marks a run as "started" (the `agent_runs` row, the
-        // task-local bindings, `context.start`) lives here so a queued
+        // that marks a queued run as "started" (the durable event,
+        // task-local bindings, and `context.start`) lives here so a queued
         // request has no execution side effects until promoted.
         let startWork: @MainActor () async -> Void = { [weak state] in
             guard let state else { return }
 
-            // Agent DB run logging (spec §1.4 + §8). Only DB-enabled agents
-            // get an `agent_runs` row + a bound `currentRunId`; for the
-            // default agent and any user-created agent that hasn't opted
-            // in, this is a no-op so the existing dispatch surface keeps
-            // the same behavior and the same overhead.
-            var boundRunId: UUID? = nil
-            var boundActor: String = "user"
-            if AgentManager.shared.effectiveDBEnabled(for: context.agentId) {
-                let triggerKind = Self.triggerKind(for: request.source)
-                // `triggerPayload` is intentionally minimal: persisting the
-                // full prompt here would duplicate ChatHistoryDatabase data
-                // and inflate the scheduler DB. We surface the dispatch
-                // source + external key so the Activity tab can tag the
-                // row with what woke it.
-                let triggerPayload = Self.triggerPayload(for: request)
+            if !startsImmediately, let runId = state.agentRunId {
                 do {
-                    try SchedulerDatabase.shared.open()
-                    let runId = try SchedulerDatabase.shared.recordRunStart(
-                        agentId: context.agentId,
-                        triggerKind: triggerKind,
-                        triggerPayload: triggerPayload,
-                        instructions: request.prompt
+                    try self.runLifecycleRecorder.append(
+                        runId: runId,
+                        kind: .started,
+                        occurredAt: Date(),
+                        message: nil,
+                        metadata: [:]
                     )
-                    boundRunId = runId
-                    state.agentRunId = runId
-                    boundActor = "agent"
                 } catch {
                     print(
-                        "[BackgroundTaskManager] recordRunStart failed for agent "
-                            + "\(context.agentId): \(error)"
+                        "[BackgroundTaskManager] queued run start failed for "
+                            + "\(runId): \(error)"
                     )
                 }
             }
@@ -999,13 +1025,17 @@ public final class BackgroundTaskManager: ObservableObject {
                 && (request.source == .schedule
                     || request.source == .selfSchedule
                     || request.source == .watcher)
+            let rootRunId = request.rootRunId
+                ?? (request.parentRunId == nil ? request.runId : nil)
             await ChatExecutionContext.$currentSessionSource.withValue(request.source) {
                 await ChatExecutionContext.$isUnattendedDispatch.withValue(unattended) {
                     await ChatExecutionContext.$isExternalSurface.withValue(externalSurface) {
-                        await ChatExecutionContext.$currentRunId.withValue(boundRunId) {
-                            await ChatExecutionContext.$currentRunActor.withValue(boundActor) {
-                                await ChatExecutionContext.$currentBackgroundId.withValue(context.id) {
-                                    await context.start(prompt: request.prompt)
+                        await ChatExecutionContext.$currentRunId.withValue(request.runId) {
+                            await ChatExecutionContext.$currentRootRunId.withValue(rootRunId) {
+                                await ChatExecutionContext.$currentRunActor.withValue("agent") {
+                                    await ChatExecutionContext.$currentBackgroundId.withValue(context.id) {
+                                        await context.start(prompt: request.prompt)
+                                    }
                                 }
                             }
                         }
@@ -1027,7 +1057,7 @@ public final class BackgroundTaskManager: ObservableObject {
         print("[BackgroundTaskManager] Dispatched chat task: \(request.title ?? "untitled")\(reattachNote)")
         // Return the resolved task id (may differ from request.id after a
         // reattach) so callers awaiting completion poll the actual live task.
-        return DispatchHandle(id: context.id, request: request)
+        return DispatchHandle(id: context.id, runId: request.runId, request: request)
     }
 
     /// Returns an existing persisted session for this dispatch when the
@@ -1194,14 +1224,16 @@ public final class BackgroundTaskManager: ObservableObject {
         static func makeForTesting() -> BackgroundTaskManager {
             BackgroundTaskManager(
                 persistsRetainedTabs: false,
-                powerManager: nil
+                powerManager: nil,
+                runLifecycleRecorder: DiscardingRunLifecycleRecorder.shared
             )
         }
 
         static func makeForTesting(powerManager: AgentRunPowerManager) -> BackgroundTaskManager {
             BackgroundTaskManager(
                 persistsRetainedTabs: false,
-                powerManager: powerManager
+                powerManager: powerManager,
+                runLifecycleRecorder: DiscardingRunLifecycleRecorder.shared
             )
         }
 
@@ -1209,7 +1241,8 @@ public final class BackgroundTaskManager: ObservableObject {
             BackgroundTaskManager(
                 persistsRetainedTabs: true,
                 retainedTabsDefaults: defaults,
-                powerManager: nil
+                powerManager: nil,
+                runLifecycleRecorder: DiscardingRunLifecycleRecorder.shared
             )
         }
 
@@ -1345,6 +1378,12 @@ public final class BackgroundTaskManager: ObservableObject {
         if let key = request.externalSessionKey, !key.isEmpty {
             fields["external_session_key"] = key
         }
+        if let parentSessionId = request.parentSessionId {
+            fields["parent_session_id"] = parentSessionId.uuidString
+        }
+        if let parentToolCallId = request.parentToolCallId, !parentToolCallId.isEmpty {
+            fields["parent_tool_call_id"] = parentToolCallId
+        }
         guard let data = try? JSONEncoder().encode(fields),
             let json = String(data: data, encoding: .utf8)
         else { return nil }
@@ -1365,6 +1404,7 @@ public final class BackgroundTaskManager: ObservableObject {
         if let runId = state.agentRunId {
             let endStatus: AgentRunStatus = success ? .success : .error
             let errorMessage: String? = success ? nil : summary
+            let endedAt = Date()
             // Persist the per-run JSON trace BEFORE we null out
             // `agentRunId` so subsequent retries/observers can't
             // accidentally write it twice (spec §1.8).
@@ -1372,17 +1412,20 @@ public final class BackgroundTaskManager: ObservableObject {
                 runId: runId,
                 state: state,
                 status: endStatus,
-                endedAt: Date(),
+                endedAt: endedAt,
                 errorMessage: errorMessage
             )
             do {
-                try SchedulerDatabase.shared.recordRunEnd(
-                    runId: runId,
-                    status: endStatus,
-                    tokensIn: state.tokensIn > 0 ? state.tokensIn : nil,
-                    tokensOut: state.tokensOut > 0 ? state.tokensOut : nil,
-                    costUSD: state.costUSD > 0 ? state.costUSD : nil,
-                    error: errorMessage
+                try runLifecycleRecorder.end(
+                    RunLifecycleTerminalReceipt(
+                        runId: runId,
+                        status: endStatus,
+                        endedAt: endedAt,
+                        tokensIn: state.tokensIn > 0 ? state.tokensIn : nil,
+                        tokensOut: state.tokensOut > 0 ? state.tokensOut : nil,
+                        costUSD: state.costUSD > 0 ? state.costUSD : nil,
+                        error: errorMessage
+                    )
                 )
             } catch {
                 print("[BackgroundTaskManager] recordRunEnd failed for run \(runId): \(error)")

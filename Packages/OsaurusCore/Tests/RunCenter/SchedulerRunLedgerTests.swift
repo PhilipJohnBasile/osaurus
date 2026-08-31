@@ -32,6 +32,114 @@ struct SchedulerRunLedgerTests {
         #expect(record.updatedAt == Date(timeIntervalSince1970: 100))
     }
 
+    @Test func admissionDurablyCapturesQueuePromotionAndExactIdentity() throws {
+        let database = SchedulerDatabase()
+        try database.openInMemory()
+        defer { database.close() }
+
+        let runId = UUID(uuidString: "aaaaaaaa-0000-0000-0000-000000000001")!
+        let sessionId = UUID(uuidString: "bbbbbbbb-0000-0000-0000-000000000002")!
+        let admittedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        try database.recordRunAdmission(
+            RunLifecycleAdmission(
+                runId: runId,
+                agentId: UUID(),
+                triggerKind: .recurringSchedule,
+                triggerPayload: #"{"source":"schedule"}"#,
+                instructions: "Queued work",
+                admittedAt: admittedAt,
+                startsImmediately: false,
+                sessionId: sessionId,
+                title: "Queue me"
+            )
+        )
+
+        var record = try #require(database.allRuns().first { $0.id == runId })
+        #expect(record.id == runId)
+        #expect(record.sessionId == sessionId)
+        #expect(record.rootRunId == runId)
+        #expect(record.status == .queued)
+        #expect(record.startedAt == admittedAt)
+        #expect(try database.events(runId: runId).map(\.kind) == [.created, .queued])
+
+        _ = try database.appendRunEvent(
+            runId: runId,
+            kind: .started,
+            occurredAt: admittedAt.addingTimeInterval(5)
+        )
+        record = try #require(database.allRuns().first { $0.id == runId })
+        #expect(record.status == .running)
+
+        try database.recordRunEnd(
+            runId: runId,
+            status: .success,
+            endedAt: admittedAt.addingTimeInterval(10)
+        )
+        #expect(
+            try database.events(runId: runId).map(\.kind)
+                == [.created, .queued, .started, .completed]
+        )
+    }
+
+    @Test func queuedAdmissionCanCancelWithoutEverStarting() throws {
+        let database = SchedulerDatabase()
+        try database.openInMemory()
+        defer { database.close() }
+
+        let runId = UUID()
+        try database.recordRunAdmission(
+            RunLifecycleAdmission(
+                runId: runId,
+                agentId: UUID(),
+                triggerKind: .watcher,
+                instructions: "Cancel before promotion",
+                startsImmediately: false
+            )
+        )
+        try database.recordRunEnd(runId: runId, status: .cancelled)
+
+        let record = try #require(database.allRuns().first { $0.id == runId })
+        #expect(record.status == .cancelled)
+        #expect(
+            try database.events(runId: runId).map(\.kind)
+                == [.created, .queued, .cancelled]
+        )
+    }
+
+    @Test func childAdmissionUsesParentRootAndLinksParentAtomically() throws {
+        let database = SchedulerDatabase()
+        try database.openInMemory()
+        defer { database.close() }
+
+        let agentId = UUID()
+        let parentRunId = try database.recordRunStart(
+            agentId: agentId,
+            triggerKind: .user,
+            instructions: "Parent"
+        )
+        let childRunId = UUID()
+        try database.recordRunAdmission(
+            RunLifecycleAdmission(
+                runId: childRunId,
+                agentId: agentId,
+                triggerKind: .user,
+                instructions: "Child",
+                startsImmediately: true,
+                parentRunId: parentRunId,
+                title: "Delegated child"
+            )
+        )
+
+        let child = try #require(database.allRuns().first { $0.id == childRunId })
+        #expect(child.parentRunId == parentRunId)
+        #expect(child.rootRunId == parentRunId)
+        #expect(try database.events(runId: childRunId).map(\.kind) == [.created, .started])
+
+        let parentEvents = try database.events(runId: parentRunId)
+        #expect(parentEvents.map(\.kind) == [.started, .childLinked])
+        #expect(parentEvents.last?.metadata["child_run_id"] == childRunId.uuidString)
+    }
+
     @Test func metadataEventsAndTerminalStateRoundTrip() throws {
         let database = SchedulerDatabase()
         try database.openInMemory()

@@ -174,6 +174,11 @@ public enum ChatExecutionContext {
     /// resolution is independent (see `currentRunActor`).
     @TaskLocal public static var currentRunId: UUID?
 
+    /// Root durable run for the active execution tree. A root execution binds
+    /// its own run id; delegated children inherit the immutable root supplied
+    /// at dispatch so deeper provenance never depends on a conversation id.
+    @TaskLocal public static var currentRootRunId: UUID?
+
     /// String tag identifying who's "driving" the current execution.
     /// One of "agent" (an inference loop), "user" (UI edit), "system"
     /// (background job), or "migration" (migration runner). Used by

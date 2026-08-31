@@ -120,6 +120,44 @@ behavior claim is made in this phase.
 Exit gate: deterministic lifecycle tests plus real Release-app cancellation,
 clarification, relaunch, and parent/child proof.
 
+#### Phase 1 ownership and capture contract
+
+- `agent_runs.id` is the durable per-execution identity. Conversation/context
+  ids may be reused by reattachment and are never substituted for a run id.
+- `BackgroundTaskManager` is the sole lifecycle and terminal writer for an
+  accepted background dispatch. Schedule, HTTP, plugin, watcher, channel, and
+  delegation layers create dispatch intent; they do not duplicate terminal
+  facts after the manager settles the run.
+- A direct Chat turn owns its lifecycle only when it has no prebound background
+  run. Detaching that Chat transfers visibility, not lifecycle ownership.
+- Admission writes `created` and then `queued` or `started` before execution.
+  Queue promotion writes exactly one `started`; clarification and approval
+  write `waitingForInput` and `resumed`, never a second start.
+- A child receives one immutable run id plus parent run, root run, parent
+  session, and tool-call provenance at launch. The delegation bridge and
+  background manager reuse that identity instead of minting competing rows.
+- A spawned batch has one aggregate run and one child per caller-stable job.
+  Caller job ids are provenance, not durable run ids. Each child retains its
+  own truthful outcome; aggregate partial-success evidence cannot paint a
+  failed child as successful.
+- Soft redirect/steering is a progress/wait/resume milestone. Terminal
+  `interrupted` is reserved for an ownerless non-terminal row recovered after
+  relaunch.
+- Cancellation does not become terminal until inference, tool work, cache
+  serialization, residency restoration, allocator cleanup, and Metal/runtime
+  ownership have settled. Restore failure is a failed run, not a successful
+  cancellation.
+- Runtime/cache phase telemetry is coalesced at semantic boundaries. Token
+  chunks never become SQLite events, and process-wide cache deltas under
+  concurrency cannot prove a per-child cache hit.
+- Evidence is attached only after the artifact is durably available under a
+  stable id. An in-memory registry entry or best-effort trace write is not a
+  receipt.
+
+Implementation order: admission/queue/start and recovery; direct Chat roots;
+delegation provenance; batch aggregate/children; clarification and approval;
+settled cancellation; semantic runtime milestones; durable evidence attachment.
+
 ### Phase 2 — Read-only Run Center
 
 - Add Run Center to native navigation without replacing Chat or Projects.

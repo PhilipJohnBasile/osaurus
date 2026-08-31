@@ -13,6 +13,10 @@ import Foundation
 
 /// Describes a task to dispatch as a (possibly headless) chat session.
 public struct DispatchRequest: Sendable {
+    /// Per-execution durable identity. This is intentionally distinct from
+    /// `id`, which is a conversation/context identity and may be reused when
+    /// an external conversation reattaches for another turn.
+    public let runId: UUID
     public let id: UUID
     public let prompt: String
     public let agentId: UUID?
@@ -62,6 +66,14 @@ public struct DispatchRequest: Sendable {
     /// hand-pressed button and every waiting API client keeps the default.
     public let loadIntent: ModelLoadIntent
 
+    /// Immutable launch provenance for delegation, batching, and retries.
+    /// A child carries the exact parent/root run accepted by its launcher;
+    /// session and tool-call ids remain provenance, never run identity.
+    public let parentRunId: UUID?
+    public let rootRunId: UUID?
+    public let parentSessionId: UUID?
+    public let parentToolCallId: String?
+
     /// True when this dispatch is a TRUE agent delegation (an orchestrating
     /// agent's `spawn_agent` / `spawn_batch` call). Derived from `source` —
     /// delegation always dispatches with `source: .delegation` — so there is
@@ -101,6 +113,7 @@ public struct DispatchRequest: Sendable {
     }
 
     public init(
+        runId: UUID = UUID(),
         id: UUID = UUID(),
         prompt: String,
         agentId: UUID? = nil,
@@ -115,10 +128,15 @@ public struct DispatchRequest: Sendable {
         requestedToolNames: [String] = [],
         externalSurface: Bool = false,
         loadIntent: ModelLoadIntent = .interactive,
+        parentRunId: UUID? = nil,
+        rootRunId: UUID? = nil,
+        parentSessionId: UUID? = nil,
+        parentToolCallId: String? = nil,
         delegationResponseTokenCap: Int? = nil,
         delegationContextPositionCap: Int? = nil,
         delegationAssistantTurnCap: Int? = nil
     ) {
+        self.runId = runId
         self.id = id
         self.prompt = prompt
         self.agentId = agentId
@@ -133,6 +151,10 @@ public struct DispatchRequest: Sendable {
         self.requestedToolNames = requestedToolNames
         self.externalSurface = externalSurface
         self.loadIntent = loadIntent
+        self.parentRunId = parentRunId
+        self.rootRunId = rootRunId
+        self.parentSessionId = parentSessionId
+        self.parentToolCallId = parentToolCallId
         self.delegationResponseTokenCap = delegationResponseTokenCap
         self.delegationContextPositionCap = delegationContextPositionCap
         self.delegationAssistantTurnCap = delegationAssistantTurnCap
@@ -144,6 +166,7 @@ public struct DispatchRequest: Sendable {
 /// Returned after dispatch; used for observation and cancellation
 public struct DispatchHandle: Sendable {
     public let id: UUID
+    public let runId: UUID
     public let request: DispatchRequest
 }
 
