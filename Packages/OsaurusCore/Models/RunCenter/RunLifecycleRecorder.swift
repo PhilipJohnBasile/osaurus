@@ -101,13 +101,34 @@ public final class SchedulerRunLifecycleRecorder: RunLifecycleRecording, @unchec
     public static let shared = SchedulerRunLifecycleRecorder()
 
     private let database: SchedulerDatabase
+    private let processPreparationLock = NSLock()
+    private var isPreparedForCurrentProcess = false
 
     init(database: SchedulerDatabase = .shared) {
         self.database = database
     }
 
+    /// Serialize launch recovery with the first admission. App launch does
+    /// this proactively, but watcher/schedule/server startup is concurrent;
+    /// if one of those paths wins the race, its admission performs recovery
+    /// first. The one-time flag prevents a later launch callback from
+    /// interrupting work owned by the new process.
+    @discardableResult
+    public func recoverOrphanedRunsAfterLaunch() throws -> [UUID] {
+        processPreparationLock.lock()
+        defer { processPreparationLock.unlock() }
+        guard !isPreparedForCurrentProcess else { return [] }
+
+        if !database.isOpen {
+            try database.open()
+        }
+        let recovered = try database.recoverOrphanedRunsAfterLaunch()
+        isPreparedForCurrentProcess = true
+        return recovered
+    }
+
     public func admit(_ admission: RunLifecycleAdmission) throws {
-        try database.open()
+        _ = try recoverOrphanedRunsAfterLaunch()
         try database.recordRunAdmission(admission)
     }
 

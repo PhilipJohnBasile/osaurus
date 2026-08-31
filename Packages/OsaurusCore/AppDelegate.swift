@@ -477,6 +477,24 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
                     return
                 }
             }
+
+            // A fresh process cannot still own any queued, generating,
+            // approval, or review continuation from the previous process.
+            // Close those rows before schedulers and user dispatch can admit
+            // new work so the Run Center never paints stale work as live.
+            do {
+                let recovered = try SchedulerRunLifecycleRecorder.shared
+                    .recoverOrphanedRunsAfterLaunch()
+                if !recovered.isEmpty {
+                    log.notice("Recovered \(recovered.count) orphaned Run Center execution(s)")
+                }
+            } catch {
+                PersistenceHealth.shared.recordDatabaseOpenFailure(
+                    subsystem: StorageRecoveryService.Store.scheduler.rawValue,
+                    error: error,
+                    path: OsaurusPaths.schedulerDatabaseFile().path
+                )
+            }
             var memoryDBOpened = false
             var lastMemoryOpenError: Error?
             for attempt in 1 ... 3 {

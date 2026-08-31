@@ -158,6 +158,12 @@ Implementation order: admission/queue/start and recovery; direct Chat roots;
 delegation provenance; batch aggregate/children; clarification and approval;
 settled cancellation; semantic runtime milestones; durable evidence attachment.
 
+Implemented capture checkpoint: background admission and queue promotion use a
+single durable run identity; direct Chat creates a root only when no background
+identity is prebound; terminal cancellation waits for engine settlement; and
+launch recovery atomically interrupts ownerless nonterminal rows before new
+work is admitted.
+
 ### Phase 2 — Read-only Run Center
 
 - Add Run Center to native navigation without replacing Chat or Projects.

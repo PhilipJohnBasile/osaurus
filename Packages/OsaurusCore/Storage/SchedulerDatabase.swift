@@ -1017,6 +1017,102 @@ public final class SchedulerDatabase: @unchecked Sendable {
         }
     }
 
+    /// Close every execution left nonterminal by the previous process. Queue
+    /// ownership, generation tasks, approval continuations, and review state
+    /// are all in-memory, so none of these rows can still be live after a new
+    /// app process starts. The complete recovery is one transaction: corrupt
+    /// history rolls the whole operation back instead of producing a partly
+    /// recovered board.
+    @discardableResult
+    public func recoverOrphanedRunsAfterLaunch(
+        interruptedAt: Date = Date(),
+        reason: String = "Application restarted before execution cleanup completed."
+    ) throws -> [UUID] {
+        try inTransaction(immediate: true) { _ in
+            var statement: OpaquePointer?
+            guard
+                sqlite3_prepare_v2(
+                    self.db,
+                    """
+                        SELECT id
+                        FROM agent_runs
+                        WHERE ended_at IS NULL
+                          AND status IN ('queued', 'running', 'waiting_for_input', 'review')
+                        ORDER BY started_at ASC, id ASC
+                    """,
+                    -1,
+                    &statement,
+                    nil
+                ) == SQLITE_OK,
+                let statement
+            else {
+                throw SchedulerDatabaseError.failedToPrepare(
+                    String(cString: sqlite3_errmsg(self.db))
+                )
+            }
+            defer { sqlite3_finalize(statement) }
+
+            var runIds: [UUID] = []
+            while true {
+                let result = sqlite3_step(statement)
+                if result == SQLITE_DONE { break }
+                guard result == SQLITE_ROW else {
+                    throw SchedulerDatabaseError.failedToExecute(
+                        "orphaned run scan failed with SQLite status \(result)"
+                    )
+                }
+                let raw = sqlite3_column_text(statement, 0).map { String(cString: $0) } ?? ""
+                guard let runId = UUID(uuidString: raw) else {
+                    throw SchedulerDatabaseError.corruptRun(
+                        "orphaned run has invalid id \(raw)"
+                    )
+                }
+                runIds.append(runId)
+            }
+
+            for runId in runIds {
+                guard let current = try self.runLifecycleTransactionally(runId: runId) else {
+                    throw SchedulerDatabaseError.runNotFound(runId)
+                }
+                _ = try self.appendRunEventTransactionally(
+                    runId: runId,
+                    kind: .interrupted,
+                    occurredAt: interruptedAt,
+                    message: reason,
+                    metadata: ["recovery": "application_launch"],
+                    legacyStatus: current.status,
+                    baselineState: current.eventBaselineState
+                )
+                try self.transactionalStep(
+                    """
+                        UPDATE agent_runs SET
+                            ended_at = ?2,
+                            status = ?3,
+                            error = ?4,
+                            updated_at = CASE
+                                WHEN updated_at IS NULL OR updated_at < ?2 THEN ?2
+                                ELSE updated_at
+                            END
+                        WHERE id = ?1 AND ended_at IS NULL
+                    """
+                ) { update in
+                    Self.bindText(update, index: 1, value: runId.uuidString)
+                    sqlite3_bind_int64(
+                        update,
+                        2,
+                        Int64(interruptedAt.timeIntervalSince1970)
+                    )
+                    Self.bindText(update, index: 3, value: AgentRunStatus.interrupted.rawValue)
+                    Self.bindText(update, index: 4, value: reason)
+                }
+                guard sqlite3_changes(self.db) == 1 else {
+                    throw SchedulerDatabaseError.runAlreadyEnded(runId, current.status)
+                }
+            }
+            return runIds
+        }
+    }
+
     /// Append an immutable run event with the next per-run sequence number.
     /// Metadata is redacted before persistence; callers must put full tool
     /// arguments and transcripts in their existing protected stores instead.

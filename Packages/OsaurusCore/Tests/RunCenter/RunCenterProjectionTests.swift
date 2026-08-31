@@ -93,6 +93,19 @@ struct RunCenterProjectionTests {
         #expect(snapshot.lastEventAt == nil)
     }
 
+    @Test func legacyReviewCanBeClosedByLaunchRecovery() throws {
+        let snapshot = try RunCenterProjector.project(
+            runId: runId,
+            legacyStatus: .interrupted,
+            baselineState: .inReview,
+            events: [event(sequence: 1, kind: .interrupted)],
+            proofContract: .none
+        )
+
+        #expect(snapshot.executionState == .interrupted)
+        #expect(snapshot.lane == .failed)
+    }
+
     @Test func terminalRunCannotReturnToActiveThroughReview() {
         let events = [
             event(sequence: 1, kind: .started),

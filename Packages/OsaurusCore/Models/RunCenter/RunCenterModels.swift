@@ -436,7 +436,11 @@ public enum RunCenterProjector {
         case .completed:
             return state == .running
         case .failed, .cancelled, .interrupted:
-            return !state.isTerminal && state != .inReview
+            // `.inReview` is a legacy materialized execution state. It still
+            // needs a terminal escape hatch for cancellation, failure, and
+            // launch recovery; otherwise a row stranded there can never be
+            // closed after its in-memory owner disappears.
+            return !state.isTerminal
         case .evidenceAttached:
             return true
         case .childLinked:

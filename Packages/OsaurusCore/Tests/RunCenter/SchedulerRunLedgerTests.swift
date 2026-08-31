@@ -106,6 +106,171 @@ struct SchedulerRunLedgerTests {
         )
     }
 
+    @Test func launchRecoveryAtomicallyInterruptsEveryOrphanAndIsIdempotent() throws {
+        let database = SchedulerDatabase()
+        try database.openInMemory()
+        defer { database.close() }
+
+        let agentId = UUID()
+        let queuedRunId = UUID()
+        let runningRunId = UUID()
+        let waitingRunId = UUID()
+        let completedRunId = UUID()
+        try database.recordRunAdmission(
+            RunLifecycleAdmission(
+                runId: queuedRunId,
+                agentId: agentId,
+                triggerKind: .watcher,
+                instructions: "Queued before restart",
+                startsImmediately: false
+            )
+        )
+        try database.recordRunStart(
+            agentId: agentId,
+            triggerKind: .user,
+            instructions: "Running before restart",
+            id: runningRunId
+        )
+        try database.recordRunStart(
+            agentId: agentId,
+            triggerKind: .user,
+            instructions: "Waiting before restart",
+            id: waitingRunId
+        )
+        _ = try database.appendRunEvent(runId: waitingRunId, kind: .waitingForInput)
+        try database.recordRunStart(
+            agentId: agentId,
+            triggerKind: .user,
+            instructions: "Already complete",
+            id: completedRunId
+        )
+        try database.recordRunEnd(runId: completedRunId, status: .success)
+
+        let interruptedAt = Date(timeIntervalSince1970: 1_800_000_100)
+        let reason = "Recovered after test restart."
+        let recovered = try database.recoverOrphanedRunsAfterLaunch(
+            interruptedAt: interruptedAt,
+            reason: reason
+        )
+
+        #expect(Set(recovered) == Set([queuedRunId, runningRunId, waitingRunId]))
+        for runId in recovered {
+            let record = try #require(database.allRuns().first { $0.id == runId })
+            let terminalEvent = try #require(database.events(runId: runId).last)
+            #expect(record.status == .interrupted)
+            #expect(record.endedAt == interruptedAt)
+            #expect(record.error == reason)
+            #expect(terminalEvent.kind == .interrupted)
+            #expect(terminalEvent.metadata["recovery"] == "application_launch")
+        }
+        #expect(
+            try database.allRuns().first { $0.id == completedRunId }?.status == .success
+        )
+
+        let eventCounts = try Dictionary(
+            uniqueKeysWithValues: recovered.map { ($0, try database.events(runId: $0).count) }
+        )
+        #expect(try database.recoverOrphanedRunsAfterLaunch().isEmpty)
+        for runId in recovered {
+            #expect(try database.events(runId: runId).count == eventCounts[runId])
+        }
+    }
+
+    @Test func recorderNeverRecoversWorkAdmittedByCurrentProcess() throws {
+        let database = SchedulerDatabase()
+        try database.openInMemory()
+        defer { database.close() }
+
+        let priorRunId = try database.recordRunStart(
+            agentId: UUID(),
+            triggerKind: .user,
+            instructions: "Prior process"
+        )
+        let recorder = SchedulerRunLifecycleRecorder(database: database)
+        #expect(try recorder.recoverOrphanedRunsAfterLaunch() == [priorRunId])
+
+        let currentRunId = UUID()
+        try recorder.admit(
+            RunLifecycleAdmission(
+                runId: currentRunId,
+                agentId: UUID(),
+                triggerKind: .watcher,
+                instructions: "Current process",
+                startsImmediately: true
+            )
+        )
+
+        #expect(try recorder.recoverOrphanedRunsAfterLaunch().isEmpty)
+        let current = try #require(database.allRuns().first { $0.id == currentRunId })
+        #expect(current.status == .running)
+        #expect(current.endedAt == nil)
+    }
+
+    @Test func launchRecoveryRollsBackEveryRunWhenOneEventStreamIsCorrupt() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("osaurus-run-recovery-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("scheduler.sqlite").path
+        let healthyRunId = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let corruptRunId = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+
+        let database = SchedulerDatabase()
+        try database.openForTesting(path: path)
+        try database.recordRunStart(
+            agentId: UUID(),
+            triggerKind: .user,
+            instructions: "Healthy orphan",
+            startedAt: startedAt,
+            id: healthyRunId
+        )
+        try database.recordRunStart(
+            agentId: UUID(),
+            triggerKind: .user,
+            instructions: "Corrupt orphan",
+            startedAt: startedAt,
+            id: corruptRunId
+        )
+        database.close()
+
+        let connection = try EncryptedSQLiteOpener.open(
+            path: path,
+            key: nil,
+            applyPerfPragmas: false
+        )
+        try execute(
+            """
+                INSERT INTO run_events
+                    (id, run_id, sequence, event_type, metadata, occurred_at)
+                VALUES
+                    ('33333333-3333-3333-3333-333333333333',
+                     '\(corruptRunId.uuidString)', 2, 'future_event', '{}', 101);
+            """,
+            on: connection
+        )
+        sqlite3_close(connection)
+
+        try database.openForTesting(path: path)
+        defer { database.close() }
+        #expect(throws: SchedulerDatabaseError.self) {
+            try database.recoverOrphanedRunsAfterLaunch(
+                interruptedAt: startedAt.addingTimeInterval(10)
+            )
+        }
+
+        let records = try database.allRuns()
+        for runId in [healthyRunId, corruptRunId] {
+            let record = try #require(records.first { $0.id == runId })
+            #expect(record.status == .running)
+            #expect(record.endedAt == nil)
+        }
+        #expect(try database.events(runId: healthyRunId).map(\.kind) == [.started])
+    }
+
     @Test func childAdmissionUsesParentRootAndLinksParentAtomically() throws {
         let database = SchedulerDatabase()
         try database.openInMemory()
