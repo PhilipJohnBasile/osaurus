@@ -7397,12 +7397,14 @@ final class ChatSession: ObservableObject {
                                 self.conversationSummary.map {
                                     ContextBudgetManager.estimateTokens(for: $0.contextMessageText)
                                 } ?? 0
-                            let convTokens =
-                                msgs
-                                .filter { $0.role != "system" }
-                                                    .reduce(0) {
-                                                        $0 + ContextBudgetManager.estimateTokens(for: $1.content)
-                                                    }
+                            let conversationMessageTokens = msgs.reduce(into: 0) {
+                                total, message in
+                                guard message.role != "system" else { return }
+                                total += ContextBudgetManager.estimateTokens(
+                                    for: message.content
+                                )
+                            }
+                            let convTokens = conversationMessageTokens
                                 - max(0, currentInjectedTokens - automationContextTokens)
                                 - summaryMessageTokens
                             self.budgetTracker.updateConversation(

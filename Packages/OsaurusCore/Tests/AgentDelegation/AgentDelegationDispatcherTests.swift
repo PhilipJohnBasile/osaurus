@@ -262,7 +262,8 @@ struct AgentDelegationDispatcherTests {
             agentId: UUID(),
             runId: childRunId,
             parentRunId: parentRunId,
-            rootRunId: rootRunId
+            rootRunId: rootRunId,
+            stableJobId: "batch-job-7"
         )
 
         let request = AgentDelegationDispatcher.dispatchRequest(
@@ -279,6 +280,7 @@ struct AgentDelegationDispatcherTests {
         #expect(request.rootRunId == rootRunId)
         #expect(request.parentSessionId == parentSessionId)
         #expect(request.parentToolCallId == "spawn-call-42")
+        #expect(request.stableJobId == "batch-job-7")
         #expect(request.agentId == targetAgentId)
         #expect(request.isDelegatedRun)
         #expect(request.externalSessionKey == nil)

@@ -492,21 +492,48 @@ public final class BackgroundTaskManager: ObservableObject {
         // Ensure plugins always receive a terminal event before cleanup.
         if state.status.isActive, state.sourcePluginId != nil {
             state.status = .cancelled
-            emitPluginEvent(
-                state,
-                type: .cancelled,
-                json: PluginHostContext.serializeCancelledEvent(taskTitle: state.taskTitle)
-            )
+            var durableTerminalFailure: String?
             if let runId = state.agentRunId {
                 do {
                     try runLifecycleRecorder.end(
                         RunLifecycleTerminalReceipt(runId: runId, status: .cancelled)
                     )
                 } catch {
-                    print("[BackgroundTaskManager] recordRunEnd (finalize/cancel) failed for run \(runId): \(error)")
+                    let message =
+                        "The task stopped, but its durable terminal state could not be recorded: "
+                        + error.localizedDescription
+                    durableTerminalFailure = message
+                    state.status = .failed(summary: message)
+                    print(
+                        "[BackgroundTaskManager] recordRunEnd (finalize/cancel) failed for run "
+                            + "\(runId): \(error)"
+                    )
                 }
-                state.chatSession?.clearBackgroundRunLifecycle(runId: runId)
-                state.agentRunId = nil
+                if durableTerminalFailure == nil {
+                    state.chatSession?.clearBackgroundRunLifecycle(runId: runId)
+                    state.agentRunId = nil
+                }
+            }
+            if let durableTerminalFailure {
+                emitPluginEvent(
+                    state,
+                    type: .failed,
+                    json: PluginHostContext.serializeCompletedEvent(
+                        success: false,
+                        summary: durableTerminalFailure,
+                        sessionId: state.executionContext?.id,
+                        taskTitle: state.taskTitle,
+                        outputText: state.chatSession?.turns.last?.content
+                    )
+                )
+            } else {
+                emitPluginEvent(
+                    state,
+                    type: .cancelled,
+                    json: PluginHostContext.serializeCancelledEvent(
+                        taskTitle: state.taskTitle
+                    )
+                )
             }
         }
 
@@ -607,6 +634,7 @@ public final class BackgroundTaskManager: ObservableObject {
         clarificationResumeSuppressedTaskIds.remove(backgroundId)
         state.status = .cancelled
         state.captureContextPreview()
+        var durableTerminalFailure: String?
         // Mirror the markCompleted finalisation for the agent_runs row
         // so cancelled runs don't sit in `running` forever in the
         // Activity tab.
@@ -633,17 +661,53 @@ public final class BackgroundTaskManager: ObservableObject {
                     )
                 )
             } catch {
-                print("[BackgroundTaskManager] recordRunEnd (cancel) failed for run \(runId): \(error)")
+                var message =
+                    "The task stopped, but its durable terminal state could not be recorded: "
+                    + error.localizedDescription
+                if let cancelError {
+                    message += " Original cancellation reason: \(cancelError)."
+                }
+                durableTerminalFailure = message
+                state.status = .failed(summary: message)
+                state.captureContextPreview()
+                state.executionContext?.chatSession.save()
+                Self.writeRunTrace(
+                    runId: runId,
+                    state: state,
+                    status: .error,
+                    endedAt: endedAt,
+                    errorMessage: message
+                )
+                print(
+                    "[BackgroundTaskManager] recordRunEnd (cancel) failed for run "
+                        + "\(runId): \(error)"
+                )
             }
-            state.chatSession?.clearBackgroundRunLifecycle(runId: runId)
-            state.agentRunId = nil
+            if durableTerminalFailure == nil {
+                state.chatSession?.clearBackgroundRunLifecycle(runId: runId)
+                state.agentRunId = nil
+            }
         }
-        resumeCompletion(for: backgroundId, result: .cancelled)
-        emitPluginEvent(
-            state,
-            type: .cancelled,
-            json: PluginHostContext.serializeCancelledEvent(taskTitle: state.taskTitle)
-        )
+        resumeCompletion(for: backgroundId, result: resultFromState(state))
+        if let durableTerminalFailure {
+            emitPluginEvent(
+                state,
+                type: .failed,
+                json: PluginHostContext.serializeCompletedEvent(
+                    success: false,
+                    summary: durableTerminalFailure,
+                    sessionId: state.executionContext?.id,
+                    taskTitle: state.taskTitle,
+                    outputText: state.chatSession?.turns.last?.content
+                )
+            )
+        } else {
+            emitPluginEvent(
+                state,
+                type: .cancelled,
+                json: PluginHostContext.serializeCancelledEvent(taskTitle: state.taskTitle)
+            )
+        }
         releaseResidencyAndRearmChatWarmup(after: state)
         scheduleAutoFinalize(backgroundId)
         persistRetainedTabs()
@@ -1318,6 +1382,16 @@ public final class BackgroundTaskManager: ObservableObject {
             recomputeSortedToastTasks()
         }
 
+        /// Test-only: exercise the production terminal owner without waiting
+        /// for a model-backed ChatSession publisher transition.
+        func markCompletedForTesting(
+            _ state: BackgroundTaskState,
+            success: Bool,
+            summary: String
+        ) {
+            markCompleted(state, success: success, summary: summary)
+        }
+
         /// Test-only: register a task through the same admission gate
         /// `dispatchChat` uses — it starts immediately when capacity is
         /// available, or lands in the FIFO queue with its start deferred
@@ -1448,6 +1522,9 @@ public final class BackgroundTaskManager: ObservableObject {
         if let parentToolCallId = request.parentToolCallId, !parentToolCallId.isEmpty {
             fields["parent_tool_call_id"] = parentToolCallId
         }
+        if let stableJobId = request.stableJobId, !stableJobId.isEmpty {
+            fields["stable_job_id"] = SpawnBatchTool.durableJobId(stableJobId)
+        }
         guard let data = try? JSONEncoder().encode(fields),
             let json = String(data: data, encoding: .utf8)
         else { return nil }
@@ -1457,14 +1534,16 @@ public final class BackgroundTaskManager: ObservableObject {
     /// Mark a task as completed and signal callers.
     /// The toast persists until the user views it or dismisses manually.
     private func markCompleted(_ state: BackgroundTaskState, success: Bool, summary: String) {
+        var reportedSuccess = success
+        var reportedSummary = summary
+        var terminalWriteSucceeded = true
         state.status = success ? .completed(summary: summary) : .failed(summary: summary)
         state.currentStep = nil
         state.captureContextPreview()
         state.executionContext?.chatSession.save()
-        // Close out the scheduler `agent_runs` row, if one was opened
-        // for this task. `recordRunEnd` is a single UPDATE so the cost
-        // is negligible; failure to write only forfeits the audit
-        // trail entry, never the task's completion signal.
+        // Close out the scheduler `agent_runs` row, if one was opened.
+        // A failed terminal write changes the reported task outcome: callers
+        // must not observe success while the durable child still looks active.
         if let runId = state.agentRunId {
             let endStatus: AgentRunStatus = success ? .success : .error
             let errorMessage: String? = success ? nil : summary
@@ -1492,18 +1571,41 @@ public final class BackgroundTaskManager: ObservableObject {
                     )
                 )
             } catch {
-                print("[BackgroundTaskManager] recordRunEnd failed for run \(runId): \(error)")
+                terminalWriteSucceeded = false
+                reportedSuccess = false
+                reportedSummary =
+                    "The task settled, but its durable terminal state could not be recorded: "
+                    + error.localizedDescription
+                if !success {
+                    reportedSummary += " Original task failure: \(summary)"
+                }
+                state.status = .failed(summary: reportedSummary)
+                state.captureContextPreview()
+                state.executionContext?.chatSession.save()
+                Self.writeRunTrace(
+                    runId: runId,
+                    state: state,
+                    status: .error,
+                    endedAt: endedAt,
+                    errorMessage: reportedSummary
+                )
+                print(
+                    "[BackgroundTaskManager] recordRunEnd failed for run "
+                        + "\(runId): \(error)"
+                )
             }
-            state.chatSession?.clearBackgroundRunLifecycle(runId: runId)
-            state.agentRunId = nil
+            if terminalWriteSucceeded {
+                state.chatSession?.clearBackgroundRunLifecycle(runId: runId)
+                state.agentRunId = nil
+            }
         }
         resumeCompletion(for: state.id, result: resultFromState(state))
 
-        let eventType: TaskEventType = success ? .completed : .failed
+        let eventType: TaskEventType = reportedSuccess ? .completed : .failed
         let outputText = state.chatSession?.turns.last?.content
         let json = PluginHostContext.serializeCompletedEvent(
-            success: success,
-            summary: summary,
+            success: reportedSuccess,
+            summary: reportedSummary,
             sessionId: state.executionContext?.id,
             taskTitle: state.taskTitle,
             outputText: outputText

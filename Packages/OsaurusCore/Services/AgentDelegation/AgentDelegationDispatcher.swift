@@ -164,6 +164,7 @@ enum AgentDelegationDispatcher {
             rootRunId: scope.rootRunId,
             parentSessionId: UUID(uuidString: scope.sessionId),
             parentToolCallId: scope.parentToolCallId,
+            stableJobId: scope.stableJobId,
             // Enforced delegation budget: the chat surface clamps its
             // per-generation max tokens and tool-loop turns to these, and
             // RAM admission prices the child from the SAME values.
@@ -419,51 +420,54 @@ enum AgentDelegationDispatcher {
             childSessionId: taskId,
             parentSessionId: parentSessionId
         )
+        func durable(_ error: SubagentError) -> DurableSubagentError {
+            DurableSubagentError(runId: parentScope.runId, underlying: error)
+        }
 
         switch result {
         case .completed:
             guard var outcome = await harvestOutcome(sessionId: taskId, elapsed: elapsed) else {
-                throw SubagentError.executionFailed(
+                throw durable(.executionFailed(
                     message:
                         "Delegated agent '\(targetAgentName)' finished without producing a result.",
                     retryable: true
-                )
+                ))
             }
             outcome.artifactsShared = artifactsShared
             return outcome
         case .cancelled:
             switch reasonBox.value {
             case .interrupt:
-                throw SubagentError.userDenied(
+                throw durable(.userDenied(
                     "Delegated run for '\(targetAgentName)' was stopped by the user."
-                )
+                ))
             case .deadline:
-                throw SubagentError.timedOut(
+                throw durable(.timedOut(
                     "Delegated run for '\(targetAgentName)' hit its \(maxElapsedSeconds)s time budget."
-                )
+                ))
             case .queueTimeout:
-                throw SubagentError.timedOut(
+                throw durable(.timedOut(
                     "Delegated run for '\(targetAgentName)' waited \(Int(queueGrace))s "
                         + "for a background task slot without starting. "
                         + "Retry when fewer background tasks are running."
-                )
+                ))
             case .parentTask:
-                throw SubagentError.executionFailed(
+                throw durable(.executionFailed(
                     message: "Delegated run for '\(targetAgentName)' was cancelled with the parent run.",
                     retryable: false
-                )
+                ))
             case .none:
                 // Cancelled from outside this dispatcher (notch Stop on the
                 // child task itself, app shutdown).
-                throw SubagentError.userDenied(
+                throw durable(.userDenied(
                     "Delegated run for '\(targetAgentName)' was stopped."
-                )
+                ))
             }
         case .failed(let message):
-            throw SubagentError.executionFailed(
+            throw durable(.executionFailed(
                 message: "Delegated agent '\(targetAgentName)' failed: \(message)",
                 retryable: true
-            )
+            ))
         }
     }
 

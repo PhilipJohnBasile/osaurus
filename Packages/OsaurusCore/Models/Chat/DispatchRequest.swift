@@ -73,6 +73,8 @@ public struct DispatchRequest: Sendable {
     public let rootRunId: UUID?
     public let parentSessionId: UUID?
     public let parentToolCallId: String?
+    /// Caller-stable batch job identity. Provenance only, never lifecycle id.
+    public let stableJobId: String?
 
     /// True when this dispatch is a TRUE agent delegation (an orchestrating
     /// agent's `spawn_agent` / `spawn_batch` call). Derived from `source` —
@@ -132,6 +134,7 @@ public struct DispatchRequest: Sendable {
         rootRunId: UUID? = nil,
         parentSessionId: UUID? = nil,
         parentToolCallId: String? = nil,
+        stableJobId: String? = nil,
         delegationResponseTokenCap: Int? = nil,
         delegationContextPositionCap: Int? = nil,
         delegationAssistantTurnCap: Int? = nil
@@ -155,6 +158,7 @@ public struct DispatchRequest: Sendable {
         self.rootRunId = rootRunId
         self.parentSessionId = parentSessionId
         self.parentToolCallId = parentToolCallId
+        self.stableJobId = stableJobId
         self.delegationResponseTokenCap = delegationResponseTokenCap
         self.delegationContextPositionCap = delegationContextPositionCap
         self.delegationAssistantTurnCap = delegationAssistantTurnCap

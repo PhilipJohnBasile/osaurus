@@ -28,8 +28,10 @@ struct ChatTurnGenerationControlsTests {
         }
         let sendBody = String(source[sendStart.lowerBound...])
 
+        #expect(sendBody.contains("let durableRun = prepareDurableRunForSend("))
+        #expect(sendBody.contains("modelId: durableRun.modelId"))
         for snapshot in [
-            "let turnModelId = selectedModel",
+            "let turnModelId = durableRun.modelId",
             "let turnModelType = selectedPickerItem?.modelType",
             "let turnSupportsImages = selectedModelSupportsImages",
             "let turnSupportsAudio = selectedModelSupportsAudio",

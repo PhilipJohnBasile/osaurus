@@ -406,7 +406,8 @@ struct SpawnBatchToolTests {
         emitsChannelDeltas: Bool = false,
         authorityProbe: BatchExecutionAuthorityProbe? = nil,
         handoff: any SubagentHandoff = PassthroughHandoff(),
-        parentModelName: String? = nil
+        parentModelName: String? = nil,
+        parentToolCallId: String? = nil
     ) -> SpawnBatchTool.PreparedJob {
         let kind = ScriptedKind(
             local: isLocal,
@@ -423,7 +424,8 @@ struct SpawnBatchToolTests {
             toolCallId: "call:\(id)",
             agentId: Agent.defaultId,
             parentModelName: parentModelName,
-            enableThinking: true
+            enableThinking: true,
+            parentToolCallId: parentToolCallId
         )
         return SpawnBatchTool.PreparedJob(
             job: SpawnBatchTool.Job(
@@ -570,6 +572,37 @@ struct SpawnBatchToolTests {
             tool: "spawn_batch"
         )
         #expect(empty.failureEnvelope?.contains("1-32") == true)
+    }
+
+    @Test("job ids are bounded safe ASCII and secret-shaped ids redact durably")
+    func jobIdContractAndDurableRedaction() throws {
+        let maximum = String(repeating: "a", count: SpawnBatchTool.jobIdMaxLength)
+        let accepted = try SpawnBatchTool.parseJobs(
+            #"{"jobs":[{"id":"\#(maximum)","target_type":"model","target":"M","input":"x"}]}"#,
+            tool: "spawn_batch"
+        ).get()
+        #expect(accepted.first?.id == maximum)
+
+        let tooLong = String(
+            repeating: "a",
+            count: SpawnBatchTool.jobIdMaxLength + 1
+        )
+        let rejectedLength = SpawnBatchTool.parseJobs(
+            #"{"jobs":[{"id":"\#(tooLong)","target_type":"model","target":"M","input":"x"}]}"#,
+            tool: "spawn_batch"
+        )
+        #expect(rejectedLength.failureEnvelope?.contains("longer than") == true)
+
+        for invalid in ["contains space", "slash/id", "éclair", "-leading"] {
+            let rejectedCharacters = SpawnBatchTool.parseJobs(
+                #"{"jobs":[{"id":"\#(invalid)","target_type":"model","target":"M","input":"x"}]}"#,
+                tool: "spawn_batch"
+            )
+            #expect(rejectedCharacters.failureEnvelope?.contains("invalid `id`") == true)
+        }
+
+        #expect(SpawnBatchTool.durableJobId("ordinary-job") == "ordinary-job")
+        #expect(SpawnBatchTool.durableJobId("sk-test-secret") == "<redacted>")
     }
 
     @Test("local groups preserve model order and leave remotes in their own lane")
@@ -744,6 +777,100 @@ struct SpawnBatchToolTests {
                 cancelled: 3
             ) == "all_cancelled"
         )
+        #expect(
+            SpawnBatchTool.aggregateReportsSuccess(
+                succeeded: 1,
+                failed: 1
+            )
+        )
+        #expect(
+            !SpawnBatchTool.aggregateReportsSuccess(
+                succeeded: 0,
+                failed: 2
+            )
+        )
+    }
+
+    @Test("durable aggregate terminal follows the public envelope contract")
+    func durableAggregateStatusMatchesEnvelope() {
+        #expect(
+            SpawnBatchTool.aggregateRunStatus(
+                succeeded: 3,
+                failed: 0,
+                cancelled: 0
+            ) == .success
+        )
+        #expect(
+            SpawnBatchTool.aggregateRunStatus(
+                succeeded: 1,
+                failed: 2,
+                cancelled: 1
+            ) == .success
+        )
+        #expect(
+            SpawnBatchTool.aggregateRunStatus(
+                succeeded: 0,
+                failed: 2,
+                cancelled: 2
+            ) == .cancelled
+        )
+        #expect(
+            SpawnBatchTool.aggregateRunStatus(
+                succeeded: 0,
+                failed: 2,
+                cancelled: 1
+            ) == .error
+        )
+    }
+
+    @Test("aggregate durability errors distinguish outcome metadata from terminal closure")
+    func aggregateFinalizationFailureCopyIsTruthful() {
+        let outcomeOnly = SpawnBatchTool.aggregateFinalizationFailureMessage(
+            SpawnBatchTool.DurableAggregateFinalizationError.outcomeEvent(
+                "event refused"
+            )
+        )
+        let terminal = SpawnBatchTool.aggregateFinalizationFailureMessage(
+            SpawnBatchTool.DurableAggregateFinalizationError.terminal(
+                "terminal refused"
+            )
+        )
+
+        #expect(outcomeOnly.contains("terminal state was recorded"))
+        #expect(outcomeOnly.contains("outcome details"))
+        #expect(terminal.contains("terminal state was not"))
+    }
+
+    @Test("ledger receipt rebases prepared children without changing their identity")
+    func durableAggregateReceiptLinksPreparedChildren() throws {
+        let original = prepared(
+            index: 0,
+            id: "alpha",
+            targetType: .model,
+            target: "model-a",
+            model: "model-a",
+            isLocal: false,
+            admission: .remote,
+            parentToolCallId: "outer-spawn-batch-call"
+        )
+        let childRunID = original.run.scope.runId
+        let childToolCallID = original.run.scope.toolCallId
+        let originalToolCallID = original.run.scope.parentToolCallId
+        let aggregate = SpawnBatchTool.DurableAggregateRun(
+            runId: UUID(),
+            rootRunId: UUID()
+        )
+
+        let linked = try #require(
+            SpawnBatchTool.linkPreparedJobs([original], to: aggregate).first
+        )
+
+        #expect(linked.run.scope.runId == childRunID)
+        #expect(linked.run.scope.parentRunId == aggregate.runId)
+        #expect(linked.run.scope.rootRunId == aggregate.rootRunId)
+        #expect(linked.run.scope.toolCallId == childToolCallID)
+        #expect(linked.run.scope.parentToolCallId == originalToolCallID)
+        #expect(linked.run.scope.stableJobId == "alpha")
     }
 
     @Test("early cancellation keeps cause semantics and publishes its marker")
@@ -765,6 +892,18 @@ struct SpawnBatchToolTests {
             #expect(object["cancelled"] as? Bool == true)
             #expect(object["retryable"] as? Bool == false)
         }
+
+        let runId = UUID()
+        let admitted = SpawnBatchTool.earlyCancellationEnvelope(
+            tool: "spawn_batch",
+            userInterrupted: true,
+            runId: runId
+        )
+        let admittedObject = try #require(
+            JSONSerialization.jsonObject(with: Data(admitted.utf8))
+                as? [String: Any]
+        )
+        #expect(admittedObject["run_id"] as? String == runId.uuidString)
     }
 
     @Test("aggregate envelope fails only when every child failed")

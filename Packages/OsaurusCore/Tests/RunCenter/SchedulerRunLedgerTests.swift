@@ -342,6 +342,132 @@ struct SchedulerRunLedgerTests {
         #expect(parentEvents.last?.metadata["child_run_id"] == childRunId.uuidString)
     }
 
+    @Test func batchAggregateLinksStartedChildrenAndPreservesPartialTruth() throws {
+        let database = SchedulerDatabase()
+        try database.openInMemory()
+        defer { database.close() }
+
+        let agentId = UUID()
+        let recorder = SchedulerRunLifecycleRecorder(database: database)
+        let rootRunId = UUID()
+        let root = try recorder.admit(
+            RunLifecycleAdmission(
+                runId: rootRunId,
+                agentId: agentId,
+                triggerKind: .user,
+                instructions: "Parent chat",
+                startsImmediately: true
+            )
+        )
+        let parentRunId = UUID()
+        let parent = try recorder.admit(
+            RunLifecycleAdmission(
+                runId: parentRunId,
+                agentId: agentId,
+                triggerKind: .user,
+                instructions: "Intermediate parent agent",
+                startsImmediately: true,
+                parentRunId: root.runId,
+                rootRunId: root.rootRunId
+            )
+        )
+        let aggregateRunId = UUID()
+        let aggregate = try recorder.admit(
+            RunLifecycleAdmission(
+                runId: aggregateRunId,
+                agentId: agentId,
+                triggerKind: .user,
+                triggerPayload: #"{"source":"spawn_batch"}"#,
+                instructions: "spawn batch (2)",
+                startsImmediately: true,
+                parentRunId: parent.runId,
+                rootRunId: parent.rootRunId
+            )
+        )
+        let firstChildRunId = UUID()
+        let secondChildRunId = UUID()
+        let firstChild = try recorder.admit(
+            RunLifecycleAdmission(
+                runId: firstChildRunId,
+                agentId: agentId,
+                triggerKind: .user,
+                triggerPayload: #"{"stable_job_id":"first"}"#,
+                instructions: "first",
+                startsImmediately: true,
+                parentRunId: aggregate.runId,
+                rootRunId: aggregate.rootRunId
+            )
+        )
+        let secondChild = try recorder.admit(
+            RunLifecycleAdmission(
+                runId: secondChildRunId,
+                agentId: agentId,
+                triggerKind: .user,
+                triggerPayload: #"{"stable_job_id":"second"}"#,
+                instructions: "second",
+                startsImmediately: true,
+                parentRunId: aggregate.runId,
+                rootRunId: aggregate.rootRunId
+            )
+        )
+        try recorder.end(
+            RunLifecycleTerminalReceipt(runId: firstChild.runId, status: .success)
+        )
+        try recorder.end(
+            RunLifecycleTerminalReceipt(
+                runId: secondChild.runId,
+                status: .error,
+                error: "expected child failure"
+            )
+        )
+        try recorder.append(
+            runId: aggregate.runId,
+            kind: .progress,
+            occurredAt: Date(),
+            message: "2 batch jobs finished: 1 succeeded, 1 failed.",
+            metadata: [
+                "aggregate_status": "partial_failure",
+                "succeeded": "1",
+                "failed": "1",
+                "cancelled": "0",
+            ]
+        )
+        try recorder.end(
+            RunLifecycleTerminalReceipt(runId: aggregate.runId, status: .success)
+        )
+
+        #expect(aggregate.rootRunId == rootRunId)
+        #expect(firstChild.rootRunId == rootRunId)
+        #expect(secondChild.rootRunId == rootRunId)
+        let runs = try database.allRuns()
+        let parentRow = try #require(runs.first { $0.id == parentRunId })
+        let aggregateRow = try #require(runs.first { $0.id == aggregateRunId })
+        let firstChildRow = try #require(runs.first { $0.id == firstChildRunId })
+        let secondChildRow = try #require(runs.first { $0.id == secondChildRunId })
+        #expect(parentRow.parentRunId == rootRunId)
+        #expect(aggregateRow.parentRunId == parentRunId)
+        #expect(aggregateRow.status == .success)
+        #expect(firstChildRow.parentRunId == aggregateRunId)
+        #expect(firstChildRow.status == .success)
+        #expect(secondChildRow.parentRunId == aggregateRunId)
+        #expect(secondChildRow.status == .error)
+        let rootEvents = try database.events(runId: rootRunId)
+        let parentEvents = try database.events(runId: parentRunId)
+        #expect(rootEvents.last?.kind == .childLinked)
+        #expect(rootEvents.last?.metadata["child_run_id"] == parentRunId.uuidString)
+        #expect(parentEvents.last?.kind == .childLinked)
+        #expect(parentEvents.last?.metadata["child_run_id"] == aggregateRunId.uuidString)
+        let aggregateEvents = try database.events(runId: aggregateRunId)
+        #expect(
+            aggregateEvents.map(\.kind)
+                == [.created, .started, .childLinked, .childLinked, .progress, .completed]
+        )
+        #expect(
+            aggregateEvents.first { $0.kind == .progress }?
+                .metadata["aggregate_status"] == "partial_failure"
+        )
+    }
+
     @Test func metadataEventsAndTerminalStateRoundTrip() throws {
         let database = SchedulerDatabase()
         try database.openInMemory()

@@ -133,6 +133,13 @@ public enum SubagentSession {
     /// id for the message.
     @TaskLocal public static var activeKindId: String?
 
+    /// Task-scoped lifecycle sink used by deterministic production-path tests
+    /// and future isolated runtime owners. Child tasks inherit the binding, so
+    /// a batch aggregate and every in-memory child write to the same ledger.
+    /// Production leaves this nil and resolves the shared scheduler recorder.
+    @TaskLocal static var runLifecycleRecorderOverride:
+        (any RunLifecycleRecording)?
+
     /// True when a subagent kind is currently running on this task tree.
     public static var isActive: Bool { activeKindId != nil }
 
@@ -141,10 +148,24 @@ public enum SubagentSession {
         let rootRunId: UUID
     }
 
+    private enum DurableChildFinalizationError: LocalizedError {
+        case terminal(runId: UUID, message: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .terminal(let runId, let message):
+                return "durable child terminal failed run=\(runId): \(message)"
+            }
+        }
+    }
+
     /// Unit suites exercise the host with scripted kinds and must not write
     /// the user's scheduler ledger. Production paths use the shared recorder;
     /// focused lifecycle tests inject their own sink through runPrepared.
-    private static func defaultRunLifecycleRecorder() -> any RunLifecycleRecording {
+    static func resolvedRunLifecycleRecorder() -> any RunLifecycleRecording {
+        if let runLifecycleRecorderOverride {
+            return runLifecycleRecorderOverride
+        }
         #if DEBUG
             if RuntimeEnvironment.isUnderTests {
                 return DiscardingRunLifecycleRecorder.shared
@@ -165,6 +186,9 @@ public enum SubagentSession {
             fields["owner"] = "background_task_manager"
         } else {
             fields["owner"] = "subagent_session"
+        }
+        if let stableJobId = prepared.scope.stableJobId {
+            fields["stable_job_id"] = SpawnBatchTool.durableJobId(stableJobId)
         }
         guard JSONSerialization.isValidJSONObject(fields),
             let data = try? JSONSerialization.data(
@@ -208,7 +232,7 @@ public enum SubagentSession {
         recorder: any RunLifecycleRecording,
         status: AgentRunStatus,
         error: String? = nil
-    ) {
+    ) throws {
         guard let run else { return }
         do {
             try recorder.end(
@@ -219,11 +243,49 @@ public enum SubagentSession {
                 )
             )
         } catch {
-            let message =
-                "durable child terminal failed run=\(run.runId) "
-                + "error=\(error.localizedDescription)"
-            subagentLog.error("\(message, privacy: .public)")
+            throw DurableChildFinalizationError.terminal(
+                runId: run.runId,
+                message: error.localizedDescription
+            )
         }
+    }
+
+    private static func durableTerminalFailureEnvelope(
+        _ error: any Error,
+        tool: String,
+        runId: UUID
+    ) -> String {
+        ToolEnvelope.failure(
+            kind: .executionError,
+            message:
+                "The child work settled, but its durable terminal state could not be recorded: "
+                + error.localizedDescription,
+            tool: tool,
+            retryable: false,
+            metadata: [
+                "run_id": runId.uuidString,
+                "terminal_write_failed": true,
+            ]
+        )
+    }
+
+    private static func addingRunIdentity(
+        to envelope: String,
+        runId: UUID?
+    ) -> String {
+        guard let runId,
+            let data = envelope.data(using: .utf8),
+            let jsonObject = try? JSONSerialization.jsonObject(with: data),
+            var object = jsonObject as? [String: Any]
+        else { return envelope }
+        object["run_id"] = runId.uuidString
+        guard JSONSerialization.isValidJSONObject(object),
+            let encoded = try? JSONSerialization.data(
+                withJSONObject: object,
+                options: [.sortedKeys, .withoutEscapingSlashes]
+            )
+        else { return envelope }
+        return String(data: encoded, encoding: .utf8) ?? envelope
     }
 
     /// Run any subagent kind end to end and return a canonical envelope.
@@ -1076,7 +1138,7 @@ public enum SubagentSession {
         }
         let started = Date()
         let runLifecycleRecorder =
-            suppliedRunLifecycleRecorder ?? defaultRunLifecycleRecorder()
+            suppliedRunLifecycleRecorder ?? resolvedRunLifecycleRecorder()
         let durableChild: DurableChildRun?
         do {
             durableChild = try admitDurableChild(
@@ -1137,11 +1199,26 @@ public enum SubagentSession {
                 }
                 admissionHeld = false
             }
-            endDurableChild(
-                durableChild,
-                recorder: runLifecycleRecorder,
-                status: .cancelled
-            )
+            do {
+                try endDurableChild(
+                    durableChild,
+                    recorder: runLifecycleRecorder,
+                    status: .cancelled
+                )
+            } catch {
+                let envelope = durableTerminalFailureEnvelope(
+                    error,
+                    tool: prepared.tool,
+                    runId: prepared.scope.runId
+                )
+                if presentation.finishFeed {
+                    feed.finish(
+                        success: false,
+                        summary: ToolEnvelope.failureMessage(envelope)
+                    )
+                }
+                return envelope
+            }
             let envelope = ToolEnvelope.failure(
                 kind: interrupt.isInterrupted ? .userDenied : .executionError,
                 message: interrupt.isInterrupted
@@ -1149,7 +1226,10 @@ public enum SubagentSession {
                     : "Run was cancelled before execution began.",
                 tool: prepared.tool,
                 retryable: false,
-                metadata: ["cancelled": true]
+                metadata: [
+                    "cancelled": true,
+                    "run_id": prepared.scope.runId.uuidString,
+                ]
             )
             if presentation.finishFeed {
                 feed.finish(
@@ -1226,7 +1306,7 @@ public enum SubagentSession {
                 }
                 admissionHeld = false
             }
-            endDurableChild(
+            try endDurableChild(
                 durableChild,
                 recorder: runLifecycleRecorder,
                 status: .success
@@ -1239,6 +1319,7 @@ public enum SubagentSession {
             // snapshot cannot be attributed to one concurrent child;
             // SpawnBatchTool records one aggregate before/after delta instead.
             var payload = result.payload
+            payload["run_id"] = prepared.scope.runId.uuidString
             var residency: [String: Any] = [:]
             let phases = Self.residencyPhaseTimings(
                 events: feed.currentEvents(),
@@ -1293,27 +1374,65 @@ public enum SubagentSession {
                     )
                 }
             }
-            let cancelled = error is CancellationError || interrupt.isInterrupted
-            endDurableChild(
-                durableChild,
-                recorder: runLifecycleRecorder,
-                status: cancelled ? .cancelled : .error,
-                error: cancelled ? nil : error.localizedDescription
-            )
             let env: String
-            if error is CancellationError {
-                env = ToolEnvelope.failure(
-                    kind: interrupt.isInterrupted ? .userDenied : .executionError,
-                    message:
-                        interrupt.isInterrupted
-                        ? "Run was stopped by the user."
-                        : "Run was cancelled.",
+            if error is DurableChildFinalizationError {
+                env = durableTerminalFailureEnvelope(
+                    error,
                     tool: prepared.tool,
-                    retryable: false,
-                    metadata: ["cancelled": true]
+                    runId: prepared.scope.runId
                 )
             } else {
-                env = envelope(for: error, tool: prepared.tool)
+                let cancelled = error is CancellationError || interrupt.isInterrupted
+                do {
+                    try endDurableChild(
+                        durableChild,
+                        recorder: runLifecycleRecorder,
+                        status: cancelled ? .cancelled : .error,
+                        error: cancelled ? nil : error.localizedDescription
+                    )
+                } catch {
+                    let terminalEnvelope = durableTerminalFailureEnvelope(
+                        error,
+                        tool: prepared.tool,
+                        runId: prepared.scope.runId
+                    )
+                    if presentation.finishFeed {
+                        feed.finish(
+                            success: false,
+                            summary: ToolEnvelope.failureMessage(terminalEnvelope)
+                        )
+                    }
+                    SubagentTelemetry.record(
+                        kindId: prepared.kind.capability.id,
+                        success: false,
+                        elapsed: Date().timeIntervalSince(started),
+                        phases: Self.residencyPhaseTimings(
+                            events: feed.currentEvents(),
+                            endedAt: Date()
+                        )
+                    )
+                    return terminalEnvelope
+                }
+                if error is CancellationError {
+                    env = ToolEnvelope.failure(
+                        kind: interrupt.isInterrupted ? .userDenied : .executionError,
+                        message:
+                            interrupt.isInterrupted
+                            ? "Run was stopped by the user."
+                            : "Run was cancelled.",
+                        tool: prepared.tool,
+                        retryable: false,
+                        metadata: [
+                            "cancelled": true,
+                            "run_id": prepared.scope.runId.uuidString,
+                        ]
+                    )
+                } else {
+                    env = addingRunIdentity(
+                        to: envelope(for: error, tool: prepared.tool),
+                        runId: durableChild?.runId
+                    )
+                }
             }
             if presentation.finishFeed {
                 feed.finish(success: false, summary: ToolEnvelope.failureMessage(env))
@@ -1436,6 +1555,12 @@ public enum SubagentSession {
     /// carries its own kind/retryable; anything else falls back to
     /// `ToolEnvelope.fromError`.
     static func envelope(for error: Error, tool: String) -> String {
+        if let durable = error as? DurableSubagentError {
+            return addingRunIdentity(
+                to: durable.underlying.envelope(tool: tool),
+                runId: durable.runId
+            )
+        }
         if let se = error as? SubagentError { return se.envelope(tool: tool) }
         return ToolEnvelope.fromError(error, tool: tool)
     }

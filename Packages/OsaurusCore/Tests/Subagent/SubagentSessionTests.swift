@@ -101,17 +101,24 @@ private final class RecordingSubagentRunLifecycleRecorder:
         case rejected
     }
 
+    private enum ExpectedTerminalError: Error {
+        case rejected
+    }
+
     private let lock = NSLock()
     private let rejectsAdmission: Bool
+    private let rejectsTerminal: Bool
     private let interruptOnAdmission: InterruptToken?
     private var storedAdmissions: [RunLifecycleAdmission] = []
     private var storedTerminals: [RunLifecycleTerminalReceipt] = []
 
     init(
         rejectsAdmission: Bool = false,
+        rejectsTerminal: Bool = false,
         interruptOnAdmission: InterruptToken? = nil
     ) {
         self.rejectsAdmission = rejectsAdmission
+        self.rejectsTerminal = rejectsTerminal
         self.interruptOnAdmission = interruptOnAdmission
     }
 
@@ -146,6 +153,9 @@ private final class RecordingSubagentRunLifecycleRecorder:
     ) throws {}
 
     func end(_ receipt: RunLifecycleTerminalReceipt) throws {
+        if rejectsTerminal {
+            throw ExpectedTerminalError.rejected
+        }
         lock.withLock { storedTerminals.append(receipt) }
     }
 }
@@ -201,10 +211,11 @@ struct SubagentSessionTests {
 
         #expect(first.runId != second.runId)
         #expect(first.sessionId == parentScope.sessionId)
-        #expect(first.parentRunId == parentRunId)
+        #expect(first.parentRunId == parentScope.runId)
         #expect(first.rootRunId == rootRunId)
         #expect(first.toolCallId == "spawn-batch-call:job-3")
         #expect(first.parentToolCallId == "spawn-batch-call")
+        #expect(first.stableJobId == "job-3")
     }
 
     @Test("happy path returns a success envelope carrying the kind payload")
@@ -270,6 +281,10 @@ struct SubagentSessionTests {
         #expect(trigger.contains(#""parent_session_id":"\#(parentSessionId.uuidString)""#))
         #expect(binding.value.runId == childRunId)
         #expect(binding.value.rootRunId == rootRunId)
+        let payload = try #require(
+            ToolEnvelope.successPayload(envelope) as? [String: Any]
+        )
+        #expect(payload["run_id"] as? String == childRunId.uuidString)
         #expect(recorder.terminals.count == 1)
         #expect(recorder.terminals.first?.runId == childRunId)
         #expect(recorder.terminals.first?.status == .success)
@@ -373,6 +388,45 @@ struct SubagentSessionTests {
         #expect(bodyRan.value.runId == nil)
     }
 
+    @Test("ordinary child surfaces a durable terminal write failure")
+    func rejectedDurableChildTerminalCannotReportSuccess() async {
+        let recorder = RecordingSubagentRunLifecycleRecorder(
+            rejectsTerminal: true
+        )
+        let bodyRan = RunBindingBox()
+        let scope = SubagentScope(
+            sessionId: UUID().uuidString,
+            toolCallId: "child-terminal-refusal",
+            agentId: UUID()
+        )
+        let kind = ScriptedKind(
+            body: { _, _, _, _ in
+                bodyRan.capture()
+                return SubagentResult(payload: ["summary": "work settled"])
+            }
+        )
+        guard case .ready(let prepared) = await SubagentSession.prepare(
+            kind,
+            tool: "scripted",
+            scope: scope
+        ) else {
+            Issue.record("Expected the ordinary child to prepare")
+            return
+        }
+
+        let envelope = await SubagentSession.runPrepared(
+            prepared,
+            runLifecycleRecorder: recorder
+        )
+
+        #expect(ToolEnvelope.isError(envelope))
+        #expect(decode(envelope)["run_id"] as? String == scope.runId.uuidString)
+        #expect(decode(envelope)["terminal_write_failed"] as? Bool == true)
+        #expect(recorder.admissions.count == 1)
+        #expect(recorder.terminals.isEmpty)
+        #expect(bodyRan.value.runId == scope.runId)
+    }
+
     @Test("stop during durable admission settles without starting the child")
     func stopDuringDurableAdmissionNeverExecutes() async {
         let interrupt = InterruptToken()
@@ -447,6 +501,22 @@ struct SubagentSessionTests {
         #expect(ToolEnvelope.isError(nested))
         #expect(decode(nested)["kind"] as? String == "rejected")
         #expect(ToolEnvelope.failureMessage(nested).contains("running subagent"))
+    }
+
+    @Test("admitted delegated failures preserve kind and durable run identity")
+    func admittedDelegatedFailureCorrelation() {
+        let runId = UUID()
+        let envelope = SubagentSession.envelope(
+            for: DurableSubagentError(
+                runId: runId,
+                underlying: .userDenied("delegated child stopped")
+            ),
+            tool: "spawn_batch"
+        )
+
+        #expect(ToolEnvelope.isError(envelope))
+        #expect(decode(envelope)["kind"] as? String == "user_denied")
+        #expect(decode(envelope)["run_id"] as? String == runId.uuidString)
     }
 
     @Test("policy denial maps to a rejected envelope")

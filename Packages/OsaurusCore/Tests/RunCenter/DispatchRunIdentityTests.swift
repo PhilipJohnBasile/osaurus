@@ -16,9 +16,19 @@ private final class RejectingRunLifecycleRecorder:
     RunLifecycleRecording, @unchecked Sendable
 {
     private let lock = NSLock()
+    private let rejectsAdmission: Bool
+    private let rejectsTerminal: Bool
     private var storedAdmissions: [RunLifecycleAdmission] = []
     private var storedAppends = 0
     private var storedTerminals: [RunLifecycleTerminalReceipt] = []
+
+    init(
+        rejectsAdmission: Bool = true,
+        rejectsTerminal: Bool = false
+    ) {
+        self.rejectsAdmission = rejectsAdmission
+        self.rejectsTerminal = rejectsTerminal
+    }
 
     var admissions: [RunLifecycleAdmission] {
         lock.withLock { storedAdmissions }
@@ -36,7 +46,13 @@ private final class RejectingRunLifecycleRecorder:
         _ admission: RunLifecycleAdmission
     ) throws -> RunLifecycleAdmissionReceipt {
         lock.withLock { storedAdmissions.append(admission) }
-        throw RejectedAdmission.expected
+        if rejectsAdmission {
+            throw RejectedAdmission.expected
+        }
+        return RunLifecycleAdmissionReceipt(
+            runId: admission.runId,
+            rootRunId: admission.rootRunId ?? admission.runId
+        )
     }
 
     func append(
@@ -50,6 +66,9 @@ private final class RejectingRunLifecycleRecorder:
     }
 
     func end(_ receipt: RunLifecycleTerminalReceipt) throws {
+        if rejectsTerminal {
+            throw RejectedAdmission.expected
+        }
         lock.withLock { storedTerminals.append(receipt) }
     }
 }
@@ -82,7 +101,8 @@ struct DispatchRunIdentityTests {
             parentRunId: parentRunId,
             rootRunId: rootRunId,
             parentSessionId: parentSessionId,
-            parentToolCallId: "call-42"
+            parentToolCallId: "call-42",
+            stableJobId: "batch-job-42"
         )
         let handle = DispatchHandle(id: request.id, runId: request.runId, request: request)
 
@@ -91,6 +111,7 @@ struct DispatchRunIdentityTests {
         #expect(request.rootRunId == rootRunId)
         #expect(request.parentSessionId == parentSessionId)
         #expect(request.parentToolCallId == "call-42")
+        #expect(request.stableJobId == "batch-job-42")
         #expect(request.runId != parentRunId)
         #expect(request.runId != rootRunId)
     }
@@ -167,7 +188,8 @@ struct DispatchRunIdentityTests {
                 parentRunId: UUID(),
                 rootRunId: UUID(),
                 parentSessionId: UUID(),
-                parentToolCallId: "spawn-agent-call"
+                parentToolCallId: "spawn-agent-call",
+                stableJobId: "sk-test-secret"
             )
 
             let handle = await manager.dispatchChat(request)
@@ -175,9 +197,56 @@ struct DispatchRunIdentityTests {
             #expect(handle == nil)
             #expect(recorder.admissions.count == 1)
             #expect(recorder.admissions.first?.runId == request.runId)
+            #expect(
+                recorder.admissions.first?.triggerPayload?.contains(
+                    #""stable_job_id":"<redacted>""#
+                ) == true
+            )
+            #expect(
+                recorder.admissions.first?.triggerPayload?.contains("sk-test-secret")
+                    == false
+            )
             #expect(recorder.appendCount == 0)
             #expect(recorder.terminals.isEmpty)
             #expect(manager.backgroundTasks.isEmpty)
         }
+    }
+
+    @Test func delegatedTerminalFailureCannotReportCompleted() {
+        let recorder = RejectingRunLifecycleRecorder(
+            rejectsAdmission: false,
+            rejectsTerminal: true
+        )
+        let manager = BackgroundTaskManager.makeForTesting(
+            runLifecycleRecorder: recorder
+        )
+        let context = ExecutionContext(agentId: Agent.defaultId)
+        let state = BackgroundTaskState(
+            id: UUID(),
+            taskTitle: "Delegated child",
+            agentId: Agent.defaultId,
+            chatSession: context.chatSession,
+            executionContext: context,
+            source: .delegation,
+            showToast: false
+        )
+        let runId = UUID()
+        state.agentRunId = runId
+        manager.registerTaskForTesting(state)
+        defer { manager.finalizeTask(state.id) }
+
+        manager.markCompletedForTesting(
+            state,
+            success: true,
+            summary: "child work settled"
+        )
+
+        guard case .failed(let summary) = state.status else {
+            Issue.record("Expected the delegated terminal write failure to win")
+            return
+        }
+        #expect(summary.contains("durable terminal state"))
+        #expect(state.agentRunId == runId)
+        #expect(recorder.terminals.isEmpty)
     }
 }

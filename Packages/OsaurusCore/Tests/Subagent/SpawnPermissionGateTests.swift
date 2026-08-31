@@ -90,9 +90,11 @@ private actor DirectPermissionProbe {
 private actor BatchAuthorityProbe {
     private var preparationCount = 0
     private var runCount = 0
+    private var preparedScopes: [SubagentScope] = []
 
-    func nextPreparation() -> Int {
+    func nextPreparation(scope: SubagentScope) -> Int {
         preparationCount += 1
+        preparedScopes.append(scope)
         return preparationCount
     }
 
@@ -100,8 +102,113 @@ private actor BatchAuthorityProbe {
         runCount += 1
     }
 
-    func snapshot() -> (preparations: Int, runs: Int) {
-        (preparationCount, runCount)
+    func snapshot() -> (
+        preparations: Int,
+        runs: Int,
+        scopes: [SubagentScope]
+    ) {
+        (preparationCount, runCount, preparedScopes)
+    }
+}
+
+private final class BatchRunLifecycleRecorder:
+    RunLifecycleRecording, @unchecked Sendable
+{
+    enum Failure: Error {
+        case admissionRejected
+        case eventRejected
+        case terminalRejected
+    }
+
+    enum Operation: Sendable, Equatable {
+        case admit(UUID)
+        case append(UUID)
+        case end(UUID)
+    }
+
+    struct AppendedEvent: Sendable {
+        let runId: UUID
+        let kind: RunCenterEventKind
+        let metadata: [String: String]
+    }
+
+    private let lock = NSLock()
+    private let rejectAdmissions: Bool
+    private let rejectEvents: Bool
+    private let rejectTerminals: Bool
+    private var storedAdmissionAttempts = 0
+    private var storedAdmissions: [RunLifecycleAdmission] = []
+    private var storedEvents: [AppendedEvent] = []
+    private var storedTerminals: [RunLifecycleTerminalReceipt] = []
+    private var storedOperations: [Operation] = []
+
+    init(
+        rejectAdmissions: Bool = false,
+        rejectEvents: Bool = false,
+        rejectTerminals: Bool = false
+    ) {
+        self.rejectAdmissions = rejectAdmissions
+        self.rejectEvents = rejectEvents
+        self.rejectTerminals = rejectTerminals
+    }
+
+    var admissionAttempts: Int {
+        lock.withLock { storedAdmissionAttempts }
+    }
+
+    var admissions: [RunLifecycleAdmission] {
+        lock.withLock { storedAdmissions }
+    }
+
+    var events: [AppendedEvent] {
+        lock.withLock { storedEvents }
+    }
+
+    var terminals: [RunLifecycleTerminalReceipt] {
+        lock.withLock { storedTerminals }
+    }
+
+    var operations: [Operation] {
+        lock.withLock { storedOperations }
+    }
+
+    func admit(
+        _ admission: RunLifecycleAdmission
+    ) throws -> RunLifecycleAdmissionReceipt {
+        try lock.withLock {
+            storedAdmissionAttempts += 1
+            guard !rejectAdmissions else { throw Failure.admissionRejected }
+            storedAdmissions.append(admission)
+            storedOperations.append(.admit(admission.runId))
+        }
+        return RunLifecycleAdmissionReceipt(
+            runId: admission.runId,
+            rootRunId: admission.rootRunId ?? admission.runId
+        )
+    }
+
+    func append(
+        runId: UUID,
+        kind: RunCenterEventKind,
+        occurredAt _: Date,
+        message _: String?,
+        metadata: [String: String]
+    ) throws {
+        try lock.withLock {
+            guard !rejectEvents else { throw Failure.eventRejected }
+            storedEvents.append(
+                AppendedEvent(runId: runId, kind: kind, metadata: metadata)
+            )
+            storedOperations.append(.append(runId))
+        }
+    }
+
+    func end(_ receipt: RunLifecycleTerminalReceipt) throws {
+        try lock.withLock {
+            guard !rejectTerminals else { throw Failure.terminalRejected }
+            storedTerminals.append(receipt)
+            storedOperations.append(.end(receipt.runId))
+        }
     }
 }
 
@@ -126,7 +233,7 @@ private final class BatchAuthorityKind: SubagentKind, @unchecked Sendable {
     }
 
     func resolveModel(_ scope: SubagentScope) async throws -> ResolvedModel {
-        let ordinal = await probe.nextPreparation()
+        let ordinal = await probe.nextPreparation(scope: scope)
         await onPreparation?(ordinal)
         return ResolvedModel(name: "batch-authority/remote", isLocal: false)
     }
@@ -231,10 +338,11 @@ struct SpawnPermissionGateTests {
 
     private static func batchArguments(
         targetType: String = "model",
-        target: String = "allowed/model"
+        target: String = "allowed/model",
+        jobID: String = "one"
     ) -> String {
         """
-        {"jobs":[{"id":"one","target_type":"\(targetType)","target":"\(target)","input":"Do one bounded task"}]}
+        {"jobs":[{"id":"\(jobID)","target_type":"\(targetType)","target":"\(target)","input":"Do one bounded task"}]}
         """
     }
 
@@ -925,6 +1033,7 @@ struct SpawnPermissionGateTests {
 
         let probe = BatchAuthorityProbe()
         let prompt = SpawnPromptProbe()
+        let lifecycle = BatchRunLifecycleRecorder()
         let overrides = SpawnBatchTool.EvaluationOverrides(
             kindForJob: { _ in BatchAuthorityKind(probe: probe) },
             maxParallel: 1,
@@ -932,27 +1041,44 @@ struct SpawnPermissionGateTests {
             localAdmissionPlan: Self.remoteAdmissionPlan()
         )
         let callID = "spawn-batch-stable-authority-\(UUID().uuidString)"
+        let sessionID = UUID()
+        let parentRunID = UUID()
+        let stableJobID = "sk-test-secret"
         let result = try await ChatExecutionContext.$currentSessionId.withValue(
-            "spawn-batch-stable-authority"
+            sessionID.uuidString
         ) {
             try await ChatExecutionContext.$currentToolCallId.withValue(callID) {
                 try await ChatExecutionContext.$currentAgentId.withValue(
                     Agent.defaultId
                 ) {
-                    try await SpawnBatchTool.$evaluationOverrides.withValue(
-                        overrides
+                    try await ChatExecutionContext.$currentRunId.withValue(
+                        parentRunID
                     ) {
-                        try await SpawnPermissionGate.$promptOverride.withValue(
-                            { request in
-                                await prompt.record(
-                                    request,
-                                    returning: .allowOnce
-                                )
-                            }
+                        try await ChatExecutionContext.$currentRootRunId.withValue(
+                            parentRunID
                         ) {
-                            try await SpawnBatchTool().execute(
-                                argumentsJSON: Self.batchArguments()
-                            )
+                            try await SpawnBatchTool.$evaluationOverrides.withValue(
+                                overrides
+                            ) {
+                                try await SubagentSession.$runLifecycleRecorderOverride.withValue(
+                                    lifecycle
+                                ) {
+                                    try await SpawnPermissionGate.$promptOverride.withValue(
+                                        { request in
+                                            await prompt.record(
+                                                request,
+                                                returning: .allowOnce
+                                            )
+                                        }
+                                    ) {
+                                        try await SpawnBatchTool().execute(
+                                            argumentsJSON: Self.batchArguments(
+                                                jobID: stableJobID
+                                            )
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -964,7 +1090,169 @@ struct SpawnPermissionGateTests {
         #expect((await prompt.snapshot()).requests.count == 1)
         #expect(execution.preparations == 2)
         #expect(execution.runs == 1)
+        #expect(execution.scopes.map(\.runId).count == 2)
+        #expect(Set(execution.scopes.map(\.runId)).count == 1)
+        #expect(execution.scopes.allSatisfy { $0.stableJobId == stableJobID })
         #expect(!ToolEnvelope.isError(result))
+
+        let aggregateAdmission = try #require(
+            lifecycle.admissions.first {
+                $0.triggerPayload?.contains(#""source":"spawn_batch""#) == true
+            }
+        )
+        let childAdmission = try #require(
+            lifecycle.admissions.first {
+                $0.triggerPayload?.contains(#""source":"subagent""#) == true
+            }
+        )
+        #expect(lifecycle.admissions.count == 2)
+        #expect(aggregateAdmission.parentRunId == parentRunID)
+        #expect(aggregateAdmission.rootRunId == parentRunID)
+        #expect(aggregateAdmission.sessionId == sessionID)
+        #expect(aggregateAdmission.triggerPayload?.contains(callID) == true)
+        #expect(aggregateAdmission.triggerPayload?.contains(stableJobID) == false)
+        #expect(
+            aggregateAdmission.triggerPayload?.contains(#""job_ids":["<redacted>"]"#)
+                == true
+        )
+        #expect(childAdmission.parentRunId == aggregateAdmission.runId)
+        #expect(childAdmission.rootRunId == parentRunID)
+        #expect(childAdmission.runId == execution.scopes.first?.runId)
+        #expect(childAdmission.triggerPayload?.contains(callID) == true)
+        #expect(
+            childAdmission.triggerPayload?.contains(
+                #""stable_job_id":"<redacted>""#
+            ) == true
+        )
+        #expect(lifecycle.terminals.count == 2)
+        #expect(lifecycle.terminals.allSatisfy { $0.status == .success })
+        let aggregateEvent = try #require(
+            lifecycle.events.first { $0.runId == aggregateAdmission.runId }
+        )
+        #expect(aggregateEvent.kind == .progress)
+        #expect(aggregateEvent.metadata["aggregate_status"] == "succeeded")
+        #expect(aggregateEvent.metadata["succeeded"] == "1")
+        #expect(lifecycle.operations.last == .end(aggregateAdmission.runId))
+        let aggregatePayload = try #require(
+            ToolEnvelope.successPayload(result) as? [String: Any]
+        )
+        #expect(
+            aggregatePayload["run_id"] as? String
+                == aggregateAdmission.runId.uuidString
+        )
+    }
+
+    @Test("batch fails closed when the aggregate ledger admission is refused")
+    func batchRejectsAggregateAdmissionBeforeStartingChildren() async throws {
+        let lease = await acquireSubagentStoreSandbox(
+            "spawn-permission-batch-ledger-refusal"
+        )
+        defer { lease.release() }
+
+        var permissions = SubagentPermissionDefaults()
+        permissions.setPolicy(.allow, for: SubagentCapabilityRegistry.spawn.id)
+        SubagentConfigurationStore.save(
+            SubagentConfiguration(
+                permissionDefaults: permissions,
+                budgets: SubagentBudgets(maxParallelSpawns: 1),
+                spawnableModelNames: ["allowed/model"]
+            )
+        )
+
+        let probe = BatchAuthorityProbe()
+        let lifecycle = BatchRunLifecycleRecorder(rejectAdmissions: true)
+        let overrides = SpawnBatchTool.EvaluationOverrides(
+            kindForJob: { _ in BatchAuthorityKind(probe: probe) },
+            maxParallel: 1,
+            localParallelism: 1,
+            localAdmissionPlan: Self.remoteAdmissionPlan()
+        )
+        let callID = "spawn-batch-ledger-refusal-\(UUID().uuidString)"
+        let result = try await ChatExecutionContext.$currentSessionId.withValue(
+            UUID().uuidString
+        ) {
+            try await ChatExecutionContext.$currentToolCallId.withValue(callID) {
+                try await ChatExecutionContext.$currentAgentId.withValue(
+                    Agent.defaultId
+                ) {
+                    try await ChatExecutionContext.$currentRunId.withValue(UUID()) {
+                        try await SpawnBatchTool.$evaluationOverrides.withValue(
+                            overrides
+                        ) {
+                            try await SubagentSession.$runLifecycleRecorderOverride.withValue(
+                                lifecycle
+                            ) {
+                                try await SpawnBatchTool().execute(
+                                    argumentsJSON: Self.batchArguments()
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        SubagentFeedRegistry.shared.removeNow(toolCallId: callID)
+
+        let execution = await probe.snapshot()
+        #expect(ToolEnvelope.isError(result))
+        #expect(
+            ToolEnvelope.failureMessage(result).contains(
+                "could not be recorded durably"
+            )
+        )
+        #expect(execution.runs == 0)
+        #expect(lifecycle.admissionAttempts == 1)
+        #expect(lifecycle.admissions.isEmpty)
+        #expect(lifecycle.terminals.isEmpty)
+    }
+
+    @Test("aggregate terminal write failures propagate to the owner")
+    func aggregateTerminalFailureIsNotSwallowed() {
+        let lifecycle = BatchRunLifecycleRecorder(rejectTerminals: true)
+        let aggregate = SpawnBatchTool.DurableAggregateRun(
+            runId: UUID(),
+            rootRunId: UUID()
+        )
+
+        #expect(throws: (any Error).self) {
+            try SpawnBatchTool.finishDurableAggregate(
+                aggregate,
+                recorder: lifecycle,
+                status: .success,
+                aggregateStatus: "succeeded",
+                succeeded: 1,
+                failed: 0,
+                cancelled: 0,
+                summary: "one job succeeded"
+            )
+        }
+        #expect(lifecycle.events.count == 1)
+        #expect(lifecycle.terminals.isEmpty)
+    }
+
+    @Test("aggregate outcome event failures still attempt terminal closure")
+    func aggregateEventFailureIsNotSwallowed() {
+        let lifecycle = BatchRunLifecycleRecorder(rejectEvents: true)
+        let aggregate = SpawnBatchTool.DurableAggregateRun(
+            runId: UUID(),
+            rootRunId: UUID()
+        )
+
+        #expect(throws: (any Error).self) {
+            try SpawnBatchTool.finishDurableAggregate(
+                aggregate,
+                recorder: lifecycle,
+                status: .success,
+                aggregateStatus: "succeeded",
+                succeeded: 1,
+                failed: 0,
+                cancelled: 0,
+                summary: "one job succeeded"
+            )
+        }
+        #expect(lifecycle.events.isEmpty)
+        #expect(lifecycle.terminals.count == 1)
+        #expect(lifecycle.terminals.first?.runId == aggregate.runId)
     }
 
     @Test("batch rejects authority mutation while Ask is open before re-preparing")

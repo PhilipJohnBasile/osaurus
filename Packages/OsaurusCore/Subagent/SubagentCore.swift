@@ -37,6 +37,9 @@ public struct SubagentScope: Sendable, Equatable {
     /// synthetic `toolCallId` for sibling feed isolation, but retain this
     /// original parent call for durable provenance.
     public let parentToolCallId: String
+    /// Caller-stable batch job identity. This is provenance only; `runId`
+    /// remains the durable lifecycle identity.
+    public let stableJobId: String?
     /// The agent whose model/settings scope the run.
     public let agentId: UUID
     /// Exact model selected by the parent turn. Nil on surfaces that do not
@@ -59,7 +62,8 @@ public struct SubagentScope: Sendable, Equatable {
         runId: UUID = UUID(),
         parentRunId: UUID? = nil,
         rootRunId: UUID? = nil,
-        parentToolCallId: String? = nil
+        parentToolCallId: String? = nil,
+        stableJobId: String? = nil
     ) {
         self.runId = runId
         self.sessionId = sessionId
@@ -70,6 +74,7 @@ public struct SubagentScope: Sendable, Equatable {
         self.enableThinking = enableThinking
         self.parentRunId = parentRunId
         self.rootRunId = rootRunId
+        self.stableJobId = stableJobId
     }
 
     /// Resolve from the active chat execution context. Outside chat we fall
@@ -213,4 +218,12 @@ public enum SubagentError: Error, Sendable {
             )
         }
     }
+}
+
+/// A subagent failure known to belong to an admitted durable run. The wrapper
+/// preserves the original envelope semantics while adding exact run
+/// correlation; launch/admission failures must never use it.
+struct DurableSubagentError: Error, Sendable {
+    let runId: UUID
+    let underlying: SubagentError
 }

@@ -179,10 +179,39 @@ ownership to `BackgroundTaskManager`, which reuses the prepared child identity
 and rejects missing parent/root/session/original-tool provenance or a failed
 ledger admission before it registers or starts the task. Batch children keep a
 synthetic per-job tool-call id for feed and interrupt isolation while retaining
-the original outer `spawn_batch` call as immutable provenance. The aggregate
-batch run is still the next capture slice; these child rows do not claim that
-gate. Duplicate SQLite child admission is transactionally rejected without a
+the original outer `spawn_batch` call as immutable provenance. `spawn_batch`
+now admits one aggregate only after the final authority check, fails closed
+before child execution when that admission is rejected, and rebases each
+prepared child's parent/root lineage from the ledger-confirmed aggregate
+receipt. Child run ids are allocated once and reused across both target
+preparation passes; caller-stable job ids remain explicit provenance through
+ordinary and delegated dispatch. Job ids are bounded to a safe ASCII contract,
+and secret-shaped values are redacted from durable trigger payloads while the
+original caller identity remains available to the in-memory result join.
+Successful child/aggregate envelopes return their durable run ids for
+correlation. The aggregate closes after the existing batch scheduler has
+collected every child outcome and its batch-owned local residency
+handoff/cleanup has returned. Its terminal status matches the public envelope
+contract: partial results with at least one usable child remain a truthful
+success with `partial_failure` metadata, all-cancelled is cancelled, and
+all-failed is error. Aggregate, ordinary-child, and delegated-child terminal
+write failures now change the caller-visible result instead of being hidden in
+a log. Duplicate SQLite child admission is transactionally rejected without a
 second child row or parent `childLinked` event.
+
+This aggregate slice is deliberately `PARTIAL`: it records the aggregate and
+one child per job that actually enters its execution owner. An accepted job
+that is refused or cancelled by the batch scheduler before `SubagentSession`
+or `BackgroundTaskManager` starts it does not yet have a queued durable child
+row. Completing the stated one-child-per-stable-job contract requires held
+reservations owned by those existing execution owners, including an explicit
+held-launch transfer for true delegated agents; pre-admitting those rows in
+`SpawnBatchTool` would create a competing lifecycle writer and is prohibited.
+`BackgroundTaskManager` also performs post-terminal residency acceleration and
+chat warm-up rearming in an asynchronous follow-up. A delegated child's
+completion receipt does not yet prove that follow-up has settled, so complete
+delegated cleanup ordering remains unproven and is part of the held-launch /
+settled-cancellation work rather than this checkpoint.
 
 Validation status for this checkpoint remains `PARTIAL` until its exact commit
 passes the pinned Xcode 26.4.1 fork CI and the required Release-app parent/child,

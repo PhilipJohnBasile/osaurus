@@ -8,7 +8,10 @@ import Testing
 struct ChatSessionStopTests {
     private static let asyncTimeout: Duration = .seconds(10)
 
-    private func enableDefaultAgentTools(warmModelsOnLoad: Bool) {
+    private func enableDefaultAgentTools(
+        warmModelsOnLoad: Bool,
+        manualToolNames: [String] = ["todo"]
+    ) {
         var chatConfig = ChatConfigurationStore.load()
         chatConfig.warmModelsOnLoad = warmModelsOnLoad
         chatConfig.autoGenerateChatTitles = false
@@ -18,7 +21,7 @@ struct ChatSessionStopTests {
             DefaultAgentConfiguration(
                 autonomousExec: nil,
                 toolSelectionMode: .manual,
-                manualToolNames: ["todo"]
+                manualToolNames: manualToolNames
             )
         )
         DefaultAgentConfigurationStore.resetCacheForTests()
@@ -248,11 +251,17 @@ struct ChatSessionStopTests {
     @Test
     func directClarificationResumesTheSameDurableRun() async throws {
         try await ChatHistoryTestStorage.run {
+            enableDefaultAgentTools(
+                warmModelsOnLoad: false,
+                manualToolNames: ["clarify"]
+            )
             let recorder = RecordingRunLifecycleRecorder()
             let engine = ClarificationLifecycleChatEngine()
             let session = ChatSession()
+            session.toolsDisabledForTestingOverride = false
             session.runLifecycleRecorder = recorder
             session.chatEngineFactory = { _ in engine }
+            session.forceChatEngineRouteForTests = true
             session.selectedModel = "lifecycle-model-a"
 
             session.send("Configure the database")
@@ -294,11 +303,18 @@ struct ChatSessionStopTests {
     @Test
     func stoppingAWaitingDirectClarificationCancelsItsDurableRun() async throws {
         try await ChatHistoryTestStorage.run {
+            enableDefaultAgentTools(
+                warmModelsOnLoad: false,
+                manualToolNames: ["clarify"]
+            )
             let recorder = RecordingRunLifecycleRecorder()
             let engine = ClarificationLifecycleChatEngine()
             let session = ChatSession()
+            session.toolsDisabledForTestingOverride = false
             session.runLifecycleRecorder = recorder
             session.chatEngineFactory = { _ in engine }
+            session.forceChatEngineRouteForTests = true
+            session.selectedModel = "lifecycle-cancel-model"
 
             session.send("Configure the database")
             try await waitUntilAsync(timeout: Self.asyncTimeout) {

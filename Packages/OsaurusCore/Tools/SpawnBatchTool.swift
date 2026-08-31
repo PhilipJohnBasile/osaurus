@@ -31,6 +31,8 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         + "same order as the input jobs. Use this only for independent work that can safely fan out."
 
     static let jobCountBounds: ClosedRange<Int> = 1 ... 32
+    static let jobIdMaxLength = 80
+    static let jobIdPattern = #"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"#
 
     public let parameters: JSONValue? = .object([
         "type": .string("object"),
@@ -49,8 +51,12 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
                     "properties": .object([
                         "id": .object([
                             "type": .string("string"),
+                            "maxLength": .number(Double(jobIdMaxLength)),
+                            "pattern": .string(jobIdPattern),
                             "description": .string(
-                                "Caller-stable unique id used to match the result."
+                                "Caller-stable unique id used to match the result. Start with an "
+                                    + "ASCII letter or digit, then use only letters, digits, `.`, "
+                                    + "`_`, or `-` (maximum \(jobIdMaxLength) characters)."
                             ),
                         ]),
                         "target_type": .object([
@@ -130,6 +136,30 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         var localGroupingKey: String? {
             guard let modelKey = run.admissionModelKey else { return nil }
             return "\(modelKey)|\(run.admissionClass.rawValue)"
+        }
+    }
+
+    struct DurableAggregateRun: Sendable, Equatable {
+        let runId: UUID
+        let rootRunId: UUID
+    }
+
+    enum DurableAggregateFinalizationError: LocalizedError {
+        case outcomeEvent(String)
+        case terminal(String)
+        case outcomeEventAndTerminal(outcome: String, terminal: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .outcomeEvent(let message):
+                return "aggregate outcome event failed: \(message)"
+            case .terminal(let message):
+                return "aggregate terminal failed: \(message)"
+            case .outcomeEventAndTerminal(let outcome, let terminal):
+                return
+                    "aggregate outcome event failed: \(outcome); "
+                    + "aggregate terminal failed: \(terminal)"
+            }
         }
     }
 
@@ -541,6 +571,7 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         }
 
         let parentScope = SubagentScope.current()
+        let childRunIds = Self.allocateChildRunIds(for: jobs)
         let evaluationOverrides = Self.evaluationOverrides
         let preflightMaxParallel: Int
         if let evaluationOverrides {
@@ -619,6 +650,7 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         switch await Self.prepareJobs(
             jobs,
             parentScope: parentScope,
+            childRunIds: childRunIds,
             interrupt: interrupt,
             tool: name,
             evaluationOverrides: evaluationOverrides
@@ -775,6 +807,7 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         switch await Self.prepareJobs(
             jobs,
             parentScope: parentScope,
+            childRunIds: childRunIds,
             interrupt: interrupt,
             tool: name,
             evaluationOverrides: evaluationOverrides
@@ -825,6 +858,66 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
                 retryable: false
             )
         }
+        let runLifecycleRecorder = SubagentSession.resolvedRunLifecycleRecorder()
+        let durableAggregate: DurableAggregateRun
+        do {
+            durableAggregate = try Self.admitDurableAggregate(
+                parentScope: parentScope,
+                jobs: jobs,
+                recorder: runLifecycleRecorder
+            )
+        } catch {
+            let message =
+                "The batch run could not be recorded durably and no jobs were started."
+            feed.finish(success: false, summary: message)
+            return ToolEnvelope.failure(
+                kind: .executionError,
+                message: message,
+                tool: name,
+                retryable: false,
+                metadata: ["run_id": parentScope.runId.uuidString]
+            )
+        }
+        if interrupt.isInterrupted || Task.isCancelled {
+            let summary = "Batch was cancelled before any jobs started."
+            do {
+                try Self.finishDurableAggregate(
+                    durableAggregate,
+                    recorder: runLifecycleRecorder,
+                    status: .cancelled,
+                    aggregateStatus: "all_cancelled",
+                    succeeded: 0,
+                    failed: jobs.count,
+                    cancelled: jobs.count,
+                    summary: summary
+                )
+            } catch {
+                let message =
+                    "Batch cancellation could not be recorded durably: "
+                    + error.localizedDescription
+                feed.finish(success: false, summary: message)
+                return ToolEnvelope.failure(
+                    kind: .executionError,
+                    message: message,
+                    tool: name,
+                    retryable: false,
+                    metadata: [
+                        "run_id": durableAggregate.runId.uuidString,
+                        "cancelled": true,
+                    ]
+                )
+            }
+            feed.finish(success: false, summary: summary)
+            return Self.earlyCancellationEnvelope(
+                tool: name,
+                userInterrupted: interrupt.isInterrupted,
+                runId: durableAggregate.runId
+            )
+        }
+        let linkedPrepared = Self.linkPreparedJobs(
+            prepared,
+            to: durableAggregate
+        )
         let localAdmissionPlanOverride: (@Sendable () async -> SubagentBatchAdmissionPlan)?
         if let plan = evaluationOverrides?.localAdmissionPlan {
             localAdmissionPlanOverride = { plan }
@@ -832,7 +925,7 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
             localAdmissionPlanOverride = nil
         }
         let results = await Self.runPreparedJobs(
-            prepared,
+            linkedPrepared,
             maxParallel: maxParallel,
             feed: feed,
             interrupt: interrupt,
@@ -888,10 +981,51 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         )
         let summary =
             "\(rows.count) batch jobs finished: \(succeeded) succeeded, \(failed) failed."
-        feed.finish(success: failed == 0, summary: summary)
+        let durableStatus = Self.aggregateRunStatus(
+            succeeded: succeeded,
+            failed: failed,
+            cancelled: cancelled
+        )
+        do {
+            try Self.finishDurableAggregate(
+                durableAggregate,
+                recorder: runLifecycleRecorder,
+                status: durableStatus,
+                aggregateStatus: aggregateStatus,
+                succeeded: succeeded,
+                failed: failed,
+                cancelled: cancelled,
+                summary: summary
+            )
+        } catch {
+            let message = Self.aggregateFinalizationFailureMessage(error)
+            feed.finish(success: false, summary: message)
+            return ToolEnvelope.failure(
+                kind: .executionError,
+                message: message,
+                tool: name,
+                retryable: false,
+                metadata: [
+                    "run_id": durableAggregate.runId.uuidString,
+                    "aggregate_status": aggregateStatus,
+                    "succeeded": succeeded,
+                    "failed": failed,
+                    "cancelled": cancelled,
+                    "results": rows,
+                ]
+            )
+        }
+        feed.finish(
+            success: Self.aggregateReportsSuccess(
+                succeeded: succeeded,
+                failed: failed
+            ),
+            summary: summary
+        )
 
         let payload: [String: Any] = [
             "kind": "spawn_batch_result",
+            "run_id": durableAggregate.runId.uuidString,
             "summary": summary,
             "max_parallel": maxParallel,
             "succeeded": succeeded,
@@ -922,14 +1056,17 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
     /// giving both paths the same machine-readable cancellation marker.
     static func earlyCancellationEnvelope(
         tool: String,
-        userInterrupted: Bool
+        userInterrupted: Bool,
+        runId: UUID? = nil
     ) -> String {
-        ToolEnvelope.failure(
+        var metadata: [String: Any] = ["cancelled": true]
+        if let runId { metadata["run_id"] = runId.uuidString }
+        return ToolEnvelope.failure(
             kind: userInterrupted ? .userDenied : .executionError,
             message: "Batch preparation was cancelled before any jobs started.",
             tool: tool,
             retryable: false,
-            metadata: ["cancelled": true]
+            metadata: metadata
         )
     }
 
@@ -939,7 +1076,8 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
     /// must never replace the original parent tool call in the run ledger.
     static func childScope(
         parentScope: SubagentScope,
-        jobID: String
+        jobID: String,
+        runId: UUID = UUID()
     ) -> SubagentScope {
         SubagentScope(
             sessionId: parentScope.sessionId,
@@ -947,15 +1085,206 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
             agentId: parentScope.agentId,
             parentModelName: parentScope.parentModelName,
             enableThinking: parentScope.enableThinking,
-            parentRunId: parentScope.parentRunId,
-            rootRunId: parentScope.rootRunId,
-            parentToolCallId: parentScope.parentToolCallId
+            runId: runId,
+            parentRunId: parentScope.runId,
+            rootRunId: parentScope.rootRunId ?? parentScope.runId,
+            parentToolCallId: parentScope.parentToolCallId,
+            stableJobId: jobID
+        )
+    }
+
+    static func allocateChildRunIds(for jobs: [Job]) -> [String: UUID] {
+        var identities: [String: UUID] = [:]
+        identities.reserveCapacity(jobs.count)
+        for job in jobs {
+            identities[job.id] = UUID()
+        }
+        return identities
+    }
+
+    static func admitDurableAggregate(
+        parentScope: SubagentScope,
+        jobs: [Job],
+        recorder: any RunLifecycleRecording
+    ) throws -> DurableAggregateRun {
+        let title = "spawn batch (\(jobs.count))"
+        let triggerPayload = durableAggregateTriggerPayload(
+            parentScope: parentScope,
+            jobs: jobs
+        )
+        let receipt = try recorder.admit(
+            RunLifecycleAdmission(
+                runId: parentScope.runId,
+                agentId: parentScope.agentId,
+                triggerKind: .user,
+                triggerPayload: triggerPayload,
+                instructions: title,
+                startsImmediately: true,
+                sessionId: UUID(uuidString: parentScope.sessionId),
+                parentRunId: parentScope.parentRunId,
+                rootRunId: parentScope.rootRunId,
+                title: title
+            )
+        )
+        return DurableAggregateRun(
+            runId: receipt.runId,
+            rootRunId: receipt.rootRunId
+        )
+    }
+
+    static func aggregateRunStatus(
+        succeeded: Int,
+        failed: Int,
+        cancelled: Int
+    ) -> AgentRunStatus {
+        if succeeded > 0 { return .success }
+        if failed > 0, cancelled == failed { return .cancelled }
+        return failed > 0 ? .error : .success
+    }
+
+    static func linkPreparedJobs(
+        _ jobs: [PreparedJob],
+        to aggregate: DurableAggregateRun
+    ) -> [PreparedJob] {
+        jobs.map { preparedJob in
+            let existing = preparedJob.run
+            let existingScope = existing.scope
+            let linkedScope = SubagentScope(
+                sessionId: existingScope.sessionId,
+                toolCallId: existingScope.toolCallId,
+                agentId: existingScope.agentId,
+                parentModelName: existingScope.parentModelName,
+                enableThinking: existingScope.enableThinking,
+                runId: existingScope.runId,
+                parentRunId: aggregate.runId,
+                rootRunId: aggregate.rootRunId,
+                parentToolCallId: existingScope.parentToolCallId,
+                stableJobId: preparedJob.job.id
+            )
+            return PreparedJob(
+                job: preparedJob.job,
+                run: PreparedSubagentRun(
+                    kind: existing.kind,
+                    tool: existing.tool,
+                    scope: linkedScope,
+                    resolved: existing.resolved,
+                    handoff: existing.handoff,
+                    handoffIsKindOwned: existing.handoffIsKindOwned
+                )
+            )
+        }
+    }
+
+    static func finishDurableAggregate(
+        _ run: DurableAggregateRun,
+        recorder: any RunLifecycleRecording,
+        status: AgentRunStatus,
+        aggregateStatus: String,
+        succeeded: Int,
+        failed: Int,
+        cancelled: Int,
+        summary: String
+    ) throws {
+        var outcomeEventFailure: String?
+        do {
+            try recorder.append(
+                runId: run.runId,
+                kind: .progress,
+                occurredAt: Date(),
+                message: summary,
+                metadata: [
+                    "aggregate_status": aggregateStatus,
+                    "succeeded": String(succeeded),
+                    "failed": String(failed),
+                    "cancelled": String(cancelled),
+                ]
+            )
+        } catch {
+            outcomeEventFailure = error.localizedDescription
+        }
+        do {
+            try recorder.end(
+                RunLifecycleTerminalReceipt(
+                    runId: run.runId,
+                    status: status,
+                    error: status == .error ? summary : nil
+                )
+            )
+        } catch {
+            if let outcomeEventFailure {
+                throw DurableAggregateFinalizationError.outcomeEventAndTerminal(
+                    outcome: outcomeEventFailure,
+                    terminal: error.localizedDescription
+                )
+            }
+            throw DurableAggregateFinalizationError.terminal(
+                error.localizedDescription
+            )
+        }
+        if let outcomeEventFailure {
+            throw DurableAggregateFinalizationError.outcomeEvent(
+                outcomeEventFailure
+            )
+        }
+    }
+
+    static func aggregateFinalizationFailureMessage(
+        _ error: any Error
+    ) -> String {
+        switch error {
+        case DurableAggregateFinalizationError.outcomeEvent:
+            return
+                "Batch jobs settled and the terminal state was recorded, but "
+                + "aggregate outcome details were not persisted durably: "
+                + error.localizedDescription
+        case DurableAggregateFinalizationError.terminal:
+            return
+                "Batch jobs settled, but the aggregate terminal state was not "
+                + "persisted durably: \(error.localizedDescription)"
+        case DurableAggregateFinalizationError.outcomeEventAndTerminal:
+            return
+                "Batch jobs settled, but neither the complete aggregate outcome "
+                + "nor its terminal state was persisted durably: "
+                + error.localizedDescription
+        default:
+            return
+                "Batch jobs settled, but the aggregate outcome could not be "
+                + "fully recorded durably: \(error.localizedDescription)"
+        }
+    }
+
+    private static func durableAggregateTriggerPayload(
+        parentScope: SubagentScope,
+        jobs: [Job]
+    ) -> String? {
+        let fields: [String: Any] = [
+            "source": "spawn_batch",
+            "owner": "spawn_batch_tool",
+            "parent_session_id": parentScope.sessionId,
+            "parent_tool_call_id": parentScope.parentToolCallId,
+            "job_count": jobs.count,
+            "job_ids": jobs.map { durableJobId($0.id) },
+        ]
+        guard JSONSerialization.isValidJSONObject(fields),
+            let data = try? JSONSerialization.data(
+                withJSONObject: fields,
+                options: [.sortedKeys]
+            )
+        else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func durableJobId(_ id: String) -> String {
+        EvidenceReportMetadataRedactor.redactedValue(
+            forKey: "stable_job_id",
+            value: id
         )
     }
 
     private static func prepareJobs(
         _ jobs: [Job],
         parentScope: SubagentScope,
+        childRunIds: [String: UUID],
         interrupt: InterruptToken,
         tool: String,
         evaluationOverrides: EvaluationOverrides?
@@ -968,9 +1297,25 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
             if interrupt.isInterrupted || Task.isCancelled {
                 return .cancelled
             }
+            guard let childRunId = childRunIds[job.id] else {
+                failures.append(
+                    (
+                        id: job.id,
+                        envelope: ToolEnvelope.failure(
+                            kind: .executionError,
+                            message:
+                                "Batch job '\(job.id)' has no preallocated durable identity.",
+                            tool: tool,
+                            retryable: false
+                        )
+                    )
+                )
+                continue
+            }
             let childScope = Self.childScope(
                 parentScope: parentScope,
-                jobID: job.id
+                jobID: job.id,
+                runId: childRunId
             )
             let kind: any SubagentKind
             if let evaluationOverrides {
@@ -1330,11 +1675,32 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
                     )
                 )
             }
-            guard ids.insert(id).inserted else {
+            guard id.count <= jobIdMaxLength else {
                 return .failure(
                     SpawnBatchParseError.invalidJob(
                         index: index,
-                        message: "reuses duplicate id `\(id)`",
+                        message: "has an `id` longer than \(jobIdMaxLength) characters",
+                        tool: tool
+                    )
+                )
+            }
+            guard isValidJobId(id) else {
+                return .failure(
+                    SpawnBatchParseError.invalidJob(
+                        index: index,
+                        message:
+                            "has an invalid `id`; start with an ASCII letter or digit and use "
+                            + "only letters, digits, `.`, `_`, or `-`",
+                        tool: tool
+                    )
+                )
+            }
+            guard ids.insert(id).inserted else {
+                let displayId = durableJobId(id)
+                return .failure(
+                    SpawnBatchParseError.invalidJob(
+                        index: index,
+                        message: "reuses duplicate id `\(displayId)`",
                         tool: tool
                     )
                 )
@@ -1405,6 +1771,18 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         return .success(jobs)
     }
 
+    private static func isValidJobId(_ id: String) -> Bool {
+        guard let first = id.unicodeScalars.first,
+            CharacterSet.alphanumerics.contains(first),
+            first.isASCII
+        else { return false }
+        let allowed = CharacterSet(
+            charactersIn:
+                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+        )
+        return id.unicodeScalars.allSatisfy { $0.isASCII && allowed.contains($0) }
+    }
+
     /// The visible per-agent limit is both the maximum fan-out and the maximum
     /// concurrency for one batch. Enforce it before target resolution so an
     /// oversized call cannot acquire admission, load a model, or unload the
@@ -1450,7 +1828,7 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
         succeeded: Int,
         failed: Int
     ) -> String {
-        guard failed > 0, succeeded == 0 else {
+        guard !aggregateReportsSuccess(succeeded: succeeded, failed: failed) else {
             return ToolEnvelope.success(tool: tool, result: payload)
         }
 
@@ -1481,6 +1859,13 @@ public final class SpawnBatchTool: OsaurusTool, @unchecked Sendable {
             retryable: retryable,
             metadata: ["result": payload]
         )
+    }
+
+    static func aggregateReportsSuccess(
+        succeeded: Int,
+        failed: Int
+    ) -> Bool {
+        succeeded > 0 || failed == 0
     }
 
     @MainActor
